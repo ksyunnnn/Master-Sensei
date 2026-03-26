@@ -68,14 +68,17 @@ def update_daily(cache: CacheManager):
     all_symbols = TRADING_SYMBOLS + REFERENCE_SYMBOLS
 
     for symbol in all_symbols:
-        start = today - timedelta(days=365 * DAILY_LOOKBACK_YEARS)
-        covered, missing_start, missing_end = cache.get_daily_coverage(symbol, start, today)
+        # 差分取得: キャッシュの末尾から今日までだけ取得する
+        # _get_coverageの先頭不足問題（5年分再取得）を回避
+        meta = cache._metadata.get(symbol)
+        if meta:
+            if meta.end_date >= today:
+                logger.info(f"{symbol}: daily cache up to date ({meta.end_date})")
+                continue
+            fetch_start = meta.end_date + timedelta(days=1)
+        else:
+            fetch_start = today - timedelta(days=365 * DAILY_LOOKBACK_YEARS)
 
-        if covered:
-            logger.info(f"{symbol}: daily cache up to date")
-            continue
-
-        fetch_start = missing_start or start
         logger.info(f"{symbol}: fetching daily {fetch_start} → {today}")
         df = fetcher.fetch(symbol, fetch_start, today)
 
