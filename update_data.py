@@ -32,17 +32,19 @@ DAILY_LOOKBACK_YEARS = 5
 
 
 def update_macro(cache: CacheManager):
-    """FRED 9シリーズの差分取得"""
+    """FRED 9シリーズの差分取得
+
+    FREDは日次更新。end_dateから差分取得。
+    同日中に複数回実行しても、end_date以降の新データがなければスキップ。
+    """
     fred = FredClient.from_env()
     today = date.today()
 
     for name, series_id in SERIES_CONFIG.items():
         meta = cache.get_macro_metadata(name)
         if meta:
-            start = meta.end_date + timedelta(days=1)
-            if start > today:
-                logger.info(f"{name}: already up to date ({meta.end_date})")
-                continue
+            # end_dateの翌日から取得（同日中に再実行してもAPI側で新データがなければ空）
+            start = meta.end_date
         else:
             start = today - timedelta(days=365)
 
@@ -61,15 +63,17 @@ def update_macro(cache: CacheManager):
 
 
 def update_daily(cache: CacheManager):
-    """Tiingo日足の差分取得"""
+    """Tiingo日足の差分取得
+
+    日足は市場閉場後に確定する。end_date >= todayならスキップ。
+    閉場前に実行しても当日の確定値はまだないため、翌日に取得される。
+    """
     config = TiingoConfig.from_env()
     fetcher = TiingoFetcher(config)
     today = date.today()
     all_symbols = TRADING_SYMBOLS + REFERENCE_SYMBOLS
 
     for symbol in all_symbols:
-        # 差分取得: キャッシュの末尾から今日までだけ取得する
-        # _get_coverageの先頭不足問題（5年分再取得）を回避
         meta = cache._metadata.get(symbol)
         if meta:
             if meta.end_date >= today:
@@ -88,18 +92,20 @@ def update_daily(cache: CacheManager):
 
 
 def update_intraday(cache: CacheManager):
-    """Tiingo 5分足の差分取得"""
+    """Tiingo 5分足の差分取得
+
+    5分足は日中に更新される。end_date >= todayでもスキップしない。
+    キャッシュ末尾の日付から差分取得し、マージで重複除去。
+    これにより日中に複数回実行しても最新の5分足バーを蓄積できる。
+    """
     config = TiingoConfig.from_env()
     fetcher = TiingoFetcher(config)
     today = date.today()
 
     for symbol in TRADING_SYMBOLS:
         meta = cache.get_intraday_metadata(symbol)
-        if meta and meta.end_date >= today:
-            logger.info(f"{symbol}: intraday cache up to date")
-            continue
-
-        start = (meta.end_date + timedelta(days=1)) if meta else None
+        # 5分足は常に差分取得を試みる（日中更新があるため）
+        start = (meta.end_date) if meta else None
         logger.info(f"{symbol}: fetching intraday from {start or 'earliest'}")
         df = fetcher.fetch_intraday(symbol, start_date=start, end_date=today)
 
