@@ -44,8 +44,8 @@ class TiingoConfig:
         return cls(api_key=api_key)
 
 
-TRADING_SYMBOLS = ["TQQQ", "SOXL", "TECL", "SPXL", "SOXS"]
-REFERENCE_SYMBOLS = ["VIXY"]
+TRADING_SYMBOLS = ["TQQQ", "SQQQ", "SOXL", "SOXS", "TECL", "SPXL", "TNA", "TZA"]
+REFERENCE_SYMBOLS = ["VIXY", "TECS"]  # 日足のみ
 ALL_SYMBOLS = TRADING_SYMBOLS + REFERENCE_SYMBOLS
 
 
@@ -80,6 +80,11 @@ class TiingoFetcher:
 
         self._throttle()
         resp = self._session.get(url, params=params, timeout=self.config.timeout)
+        if resp.status_code == 429:
+            logger.warning(f"{symbol}: rate limited (429). Waiting 60s and retrying once.")
+            time.sleep(60)
+            self._last_request_time = time.monotonic()
+            resp = self._session.get(url, params=params, timeout=self.config.timeout)
         resp.raise_for_status()
         data = resp.json()
 
@@ -115,6 +120,11 @@ class TiingoFetcher:
 
         self._throttle()
         resp = self._session.get(url, params=params, timeout=self.config.timeout)
+        if resp.status_code == 429:
+            logger.warning(f"{symbol}: rate limited (429). Waiting 60s and retrying once.")
+            time.sleep(60)
+            self._last_request_time = time.monotonic()
+            resp = self._session.get(url, params=params, timeout=self.config.timeout)
         resp.raise_for_status()
         data = resp.json()
 
