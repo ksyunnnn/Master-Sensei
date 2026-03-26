@@ -1,0 +1,7 @@
+.env
+data/parquet/
+data/*.duckdb
+data/*.duckdb.wal
+__pycache__/
+.pytest_cache/
+*.parquet.bak
