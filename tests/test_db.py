@@ -166,6 +166,53 @@ class TestRegime:
         assert regime["overall"] == "risk_on"
 
 
+class TestMarketObservations:
+    def test_add_observation(self, db):
+        ts = datetime(2026, 3, 27, 10, 0, tzinfo=JST)
+        db.add_observation(date(2026, 3, 27), "VIX", 25.5, "cboe", ts)
+        rows = db.get_observations_for_date(date(2026, 3, 27))
+        assert len(rows) == 1
+        assert rows[0]["value"] == 25.5
+        assert rows[0]["source"] == "cboe"
+        assert rows[0]["status"] == "unverified"
+
+    def test_add_observation_upsert(self, db):
+        ts = datetime(2026, 3, 27, 10, 0, tzinfo=JST)
+        db.add_observation(date(2026, 3, 27), "VIX", 25.5, "cboe", ts)
+        ts2 = datetime(2026, 3, 27, 15, 0, tzinfo=JST)
+        db.add_observation(date(2026, 3, 27), "VIX", 26.0, "cboe", ts2)
+        rows = db.get_observations_for_date(date(2026, 3, 27))
+        assert len(rows) == 1
+        assert rows[0]["value"] == 26.0
+
+    def test_add_observation_naive_datetime_raises(self, db):
+        with pytest.raises(ValueError, match="timezone-aware"):
+            db.add_observation(date(2026, 3, 27), "VIX", 25.5, "cboe", datetime(2026, 3, 27, 10, 0))
+
+    def test_multiple_sources_same_series(self, db):
+        ts = datetime(2026, 3, 27, 10, 0, tzinfo=JST)
+        db.add_observation(date(2026, 3, 27), "VIX", 25.5, "cboe", ts)
+        db.add_observation(date(2026, 3, 27), "VIX", 25.6, "investing.com", ts)
+        rows = db.get_observations_for_date(date(2026, 3, 27))
+        assert len(rows) == 2
+
+    def test_get_latest_observations(self, db):
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        db.add_observation(date(2026, 3, 26), "VIX", 26.0, "cboe", ts)
+        ts2 = datetime(2026, 3, 27, 10, 0, tzinfo=JST)
+        db.add_observation(date(2026, 3, 27), "VIX", 25.0, "cboe", ts2)
+        latest = db.get_latest_observations()
+        assert len(latest) == 1
+        assert latest[0]["value"] == 25.0
+
+    def test_verify_observation(self, db):
+        ts = datetime(2026, 3, 27, 10, 0, tzinfo=JST)
+        db.add_observation(date(2026, 3, 27), "VIX", 25.5, "cboe", ts)
+        db.verify_observation(date(2026, 3, 27), "VIX", "cboe")
+        rows = db.get_observations_for_date(date(2026, 3, 27))
+        assert rows[0]["status"] == "verified"
+
+
 class TestEventReviews:
     def test_add_review_updates_event_status(self, db):
         ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
