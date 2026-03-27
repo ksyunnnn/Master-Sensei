@@ -17,10 +17,9 @@
         "matcher": "",
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "あなたはMaster Senseiのセッション終了チェッカーです。\n\nまず stop_hook_active を確認してください:\n$ARGUMENTS\n\nstop_hook_active が true の場合、無限ループ防止のため即座に {\"decision\": \"allow\"} を返してください。\n\nstop_hook_active が false の場合、以下のコマンドを実行して確認事項をチェックしてください:\npython3 .claude/hooks/session_stop_check.py\n\n結果が「確認事項なし」なら {\"decision\": \"allow\"} を返してください。\n確認事項がある場合、{\"decision\": \"block\", \"reason\": \"セッション終了前に以下を確認してください: [確認事項の内容]\"} を返してください。",
-            "model": "claude-haiku-4-5-20251001",
-            "timeout": 30
+            "type": "command",
+            "command": "python3 .claude/hooks/session_stop_check.py",
+            "timeout": 10
           }
         ]
       }

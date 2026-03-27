@@ -2,8 +2,9 @@
 """Master Sensei SessionStart Hook
 
 セッション開始時に実行され、stdoutがClaudeのコンテキストに注入される。
-副作用なし（読み取りのみ）。
+副作用なし（読み取りのみ）。SQLはSenseiDBに委譲（ADR-008）。
 """
+import json
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -17,75 +18,71 @@ DB_PATH = DATA_DIR / "sensei.duckdb"
 PARQUET_DIR = DATA_DIR / "parquet"
 
 
-def check_predictions(conn) -> list[str]:
+def to_date(val) -> date:
+    """pandas Timestamp や datetime を date に変換"""
+    if hasattr(val, "date"):
+        return val.date()
+    return val
+
+
+def check_predictions(db) -> list[str]:
     """期限切れ・期限間近の予測を検出"""
     messages = []
     today = date.today()
 
-    # 期限切れ（未解決）
-    overdue = conn.execute(
-        "SELECT id, subject, deadline, confidence FROM predictions "
-        "WHERE outcome IS NULL AND deadline < ?",
-        [today],
-    ).fetchall()
-    for row in overdue:
-        messages.append(f"  [期限切れ] 予測#{row[0]}: {row[1]} (期限{row[2]}, 確信度{row[3]:.0%}) → 解決が必要")
+    counts = db.get_prediction_counts()
+    if counts["total"] > 0:
+        messages.append(f"  予測: {counts['total']}件 (解決済み{counts['resolved']}, 未解決{counts['pending']})")
 
-    # 期限が今日または明日
-    upcoming = conn.execute(
-        "SELECT id, subject, deadline, confidence FROM predictions "
-        "WHERE outcome IS NULL AND deadline >= ? AND deadline <= ?",
-        [today, today + timedelta(days=1)],
-    ).fetchall()
-    for row in upcoming:
-        messages.append(f"  [期限間近] 予測#{row[0]}: {row[1]} (期限{row[2]}, 確信度{row[3]:.0%})")
-
-    # 統計
-    total = conn.execute("SELECT COUNT(*) FROM predictions").fetchone()[0]
-    resolved = conn.execute("SELECT COUNT(*) FROM predictions WHERE outcome IS NOT NULL").fetchone()[0]
-    if total > 0:
-        messages.insert(0, f"  予測: {total}件 (解決済み{resolved}, 未解決{total - resolved})")
+    pending = db.get_pending_predictions()
+    for row in pending:
+        deadline = to_date(row["deadline"])
+        subj = row["subject"]
+        conf = row["confidence"]
+        pred_id = row["id"]
+        if deadline < today:
+            messages.append(f"  [ACTION] 予測#{pred_id}が期限切れ（{subj}, 期限{deadline}, 確信度{conf:.0%}）→ resolve_predictionを実行せよ")
+        elif deadline <= today + timedelta(days=1):
+            messages.append(f"  [期限間近] 予測#{pred_id}: {subj} (期限{deadline}, 確信度{conf:.0%})")
 
     return messages
 
 
-def check_regime(conn) -> list[str]:
+def check_regime(db) -> list[str]:
     """最新レジーム判定を表示"""
-    messages = []
-    row = conn.execute(
-        "SELECT date, overall, reasoning FROM regime_assessments ORDER BY date DESC LIMIT 1"
-    ).fetchone()
-    if row:
-        age = (date.today() - row[0]).days
-        freshness = "" if age == 0 else f" ({age}日前)"
-        messages.append(f"  レジーム: {row[1]}{freshness}")
-        if row[2]:
-            messages.append(f"  根拠: {row[2][:100]}")
-    else:
-        messages.append("  レジーム: 未判定")
+    regime = db.get_latest_regime()
+    if not regime:
+        return ["  レジーム: 未判定"]
+
+    age = (date.today() - to_date(regime["date"])).days
+    freshness = "" if age == 0 else f" ({age}日前)"
+    messages = [f"  レジーム: {regime['overall']}{freshness}"]
+    if regime.get("reasoning"):
+        messages.append(f"  根拠: {regime['reasoning'][:100]}")
     return messages
 
 
-def check_knowledge(conn) -> list[str]:
+def check_knowledge(db) -> list[str]:
     """stale知見を検出"""
-    messages = []
-    total = conn.execute("SELECT COUNT(*) FROM knowledge WHERE verification_status != 'invalidated'").fetchone()[0]
-    stale = conn.execute(
-        "SELECT COUNT(*) FROM knowledge "
-        "WHERE verification_status NOT IN ('invalidated') "
-        "AND (last_verified_date IS NULL OR last_verified_date < current_date - INTERVAL '180 days')"
-    ).fetchone()[0]
+    active = db.get_active_knowledge()
+    stale = db.get_stale_knowledge()
 
-    messages.append(f"  知見: {total}件 (active)")
-    if stale > 0:
-        messages.append(f"  [警告] {stale}件が180日以上未検証")
+    messages = [f"  知見: {len(active)}件 (active)"]
+    if stale:
+        messages.append(f"  [警告] {len(stale)}件が180日以上未検証")
     return messages
+
+
+def check_brier(db) -> list[str]:
+    """Brier scoreの状態"""
+    score = db.get_brier_score()
+    if score is not None:
+        return [f"  Brier score: {score:.3f}"]
+    return []
 
 
 def check_data_freshness() -> list[str]:
     """Parquetデータの鮮度を確認"""
-    import json
-
     messages = []
     today = date.today()
 
@@ -113,30 +110,23 @@ def check_data_freshness() -> list[str]:
     return messages
 
 
-def check_brier(conn) -> list[str]:
-    """Brier scoreの状態"""
-    messages = []
-    row = conn.execute("SELECT AVG(brier_score) FROM predictions WHERE brier_score IS NOT NULL").fetchone()
-    if row[0] is not None:
-        messages.append(f"  Brier score: {row[0]:.3f}")
-    return messages
-
-
 def main():
     lines = ["[Master Sensei 状態チェック]", ""]
 
-    # DB確認
     if DB_PATH.exists():
         import duckdb
-        conn = duckdb.connect(str(DB_PATH), read_only=True)
+        from src.db import SenseiDB
 
-        lines.extend(check_predictions(conn))
+        conn = duckdb.connect(str(DB_PATH))
+        db = SenseiDB(conn)
+
+        lines.extend(check_predictions(db))
         lines.append("")
-        lines.extend(check_regime(conn))
+        lines.extend(check_regime(db))
         lines.append("")
-        lines.extend(check_knowledge(conn))
+        lines.extend(check_knowledge(db))
         lines.append("")
-        lines.extend(check_brier(conn))
+        lines.extend(check_brier(db))
 
         conn.close()
     else:

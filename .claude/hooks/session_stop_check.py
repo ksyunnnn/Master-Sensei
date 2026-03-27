@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Master Sensei Stop Hook — 状態チェックスクリプト
+"""Master Sensei Stop Hook — command型
 
-prompt型Stopフックから呼び出され、セッション終了前の確認事項をstdoutに出力する。
+stdinからhook入力JSONを受け取り、セッション終了前の確認事項をチェック。
+- 確認事項なし → exit 0（出力なし）→ 停止許可
+- 確認事項あり → exit 0 + {"decision":"block","reason":"..."} → 続行指示
+- stop_hook_active=true → exit 0（無限ループ防止）
 副作用なし（読み取りのみ）。
 """
 import json
@@ -51,6 +54,17 @@ def check_unresolved_predictions() -> str | None:
 
 
 def main():
+    # stdinからhook入力を読み取り
+    try:
+        hook_input = json.loads(sys.stdin.read())
+    except (json.JSONDecodeError, EOFError):
+        hook_input = {}
+
+    # 無限ループ防止
+    if hook_input.get("stop_hook_active"):
+        sys.exit(0)
+
+    # 確認事項チェック
     issues = []
 
     result = check_condition_md()
@@ -62,11 +76,14 @@ def main():
         issues.append(result)
 
     if issues:
-        print("セッション終了前の確認事項:")
-        for issue in issues:
-            print(f"  - {issue}")
-    else:
-        print("確認事項なし")
+        output = {
+            "decision": "block",
+            "reason": "セッション終了前に以下を確認してください:\n"
+            + "\n".join(f"- {issue}" for issue in issues),
+        }
+        print(json.dumps(output, ensure_ascii=False))
+
+    # issues なし → 出力なしで exit 0 → 停止許可
 
 
 if __name__ == "__main__":

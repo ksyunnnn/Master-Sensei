@@ -206,6 +206,15 @@ class SenseiDB:
             "SELECT * FROM predictions WHERE outcome IS NULL ORDER BY deadline"
         ).fetchdf().to_dict("records")
 
+    def get_prediction_counts(self) -> dict:
+        """予測の件数サマリーを返す"""
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS total, "
+            "COUNT(CASE WHEN outcome IS NOT NULL THEN 1 END) AS resolved "
+            "FROM predictions"
+        ).fetchone()
+        return {"total": row[0], "resolved": row[1], "pending": row[0] - row[1]}
+
     def get_brier_score(self, since: date = None) -> Optional[float]:
         query = "SELECT AVG(brier_score) FROM predictions WHERE brier_score IS NOT NULL"
         params = []
