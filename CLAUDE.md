@@ -22,10 +22,11 @@
 - イベント・予測・知見・レジーム → DuckDB（data/sensei.duckdb）
 - DuckDBからParquetを `read_parquet()` で直接クエリ可
 
-## Data Sources (ADR-002)
+## Data Sources (ADR-002, 004, 006)
 
-- FRED: VIXCLS, VXVCLS, VXNCLS, DCOILBRENTEU, DGS10, FEDFUNDS, T10Y2Y, BAMLH0A0HYM2, DTWEXBGS
-- Tiingo: TQQQ, SOXL, TECL, SPXL, SOXS, VIXY（日足+5分足）
+- FRED: 9シリーズ（公式、1-2日遅延）
+- Tiingo: 10シンボル日足 + 8シンボル5分足
+- yfinance: VIX/VIX3M/Brent即時取得（ProviderChainでFREDにフォールバック）
 
 ## DB Write基準 (ADR-003)
 
@@ -39,6 +40,27 @@
 永続化しない: Brier score集計値、サマリーレポート、探索的分析（都度計算 or 会話で保持）
 
 詳細: @docs/adr/003-data-governance.md
+
+## トリガールール (ADR-007)
+
+SessionStartフックが状態を注入する。以下はその状態に基づく行動指針。
+
+### 予測
+- 期限切れの予測がある → セッション最優先で解決（resolve_prediction）する
+- エントリー分析を行ったら → 予測をADR-003基準で起草し、ユーザーに記録を提案する
+- セッション中に1件以上の予測記録を目指す
+
+### 知見
+- 市場で驚いたこと、想定と違ったこと → 知見として記録を提案する
+- stale警告が出ている知見 → 現在も有効か確認し、検証日を更新する
+
+### レジーム
+- データが1日以上古い → yfinanceで最新値を取得してレジーム再判定を提案する
+- market_observationsに記録する際はsourceを明記する
+
+### セッション終了前
+- condition.mdの最終更新日が今日でなければ更新する
+- 重要な判断や発見があれば知見として記録する
 
 ## Rules
 
