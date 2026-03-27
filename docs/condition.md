@@ -1,37 +1,52 @@
 # Condition
 
-Last updated: 2026-03-26
+Last updated: 2026-03-27
 
 ## Current Condition
 
-- Phase 2 完了。Phase 3 開始前
+- Phase 3（運用サイクル確立）開始
 - Charter v0.1.0（習熟度 Lv.1 見習い）
-- データ基盤稼働中: FRED 9シリーズ + Tiingo 6シンボル（日足+5分足）
-- レジーム判定ロジック実装済み。6指標独立スコアリング + 加重平均統合
-- sensei.duckdb 初期化済み。初回レジーム判定記録: 2026-03-26 risk_off
-- 68テスト全パス
+- データ基盤: FRED 9シリーズ + Tiingo 10シンボル（日足10 + 5分足8） + yfinance 3シリーズ
+- プロバイダ抽象化: Protocol + ProviderChain（yfinance → FRED フォールバック）
+- sensei.duckdb: レジーム1件、予測1件（未解決）、知見2件
+- 87テスト全パス
 
-## Latest Regime (2026-03-26)
+## Latest Data (2026-03-27取得)
 
-risk_off (score: -1.0)
-- VIX: high / VIXターム構造: backwardation / 原油: crisis
-- HYスプレッド: normal / イールドカーブ: normal / ドル: normal
+### yfinance (3/26確定値)
+- VIX: 27.44 / VIX3M: 27.16 / Brent: $100.80
+
+### FRED (公開遅延あり)
+- VIX: 25.33 (3/25) / HY_SPREAD: 3.17 (3/25) / YIELD_CURVE: 0.46 (3/26)
+
+### 予測#1
+- VIXが25.0を下回る by 3/28（確信度45%）— **VIX 27.44で不利方向**
 
 ## Obstacles
 
-- 予測記録ゼロ（Brier score算出不可 → Lv.2昇格条件未達）
-- レジーム閾値は1年データのみで設計。歴史的危機データを含めると閾値が変わりうる
-- macro.duckdbのイベント74件・レビュー45件は未移行
+- ProviderChainがupdate_data.py / assess_regime.pyに未統合（ADR-006のコードはあるが配線未完了）
+- 予測1件のみ（Lv.2の30件には程遠い）
+- 知見2件のみ（ともにmeta/自己限界の記録。市場パターンの知見ゼロ）
+- condition.md / ideal.md の更新が遅れがち
 
 ## Next Actions
 
-- [ ] Phase 3: 予測記録・Brier Score計測の運用開始
-- [ ] 閾値の妥当性検証（より長期のデータで確認）
-- [ ] macro.duckdbからの任意移行（イベント・レビュー）
+- [ ] ProviderChainをupdate_data.py / assess_regime.pyに統合
+- [ ] 予測#1の解決（3/28期限）
+- [ ] 市場パターンに基づく知見の蓄積開始
+- [ ] condition.mdの更新を習慣化
 
 ## Completed
 
-- [x] Phase 1: データ基盤構築（FRED 9 + Tiingo 6、37テスト）
-- [x] Phase 2: レジーム判定ロジック（6指標MAP方式、31テスト追加）
-- [x] ADR-001〜003 策定
-- [x] sensei.duckdb 初期化・初回レジーム記録
+- [x] Phase 1: データ基盤（FRED 9 + Tiingo 6 → 10シンボル、37テスト）
+- [x] Phase 2: レジーム判定（6指標MAP方式、31テスト）
+- [x] ADR-001 ストレージ戦略（Parquet + DuckDB）
+- [x] ADR-002 データソース選定（FRED 9 + Tiingo）
+- [x] ADR-003 データガバナンス（Write基準・スキーマ変更基準）
+- [x] ADR-004 銘柄選定基準（SQQQ/TNA/TZA/TECS追加）
+- [x] ADR-005 手動マクロデータ投入（market_observations）
+- [x] ADR-006 プロバイダ抽象化（Protocol + ProviderChain）
+- [x] sensei.duckdb初期化、知見2件・予測1件記録
+- [x] yfinanceでVIX/VIX3M/Brent即時取得確認
+- [x] 差分取得バグ修正（5年分再取得問題、日中複数回実行対応）
+- [x] git独立リポジトリ化
