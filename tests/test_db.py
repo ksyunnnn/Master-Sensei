@@ -17,7 +17,7 @@ class TestSchema:
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
         ).fetchall()
         names = {t[0] for t in tables}
-        assert names >= {"events", "predictions", "knowledge", "regime_assessments", "event_reviews"}
+        assert names >= {"events", "predictions", "knowledge", "regime_assessments", "event_reviews", "skill_executions"}
         assert "market_observations" not in names  # ADR-009: 廃止
 
     def test_regime_assessments_has_snapshot_columns(self, db):
@@ -216,6 +216,53 @@ class TestRegime:
         assert regime["vix_value"] == 26.9
         # DuckDB returns NaN for NULL DOUBLE via fetchdf().to_dict()
         assert regime["vix3m_value"] is None or math.isnan(regime["vix3m_value"])
+
+
+class TestEvents:
+    def test_add_event_with_source(self, db):
+        """events.source列で登録経路を記録"""
+        ts = datetime(2026, 3, 28, 10, 0, tzinfo=JST)
+        eid = db.add_event(ts, "geopolitical", "Test event", source="scan-market")
+        row = db.conn.execute("SELECT source FROM events WHERE id = ?", [eid]).fetchone()
+        assert row[0] == "scan-market"
+
+    def test_add_event_source_defaults_to_manual(self, db):
+        """source未指定時はmanual"""
+        ts = datetime(2026, 3, 28, 10, 0, tzinfo=JST)
+        eid = db.add_event(ts, "fed", "Test event")
+        row = db.conn.execute("SELECT source FROM events WHERE id = ?", [eid]).fetchone()
+        assert row[0] == "manual"
+
+
+class TestSkillExecutions:
+    def test_record_skill_execution(self, db):
+        ts = datetime(2026, 3, 28, 23, 55, tzinfo=JST)
+        exec_id = db.record_skill_execution(
+            skill_name="scan-market",
+            executed_at=ts,
+            result_summary="6 events added",
+            metadata='{"latest_source_date": "2026-03-28T15:00:00+09:00"}',
+        )
+        assert exec_id >= 1
+
+    def test_get_last_skill_execution(self, db):
+        ts1 = datetime(2026, 3, 27, 10, 0, tzinfo=JST)
+        ts2 = datetime(2026, 3, 28, 10, 0, tzinfo=JST)
+        db.record_skill_execution("scan-market", ts1, "3 events added")
+        db.record_skill_execution("scan-market", ts2, "6 events added")
+        db.record_skill_execution("update-regime", ts2, "regime updated")
+
+        last = db.get_last_skill_execution("scan-market")
+        assert last is not None
+        assert last["result_summary"] == "6 events added"
+
+    def test_get_last_skill_execution_none(self, db):
+        last = db.get_last_skill_execution("scan-market")
+        assert last is None
+
+    def test_record_skill_execution_naive_datetime_raises(self, db):
+        with pytest.raises(ValueError, match="timezone-aware"):
+            db.record_skill_execution("scan-market", datetime(2026, 3, 28, 10, 0), "test")
 
 
 class TestEventReviews:

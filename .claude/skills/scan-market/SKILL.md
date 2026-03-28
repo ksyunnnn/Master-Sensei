@@ -26,7 +26,32 @@ from src.db import JST  # timezone(timedelta(hours=9))
 
 ## 手順
 
-### 1. 既存イベントの確認
+### 1. 前回実行の確認と調査対象期間の決定
+
+前回の`/scan-market`実行時刻を取得し、調査対象期間を決定する。
+
+```bash
+python -c "
+import duckdb
+from src.db import SenseiDB
+conn = duckdb.connect('data/sensei.duckdb')
+db = SenseiDB(conn)
+last = db.get_last_skill_execution('scan-market')
+if last:
+    print(f'前回実行: {last[\"executed_at\"]}')
+    print(f'結果: {last[\"result_summary\"]}')
+    if last.get('metadata'):
+        print(f'メタデータ: {last[\"metadata\"]}')
+else:
+    print('初回実行（前回記録なし）→ 直近7日間を対象')
+conn.close()
+"
+```
+
+- 前回記録あり → 前回の`executed_at`以降のニュースを調査
+- 前回記録なし → 直近7日間を調査
+
+### 2. 既存イベントの確認
 
 重複登録を防ぐため、直近のイベントを確認する。
 
@@ -44,7 +69,7 @@ conn.close()
 "
 ```
 
-### 2. 過去のlessonを確認
+### 3. 過去のlessonを確認
 
 impact判定の前に、過去のevent_reviewsで修正があったもの（lesson）を参照する。
 
@@ -72,9 +97,9 @@ conn.close()
 "
 ```
 
-### 3. WebSearchでニュース調査
+### 4. WebSearchでニュース調査
 
-以下の6カテゴリについて、直近7日間のニュースをWebSearchで調査する。
+以下の6カテゴリについて、手順1で決めた対象期間のニュースをWebSearchで調査する。
 
 1. **地政学リスク** — 戦争・制裁・紛争（Iran, Middle East等）
 2. **FRB・金融政策** — 利上げ/利下げ・インフレ・雇用
@@ -85,7 +110,7 @@ conn.close()
 
 各カテゴリで最低1回はWebSearchを実行する。
 
-### 4. イベント登録
+### 5. イベント登録
 
 調査結果から、対象シンボル（TQQQ/SOXL/TECL/SPXL等）の価格に影響しうるイベントを登録する。
 
@@ -110,6 +135,7 @@ db.add_event(
     impact_reasoning='なぜその影響度か（1文）',
     relevance='direct',       # direct(半導体直撃) / indirect(マクロ経由) / background(遠因)
     source_url='https://...',
+    source='scan-market',     # 登録経路を記録
 )
 print('Event added')
 conn.close()
@@ -118,14 +144,37 @@ conn.close()
 
 複数イベントがある場合は1つのスクリプト内で複数回 `db.add_event()` を呼ぶ。
 
-### 5. 調査報告
+### 6. 実行記録と調査報告
+
+イベント登録後、実行履歴をskill_executionsに記録する。
+
+```bash
+python -c "
+import json
+from datetime import datetime
+import duckdb
+from src.db import SenseiDB, JST
+conn = duckdb.connect('data/sensei.duckdb')
+db = SenseiDB(conn)
+db.record_skill_execution(
+    skill_name='scan-market',
+    executed_at=datetime.now(tz=JST),
+    result_summary='N events added',
+    metadata=json.dumps({
+        'latest_source_date': '検索結果の最新記事日時（ISO 8601）',
+        'categories_searched': ['geopolitical', 'fed', 'semiconductor', 'oil', 'tariff', 'market'],
+    }),
+)
+conn.close()
+"
+```
 
 以下のフォーマットで報告する。
 
 ```
 ## 調査報告
 - 調査実施: {現在時刻 JST}
-- 検索クエリ対象: 直近7日間
+- 調査対象: {前回実行時刻 JST} 〜 現在（初回の場合は「直近7日間」）
 - 取得できた最新情報: {検索結果で最も新しい記事の日時とソース名}
 - 登録イベント: {N}件
 - スキップ（重複/スコープ外）: {M}件
@@ -147,4 +196,6 @@ Sources:
 
 - SQLは直接書かず、SenseiDBのメソッドを使用する（ADR-008）
 - event_timestampは必ずJST timezone-awareで記録する
+- イベント登録時は `source='scan-market'` を必ず指定する
 - 「取得できた最新情報」は実際の検索結果の最新記事日時を正直に記載する（推測しない）
+- 実行完了後は必ず `record_skill_execution()` を呼んで履歴を記録する

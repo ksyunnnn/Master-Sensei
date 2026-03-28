@@ -1,11 +1,12 @@
 """Master Sensei DuckDBスキーマ定義・CRUD操作
 
 テーブル:
-- events: マクロイベント記録
+- events: マクロイベント記録（source列で登録経路を識別）
 - predictions: 予測記録（Brier score計測用）
 - knowledge: 知見DB（パターン・ルール蓄積）
 - regime_assessments: レジーム判定（入力値スナップショット含む、ADR-009）
 - event_reviews: イベント事後検証
+- skill_executions: スキル実行履歴（Airflow dag_runパターン）
 """
 from __future__ import annotations
 
@@ -42,6 +43,7 @@ class SenseiDB:
                 impact_reasoning VARCHAR,
                 relevance VARCHAR,
                 source_url VARCHAR,
+                source VARCHAR DEFAULT 'manual',
                 status VARCHAR DEFAULT 'unreviewed',
                 created_at TIMESTAMP DEFAULT current_timestamp
             )
@@ -115,6 +117,18 @@ class SenseiDB:
             )
         """)
 
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS skill_executions (
+                id INTEGER PRIMARY KEY,
+                skill_name VARCHAR NOT NULL,
+                executed_at TIMESTAMPTZ NOT NULL,
+                result_summary VARCHAR,
+                metadata VARCHAR,
+                created_at TIMESTAMP DEFAULT current_timestamp
+            )
+        """)
+        self.conn.execute("CREATE SEQUENCE IF NOT EXISTS skill_executions_id_seq START 1")
+
     # ── events ──
 
     def add_event(
@@ -127,6 +141,7 @@ class SenseiDB:
         impact_reasoning: str = None,
         relevance: str = None,
         source_url: str = None,
+        source: str = "manual",
     ) -> int:
         _require_aware(event_timestamp, "event_timestamp")
         existing = self.conn.execute(
@@ -138,9 +153,9 @@ class SenseiDB:
 
         event_id = self.conn.execute("SELECT nextval('events_id_seq')").fetchone()[0]
         self.conn.execute("""
-            INSERT INTO events (id, event_timestamp, category, summary, impact, impact_reasoning, relevance, source_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, [event_id, event_timestamp, category, summary, impact, impact_reasoning, relevance, source_url])
+            INSERT INTO events (id, event_timestamp, category, summary, impact, impact_reasoning, relevance, source_url, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [event_id, event_timestamp, category, summary, impact, impact_reasoning, relevance, source_url, source])
         return event_id
 
     def get_active_events(self) -> list[dict]:
@@ -345,6 +360,30 @@ class SenseiDB:
             VALUES (?, ?, ?, ?, ?, ?)
         """, [event_id, review_date, original_impact, revised_impact, actual_outcome, lesson])
         self.update_event_status(event_id, "reviewed")
+
+    # ── skill_executions ──
+
+    def record_skill_execution(
+        self,
+        skill_name: str,
+        executed_at: datetime,
+        result_summary: str = None,
+        metadata: str = None,
+    ) -> int:
+        _require_aware(executed_at, "executed_at")
+        exec_id = self.conn.execute("SELECT nextval('skill_executions_id_seq')").fetchone()[0]
+        self.conn.execute("""
+            INSERT INTO skill_executions (id, skill_name, executed_at, result_summary, metadata)
+            VALUES (?, ?, ?, ?, ?)
+        """, [exec_id, skill_name, executed_at, result_summary, metadata])
+        return exec_id
+
+    def get_last_skill_execution(self, skill_name: str) -> Optional[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM skill_executions WHERE skill_name = ? ORDER BY executed_at DESC LIMIT 1",
+            [skill_name],
+        ).fetchdf().to_dict("records")
+        return rows[0] if rows else None
 
     # ── self-evaluation ──
 
