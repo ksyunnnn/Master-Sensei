@@ -1,56 +1,80 @@
 # Condition
 
-Last updated: 2026-03-28
+Last updated: 2026-03-29
 
 ## Current Condition
 
 - Phase 3（運用サイクル確立）
 - Charter v0.1.0（習熟度 Lv.1 見習い）
-- 独立gitリポジトリ。ADR 8本、GDR 1本、87テスト全パス
-- データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ
-- sensei.duckdb: レジーム1件、予測1件（**解決済み、Brier 0.2025**）、知見6件（全件stale）、イベント1件、観測値3件
-- Skills: `/verify-knowledge`, `/update-regime`（ADR-008で導入）
+- 独立gitリポジトリ。ADR 9本、GDR 1本、89テスト全パス
+- データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
+- sensei.duckdb: レジーム2件、予測1件（解決済み、Brier 0.2025）、知見8件（7件stale）、イベント12件、skill_executions 1件
+- Skills: `/verify-knowledge`, `/update-regime`, `/scan-market`, `/review-events`
+- DB: events.source列追加（manual/scan-market識別）、skill_executionsテーブル新設
 
 ## Next Session Priority
 
-1. **レジーム再判定** — データが3/26で2日古い。VIX 29.05, VIX/VIX3M 1.07。`/update-regime`で更新
-2. **stale知見6件の検証** — 全件180日以上未検証。`/verify-knowledge`で対応
-3. **GDR-001 Phase 1実装** — ADR-009作成→`source_prediction_id`, `root_cause_category`カラム追加、Brier 3成分分解関数
-4. **予測#1ポストモーテムの知見化** — 確信度過信の分析をknowledge DBに記録（Kolbサイクル完遂の第一歩）
+1. **初回フルスキャン（/scan-market 拡大版）** — 2025年1月〜現在の15ヶ月分を対象に主要イベントを網羅登録。ADR-003基準でフィルタし、レジーム関連性では絞らない（確証バイアス排除）。四半期×6カテゴリで検索し、誤情報排除のため複数ソースで検証する。完了後、トランプ政策パターン・季節性等を知見DBに記録
+2. **stale知見7件の検証** — `/verify-knowledge`で対応
+3. **GDR-001 Phase 1実装** — source_prediction_id, root_cause_category, Brier 3成分分解
+4. **予測#1ポストモーテムの知見化** — 確信度過信の分析をknowledge DBに記録
+
+## 今セッションの成果
+
+### ADR-009: データ保存先の責務分離の徹底
+- 生データの保存先をParquetに一本化（ADR-001原則の回復）
+- regime_assessmentsに入力値スナップショット6カラム追加（Decision Tracking原則）
+- Parquetにsource/updated_at列追加（行レベルのソース追跡）
+- market_observations廃止（ADR-005 supersede）
+- update_data.pyをProviderChain方式に切り替え
+- assess_regime.pyのマージ処理を削除・簡素化
+- 89テスト全パス、レビュー指摘3件対応済み
+
+### スキル追加
+- `/scan-market`: WebSearchで6カテゴリのニュース調査 → イベント登録
+- `/review-events`: イベントのimpact事後検証 → lesson記録
+
+### 実運用
+- データ全更新実施（ProviderChain初回運用成功）
+- レジーム再判定: risk_off（スコア-1.43）、スナップショット付きで記録
+- `/scan-market`初回実行: 6件のイベントを登録
+
+## マクロ環境メモ（3/28時点）
+
+- VIX 31.05（+13.16%）、VIX/VIX3M 1.061（バックワーデーション深化）
+- イラン: 米停戦15項目案を拒否、独自5条件提示。トランプがエネルギーインフラ攻撃期限を4/6に延長
+- Brent $112.57（+4.22%）、2022年7月以来の高値。GS推定リスクプレミアム$14-18
+- FRB: 3.50-3.75%据え置き。CME先物で年内利上げ確率が初めて52%突破
+- SOX -2.9%、NVIDIA -4%（3ヶ月安値）。SOXL $46.61（2日で-21%）
+- S&P 500 -1.67%、Nasdaq -2.15%。Nasdaq調整局面入り
 
 ## フィードバックループの進捗
 
 GDR-001で成長計測体系を設計。4領域12手法を調査し、3段階ロードマップを策定。
-- Phase 1: `source_prediction_id`（Kolbサイクル）+ `root_cause_category`（失敗パターン）+ Brier 3成分分解 → **次セッションで実装**
+- Phase 1: source_prediction_id + root_cause_category + Brier 3成分分解 → 次セッションで実装
 - Phase 2: EPA + SRS + Error Budget Burn Rate → Lv.2到達時
 - Phase 3: Calibration Curve + カテゴリ別分析 → Lv.3到達時
 
-ADR-008でHook/Skill/CLAUDE.mdの責務分担を確立。トリガールールが機能する設計に改善済み。
-
-## マクロ環境メモ（3/27時点）
-
-- VIX 29.05（上昇加速）、VIX/VIX3M 1.07（バックワーデーション深化）
-- イラン紛争: ホルムズ海峡封鎖継続、攻撃期限4/6。Brent $108
-- 関税: IEEPA違憲→Section 122(10%)/301(80カ国調査)/232(自動車25%)で代替
-- FRB: 3.50-3.75%据え置き、原油高で利下げ不能
-- Great Rotation: テック→エネルギー・素材への大規模資金シフト
-- SOXX -1.86σ、SOXL $49（月間-22%）
+ADR-008でHook/Skill/CLAUDE.mdの責務分担を確立。ADR-009でデータ保存先の原則を徹底。
 
 ## Obstacles
 
-- 予測蓄積が1件のみ（Brier計測開始したが統計的意味はN≧30から）
-- stale知見6件が未検証のまま
-- レジームデータが2日古い
+- 予測蓄積が1件のみ（Brier計測開始したが統計的意味はN>=30から）
+- stale知見7件が未検証のまま（K-008は新規追加で検証済み）
+- scan-marketの調査期間管理が未完成（source列/scan_history設計中）
 
 ## Completed
 
 - [x] Phase 1-2: データ基盤 + レジーム判定
-- [x] ADR-001〜008
+- [x] ADR-001〜009
 - [x] GDR-001: 成長計測体系の設計（4領域12手法調査）
 - [x] SessionStartフック: SenseiDB化 + [ACTION]フォーマット（ADR-008）
 - [x] Stop Hook: command型に簡素化
-- [x] Skills導入: `/verify-knowledge`, `/update-regime`
+- [x] Skills導入: `/verify-knowledge`, `/update-regime`, `/scan-market`, `/review-events`
 - [x] CLAUDE.md: トリガールール再設計、SQL所有権ルール追加
 - [x] 予測#1解決: VIX<25 → False、Brier 0.2025（初計測）
-- [x] yfinanceでVIX即時取得確認、ProviderChain実装
-- [x] 銘柄追加（SQQQ/TNA/TZA/TECS）+ データ取得完了
+- [x] ProviderChain統合: update_data.pyでyfinance→FRED自動フォールバック
+- [x] ADR-009実装: スナップショット・source列・market_observations廃止・レビュー対応
+- [x] データ全更新 + レジーム再判定（3/28、risk_off）
+- [x] /scan-market初回実行: 6件イベント登録
+- [x] 知見K-008記録: FREDデータ改訂の検出方法
