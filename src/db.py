@@ -63,7 +63,8 @@ class SenseiDB:
                 outcome_date DATE,
                 outcome_notes VARCHAR,
                 brier_score DOUBLE,
-                category VARCHAR DEFAULT 'market'
+                category VARCHAR DEFAULT 'market',
+                root_cause_category VARCHAR
             )
         """)
         self.conn.execute("CREATE SEQUENCE IF NOT EXISTS predictions_id_seq START 1")
@@ -79,6 +80,7 @@ class SenseiDB:
                 discovered_date DATE NOT NULL,
                 last_verified_date DATE,
                 invalidation_reason VARCHAR,
+                source_prediction_id INTEGER,
                 created_at TIMESTAMP DEFAULT current_timestamp
             )
         """)
@@ -196,6 +198,7 @@ class SenseiDB:
         outcome: bool,
         outcome_date: date,
         outcome_notes: str = None,
+        root_cause_category: str = None,
     ):
         row = self.conn.execute("SELECT confidence FROM predictions WHERE id = ?", [pred_id]).fetchone()
         if not row:
@@ -205,9 +208,9 @@ class SenseiDB:
 
         self.conn.execute("""
             UPDATE predictions
-            SET outcome = ?, outcome_date = ?, outcome_notes = ?, brier_score = ?
+            SET outcome = ?, outcome_date = ?, outcome_notes = ?, brier_score = ?, root_cause_category = ?
             WHERE id = ?
-        """, [outcome, outcome_date, outcome_notes, brier, pred_id])
+        """, [outcome, outcome_date, outcome_notes, brier, root_cause_category, pred_id])
 
     def get_pending_predictions(self) -> list[dict]:
         return self.conn.execute(
@@ -245,6 +248,94 @@ class SenseiDB:
             ORDER BY bucket
         """).fetchdf().to_dict("records")
 
+    def get_brier_decomposition(self) -> dict:
+        """Murphy (1973) Brier Score 3成分分解
+
+        Brier = Reliability - Resolution + Uncertainty
+        - Reliability: 較正誤差（小さいほど良い）
+        - Resolution: 情報弁別力（大きいほど良い）
+        - Uncertainty: 基準分散（データ固有、制御不能）
+        """
+        rows = self.conn.execute("""
+            SELECT confidence, outcome FROM predictions WHERE outcome IS NOT NULL
+        """).fetchall()
+        if not rows:
+            return {"brier_score": None, "reliability": None, "resolution": None, "uncertainty": None, "n": 0}
+
+        n = len(rows)
+        outcomes = [1.0 if r[1] else 0.0 for r in rows]
+        forecasts = [r[0] for r in rows]
+        base_rate = sum(outcomes) / n
+
+        # Uncertainty: base_rate * (1 - base_rate)
+        uncertainty = base_rate * (1 - base_rate)
+
+        # Bin forecasts into 10 buckets (0.0-0.1, ..., 0.9-1.0)
+        bins: dict[int, list[tuple[float, float]]] = {}
+        for f, o in zip(forecasts, outcomes):
+            bucket = min(int(f * 10), 9)
+            bins.setdefault(bucket, []).append((f, o))
+
+        reliability = 0.0
+        resolution = 0.0
+        for bucket, items in bins.items():
+            nk = len(items)
+            avg_forecast = sum(f for f, _ in items) / nk
+            avg_outcome = sum(o for _, o in items) / nk
+            reliability += nk * (avg_forecast - avg_outcome) ** 2
+            resolution += nk * (avg_outcome - base_rate) ** 2
+
+        reliability /= n
+        resolution /= n
+
+        brier = sum((f - o) ** 2 for f, o in zip(forecasts, outcomes)) / n
+
+        return {
+            "brier_score": brier,
+            "reliability": reliability,
+            "resolution": resolution,
+            "uncertainty": uncertainty,
+            "n": n,
+        }
+
+    def get_baseline_score(self) -> dict:
+        """50%無情報ベースラインとの比較（Metaculus方式）
+
+        skill_score > 0: ベースラインより良い
+        skill_score < 0: コイン投げ以下
+        """
+        rows = self.conn.execute("""
+            SELECT confidence, outcome FROM predictions WHERE outcome IS NOT NULL
+        """).fetchall()
+        if not rows:
+            return {"brier_score": None, "baseline_brier": None, "skill_score": None, "n": 0}
+
+        n = len(rows)
+        brier = sum((r[0] - (1.0 if r[1] else 0.0)) ** 2 for r in rows) / n
+        baseline_brier = 0.25  # 常に50%と予測した場合のBrier score
+
+        return {
+            "brier_score": brier,
+            "baseline_brier": baseline_brier,
+            "skill_score": baseline_brier - brier,  # 正なら良い
+            "n": n,
+        }
+
+    def get_kolb_cycle_rate(self) -> dict:
+        """Kolbサイクル完遂率: 解決済み予測のうち知見に連鎖したものの割合"""
+        resolved = self.conn.execute(
+            "SELECT COUNT(*) FROM predictions WHERE outcome IS NOT NULL"
+        ).fetchone()[0]
+        with_knowledge = self.conn.execute(
+            "SELECT COUNT(DISTINCT source_prediction_id) FROM knowledge WHERE source_prediction_id IS NOT NULL"
+        ).fetchone()[0]
+
+        return {
+            "resolved": resolved,
+            "with_knowledge": with_knowledge,
+            "completion_rate": with_knowledge / resolved if resolved > 0 else 0.0,
+        }
+
     # ── knowledge ──
 
     def add_knowledge(
@@ -256,6 +347,7 @@ class SenseiDB:
         *,
         confidence: str = "low",
         discovered_date: date = None,
+        source_prediction_id: int = None,
     ) -> str:
         if discovered_date is None:
             discovered_date = date.today()
@@ -265,15 +357,16 @@ class SenseiDB:
         ).fetchone()
         if existing:
             self.conn.execute("""
-                UPDATE knowledge SET content = ?, evidence = ?, confidence = ?, last_verified_date = ?
+                UPDATE knowledge SET content = ?, evidence = ?, confidence = ?,
+                    last_verified_date = ?, source_prediction_id = COALESCE(?, source_prediction_id)
                 WHERE id = ?
-            """, [content, evidence, confidence, date.today(), knowledge_id])
+            """, [content, evidence, confidence, date.today(), source_prediction_id, knowledge_id])
             return knowledge_id
 
         self.conn.execute("""
-            INSERT INTO knowledge (id, category, content, evidence, confidence, discovered_date)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, [knowledge_id, category, content, evidence, confidence, discovered_date])
+            INSERT INTO knowledge (id, category, content, evidence, confidence, discovered_date, source_prediction_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, [knowledge_id, category, content, evidence, confidence, discovered_date, source_prediction_id])
         return knowledge_id
 
     def update_knowledge_status(self, knowledge_id: str, status: str, reason: str = None):

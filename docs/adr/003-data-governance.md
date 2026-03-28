@@ -76,7 +76,10 @@ Master SenseiのDuckDB（sensei.duckdb）に何を書き込み、何を書き込
 | データ | 理由 | 代替 |
 |--------|------|------|
 | Brier score（集計値） | predictions テーブルから再計算可能 | `get_brier_score()` で都度算出 |
-| calibration curve | 同上 | `get_calibration_data()` で都度算出 |
+| Brier 3成分分解 | 同上 | `get_brier_decomposition()` で都度算出（ADR-011） |
+| Baseline Score | 同上 | `get_baseline_score()` で都度算出（ADR-011） |
+| Kolbサイクル完遂率 | predictions + knowledge から再計算可能 | `get_kolb_cycle_rate()` で都度算出（ADR-011） |
+| calibration curve | predictions テーブルから再計算可能 | `get_calibration_data()` で都度算出 |
 | API応答の生キャッシュ | Parquetに保存済み | cache_manager経由で参照 |
 | セッション中の探索的分析 | 一時的。結論だけ knowledge に書く | 会話コンテキストで保持 |
 | サマリーレポート | 入力データから再生成可能 | 都度生成 |
@@ -138,6 +141,9 @@ Master SenseiのDuckDB（sensei.duckdb）に何を書き込み、何を書き込
 | 監視ポイント | 現状 | トリガー |
 |-------------|------|---------|
 | regime_assessments のカラム数 | 16（date + 6 regime + 6 input values + overall + reasoning + created_at）（ADR-009） | カラム数が20を超えたら (date, indicator, value) 形式への分解を検討 |
+| knowledge のカラム数 | 12（+source_prediction_id、ADR-011） | 20超で分解検討 |
+| knowledge.source_prediction_id NULL率 | 86%（14件中12件NULL） | 予測起因でない知見は本質的にNULL。50%未満が3ヶ月続いたら子テーブル分離検討（ADR-011） |
+| predictions のカラム数 | 13（+root_cause_category、ADR-011） | 20超で分解検討 |
 | knowledge.confidence がVARCHAR | 'low'/'medium'/'high' の3値 | 分析クエリで数値化が頻繁に必要になったらDOUBLEに変更 |
 | predictions.brier_score の冗長性 | confidence + outcome から再計算可能 | 単一ユーザーシステムでは許容。パフォーマンス問題が出たら削除 |
 

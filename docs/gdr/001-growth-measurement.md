@@ -1,6 +1,6 @@
 # GDR-001: 成長計測体系の設計
 
-Status: proposed
+Status: accepted (Phase 1 implemented)
 Date: 2026-03-27
 
 ## Context
@@ -143,7 +143,7 @@ Charter改訂はPhase 1実装後、十分なデータ（N≧10）が蓄積され
 
 ## Consequences
 
-- Phase 1実装のADRを作成（ADR-009）
+- Phase 1実装のADRを作成（ADR-011）
 - `knowledge`テーブルに`source_prediction_id`カラム追加
 - `predictions`テーブルに`root_cause_category`カラム追加
 - db.pyにBrier 3成分分解・Baseline Score算出関数を追加

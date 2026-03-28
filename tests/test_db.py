@@ -274,6 +274,100 @@ class TestEventReviews:
         assert event[0] == "reviewed"
 
 
+class TestGDR001Phase1:
+    """GDR-001 Phase 1: source_prediction_id, root_cause_category, Brier 3成分分解"""
+
+    def test_knowledge_has_source_prediction_id(self, db):
+        """knowledgeテーブルにsource_prediction_idカラムが存在する"""
+        cols = db.conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'knowledge' AND table_schema = 'main'"
+        ).fetchall()
+        assert "source_prediction_id" in {c[0] for c in cols}
+
+    def test_predictions_has_root_cause_category(self, db):
+        """predictionsテーブルにroot_cause_categoryカラムが存在する"""
+        cols = db.conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'predictions' AND table_schema = 'main'"
+        ).fetchall()
+        assert "root_cause_category" in {c[0] for c in cols}
+
+    def test_add_knowledge_with_source_prediction(self, db):
+        """source_prediction_idを指定して知見を追加できる"""
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        pid = db.add_prediction(ts, "VIX<25", date(2026, 3, 28), 0.45, "test")
+        db.resolve_prediction(pid, False, date(2026, 3, 28))
+
+        kid = db.add_knowledge("K-TEST", "meta", "lesson", "evidence",
+                               source_prediction_id=pid)
+        row = db.conn.execute(
+            "SELECT source_prediction_id FROM knowledge WHERE id = ?", [kid]
+        ).fetchone()
+        assert row[0] == pid
+
+    def test_resolve_with_root_cause(self, db):
+        """予測解決時にroot_cause_categoryを記録できる"""
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        pid = db.add_prediction(ts, "VIX<25", date(2026, 3, 28), 0.45, "test")
+        db.resolve_prediction(pid, False, date(2026, 3, 28),
+                              root_cause_category="overconfidence")
+        row = db.conn.execute(
+            "SELECT root_cause_category FROM predictions WHERE id = ?", [pid]
+        ).fetchone()
+        assert row[0] == "overconfidence"
+
+    def test_brier_decomposition_single(self, db):
+        """Brier 3成分分解: 1件でも算出可能（退化ケース）"""
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        pid = db.add_prediction(ts, "P1", date(2026, 3, 28), 0.7, "r")
+        db.resolve_prediction(pid, True, date(2026, 3, 28))
+        result = db.get_brier_decomposition()
+        assert "reliability" in result
+        assert "resolution" in result
+        assert "uncertainty" in result
+        assert "brier_score" in result
+
+    def test_brier_decomposition_multiple(self, db):
+        """Brier 3成分分解: Brier = Reliability - Resolution + Uncertainty"""
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        data = [(0.9, True), (0.8, True), (0.7, True), (0.6, False),
+                (0.4, True), (0.3, False), (0.2, False), (0.1, False)]
+        for conf, outcome in data:
+            pid = db.add_prediction(ts, f"P-{conf}", date(2026, 3, 28), conf, "r")
+            db.resolve_prediction(pid, outcome, date(2026, 3, 28))
+
+        result = db.get_brier_decomposition()
+        # Brier = Reliability - Resolution + Uncertainty (Murphy 1973)
+        expected_brier = result["reliability"] - result["resolution"] + result["uncertainty"]
+        assert abs(result["brier_score"] - expected_brier) < 1e-10
+
+    def test_baseline_score(self, db):
+        """Baseline Score: 50%ベースラインとの比較"""
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        # 完璧な予測: Brier=0 < Baseline=0.25
+        pid = db.add_prediction(ts, "P1", date(2026, 3, 28), 1.0, "r")
+        db.resolve_prediction(pid, True, date(2026, 3, 28))
+        result = db.get_baseline_score()
+        assert result["baseline_brier"] == 0.25
+        assert result["skill_score"] > 0  # 50%より良い
+
+    def test_kolb_cycle_rate(self, db):
+        """Kolbサイクル完遂率: 予測→解決→知見の連鎖"""
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        pid1 = db.add_prediction(ts, "P1", date(2026, 3, 28), 0.7, "r")
+        pid2 = db.add_prediction(ts, "P2", date(2026, 3, 28), 0.6, "r")
+        db.resolve_prediction(pid1, True, date(2026, 3, 28))
+        db.resolve_prediction(pid2, False, date(2026, 3, 28))
+        # pid1にだけ知見を紐付け
+        db.add_knowledge("K-T1", "meta", "lesson", "ev", source_prediction_id=pid1)
+
+        rate = db.get_kolb_cycle_rate()
+        assert rate["resolved"] == 2
+        assert rate["with_knowledge"] == 1
+        assert rate["completion_rate"] == 0.5
+
+
 class TestBiasCheck:
     def test_bias_check_no_data(self, db):
         result = db.get_bias_check()
