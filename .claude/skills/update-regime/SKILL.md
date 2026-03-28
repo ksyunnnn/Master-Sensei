@@ -1,46 +1,67 @@
 ---
 name: update-regime
-description: yfinanceで最新のVIX/VIX3M/Brent/ドル指数を取得し、レジーム再判定を行ってDBに記録する
+description: Parquetから最新マクロデータを読み取り、レジーム再判定を行ってDBに入力値スナップショット付きで記録する
 ---
 
 レジーム更新ワークフローを実行してください。
 
 ## 手順
 
-1. yfinanceで最新値を取得する:
-   ```python
-   import yfinance as yf
-   tickers = {"^VIX": "VIX", "^VIX3M": "VIX3M", "BZ=F": "Brent", "DX-Y.NYB": "DXY"}
-   for symbol, name in tickers.items():
-       data = yf.Ticker(symbol).history(period="1d")
-       # 最新のClose値を表示
+1. まず `update_data.py --macro-only` を実行��てParquetを最新化する:
+   ```bash
+   python update_data.py --macro-only
    ```
 
-2. FRED系列の最新値をParquetから取得する（HYスプレッド、イールドカーブ等）:
+2. Parquetから最新値を取得する:
    ```python
-   import duckdb
-   conn = duckdb.connect("data/sensei.duckdb")
-   # read_parquet() でマクロParquetから最新値を取得
+   from src.cache_manager import CacheManager
+   from pathlib import Path
+   cache = CacheManager(Path("data/parquet"))
+
+   series_names = ["VIX", "VIX3M", "HY_SPREAD", "YIELD_CURVE", "BRENT", "USD_INDEX"]
+   values = {}
+   for name in series_names:
+       df = cache.load_macro(name)
+       if not df.empty:
+           values[name] = float(df["value"].iloc[-1])
    ```
 
-3. `src/assess_regime.py` のレジーム判定ロジックを使って各指標を判定する。
+3. `src/regime.py` のレジーム判定ロジックで各指標を判定する:
+   ```python
+   from src.regime import assess_regime
+   result = assess_regime(
+       vix=values.get("VIX"),
+       vix3m=values.get("VIX3M"),
+       hy_spread=values.get("HY_SPREAD"),
+       yield_curve=values.get("YIELD_CURVE"),
+       oil=values.get("BRENT"),
+       usd=values.get("USD_INDEX"),
+   )
+   ```
 
-4. 結果をユーザーに提示し、確認を得る。
+4. 結果をユーザーに��示し、確認を得る。
 
-5. 確認後、`SenseiDB` を使って記録する:
+5. 確認後、`SenseiDB` を使って入力値スナップショット付きで記録する（ADR-009）:
    ```python
    from src.db import SenseiDB
    db = SenseiDB(conn)
-   db.save_regime(date.today(), vix_regime=..., overall=..., reasoning=...)
-   ```
-
-6. 取得した最新値を `market_observations` にも記録する（source明記必須）:
-   ```python
-   db.add_observation(date.today(), "VIX", value, "yfinance", observed_at)
+   db.save_regime(
+       date.today(),
+       vix_regime=...,
+       overall=...,
+       reasoning=...,
+       vix_value=values.get("VIX"),
+       vix3m_value=values.get("VIX3M"),
+       hy_spread_value=values.get("HY_SPREAD"),
+       yield_curve_value=values.get("YIELD_CURVE"),
+       oil_value=values.get("BRENT"),
+       usd_value=values.get("USD_INDEX"),
+   )
    ```
 
 ## 注意事項
 
-- yfinanceのデータは非公式。sourceは必ず `"yfinance"` と記録する（ADR-006）
 - 前日と変化がない場合はregime_assessmentsへの記録は不要（ADR-003）
 - SQLは直接書かず、SenseiDBのメソッドを使用する（ADR-008）
+- 入力値スナップショットは必須。省略しない（ADR-009）
+- Parquetデータが古い場合は `update_data.py` の実行を先に促す

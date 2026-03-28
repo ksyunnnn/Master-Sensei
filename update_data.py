@@ -9,8 +9,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
+import os
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -20,7 +20,8 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
-from src.fred_client import FredClient, SERIES_CONFIG
+from src.fred_client import FredClient
+from src.providers import ProviderChain, FredAdapter, YFinanceAdapter, NasdaqAdapter
 from src.tiingo_client import TiingoFetcher, TiingoConfig, TRADING_SYMBOLS, REFERENCE_SYMBOLS
 from src.cache_manager import CacheManager
 
@@ -31,25 +32,44 @@ DATA_DIR = Path(__file__).parent / "data" / "parquet"
 DAILY_LOOKBACK_YEARS = 5
 
 
-def update_macro(cache: CacheManager):
-    """FRED 9シリーズの差分取得
+def _build_provider_chain() -> ProviderChain:
+    """ProviderChainを構築する（ADR-006, ADR-009）
 
-    FREDは日次更新。end_dateから差分取得。
-    同日中に複数回実行しても、end_date以降の新データがなければスキップ。
+    順序: yfinance（速い、VIX/VIX3M/Brent）→ FRED（全9シリーズ、公式）
+    NasdaqはAPIキーがあれば中間に挿入。
     """
-    fred = FredClient.from_env()
+    providers = [YFinanceAdapter()]
+
+    nasdaq_key = os.environ.get("NASDAQ_API_KEY")
+    if nasdaq_key:
+        providers.append(NasdaqAdapter(nasdaq_key))
+
+    providers.append(FredAdapter(FredClient.from_env()))
+    return ProviderChain(providers)
+
+
+def update_macro(cache: CacheManager):
+    """マクロ9シリーズの差分取得（ADR-009: ProviderChain経由、source列付き）
+
+    ProviderChainがyfinance→FREDの順に試行し、最初に成功したソースを使う。
+    取得した値はsource列付きでParquetに保存する。
+    """
+    chain = _build_provider_chain()
     today = date.today()
 
-    for name, series_id in SERIES_CONFIG.items():
+    for name in sorted(chain.available_series()):
         meta = cache.get_macro_metadata(name)
         if meta:
-            # end_dateの翌日から取得（同日中に再実行してもAPI側で新データがなければ空）
             start = meta.end_date
         else:
             start = today - timedelta(days=365)
 
-        logger.info(f"{name} ({series_id}): fetching {start} → {today}")
-        records = fred.fetch_series(series_id, start_date=start, end_date=today)
+        logger.info(f"{name}: fetching {start} → {today}")
+        try:
+            records, source = chain.fetch(name, start, today)
+        except RuntimeError as e:
+            logger.warning(f"{name}: all providers failed: {e}")
+            continue
 
         if not records:
             logger.info(f"{name}: no new data")
@@ -58,8 +78,8 @@ def update_macro(cache: CacheManager):
         df = pd.DataFrame(records)
         df["date"] = pd.to_datetime(df["date"])
         df = df.set_index("date")
-        cache.save_macro(name, df)
-        logger.info(f"{name}: saved {len(df)} new records")
+        cache.save_macro(name, df, source=source)
+        logger.info(f"{name}: saved {len(df)} records from {source}")
 
 
 def update_daily(cache: CacheManager):
@@ -87,7 +107,7 @@ def update_daily(cache: CacheManager):
         df = fetcher.fetch(symbol, fetch_start, today)
 
         if not df.empty:
-            cache.save_daily(symbol, df)
+            cache.save_daily(symbol, df, source="tiingo")
             logger.info(f"{symbol}: saved {len(df)} daily bars")
 
 
@@ -110,7 +130,7 @@ def update_intraday(cache: CacheManager):
         df = fetcher.fetch_intraday(symbol, start_date=start, end_date=today)
 
         if not df.empty:
-            cache.save_intraday(symbol, df)
+            cache.save_intraday(symbol, df, source="tiingo")
             logger.info(f"{symbol}: saved {len(df)} intraday bars")
 
 
