@@ -4,9 +4,8 @@
 - events: マクロイベント記録
 - predictions: 予測記録（Brier score計測用）
 - knowledge: 知見DB（パターン・ルール蓄積）
-- regime_assessments: レジーム判定
+- regime_assessments: レジーム判定（入力値スナップショット含む、ADR-009）
 - event_reviews: イベント事後検証
-- market_observations: 手動マクロデータ投入（ADR-005）
 """
 from __future__ import annotations
 
@@ -93,19 +92,13 @@ class SenseiDB:
                 dollar_regime VARCHAR,
                 overall VARCHAR,
                 reasoning VARCHAR,
+                vix_value DOUBLE,
+                vix3m_value DOUBLE,
+                hy_spread_value DOUBLE,
+                yield_curve_value DOUBLE,
+                oil_value DOUBLE,
+                usd_value DOUBLE,
                 created_at TIMESTAMP DEFAULT current_timestamp
-            )
-        """)
-
-        self.conn.execute("""
-            CREATE TABLE IF NOT EXISTS market_observations (
-                date DATE NOT NULL,
-                series VARCHAR NOT NULL,
-                value DOUBLE NOT NULL,
-                source VARCHAR NOT NULL,
-                observed_at TIMESTAMPTZ NOT NULL,
-                status VARCHAR DEFAULT 'unverified',
-                PRIMARY KEY (date, series, source)
             )
         """)
 
@@ -237,56 +230,6 @@ class SenseiDB:
             ORDER BY bucket
         """).fetchdf().to_dict("records")
 
-    # ── market_observations ──
-
-    def add_observation(
-        self,
-        dt: date,
-        series: str,
-        value: float,
-        source: str,
-        observed_at: datetime,
-    ):
-        """手動マクロデータ投入（ADR-005）
-
-        ADR-003 Write基準: ソース明記が必須。
-        同じ(date, series, source)のデータはupsert。
-        """
-        _require_aware(observed_at, "observed_at")
-        self.conn.execute(
-            "DELETE FROM market_observations WHERE date = ? AND series = ? AND source = ?",
-            [dt, series, source],
-        )
-        self.conn.execute("""
-            INSERT INTO market_observations (date, series, value, source, observed_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, [dt, series, value, source, observed_at])
-
-    def get_latest_observations(self) -> list[dict]:
-        """各シリーズの最新の観測値を取得（ソース問わず最新日のもの）"""
-        return self.conn.execute("""
-            SELECT o.date, o.series, o.value, o.source, o.status
-            FROM market_observations o
-            INNER JOIN (
-                SELECT series, MAX(date) AS max_date
-                FROM market_observations
-                GROUP BY series
-            ) latest ON o.series = latest.series AND o.date = latest.max_date
-            ORDER BY o.series
-        """).fetchdf().to_dict("records")
-
-    def get_observations_for_date(self, dt: date) -> list[dict]:
-        return self.conn.execute(
-            "SELECT * FROM market_observations WHERE date = ? ORDER BY series",
-            [dt],
-        ).fetchdf().to_dict("records")
-
-    def verify_observation(self, dt: date, series: str, source: str):
-        self.conn.execute(
-            "UPDATE market_observations SET status = 'verified' WHERE date = ? AND series = ? AND source = ?",
-            [dt, series, source],
-        )
-
     # ── knowledge ──
 
     def add_knowledge(
@@ -358,15 +301,23 @@ class SenseiDB:
         dollar_regime: str = None,
         overall: str = None,
         reasoning: str = None,
+        vix_value: float = None,
+        vix3m_value: float = None,
+        hy_spread_value: float = None,
+        yield_curve_value: float = None,
+        oil_value: float = None,
+        usd_value: float = None,
     ):
         self.conn.execute("DELETE FROM regime_assessments WHERE date = ?", [dt])
         self.conn.execute("""
             INSERT INTO regime_assessments
                 (date, vix_regime, vix_term_structure, credit_regime, yield_curve_regime,
-                 oil_regime, dollar_regime, overall, reasoning)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 oil_regime, dollar_regime, overall, reasoning,
+                 vix_value, vix3m_value, hy_spread_value, yield_curve_value, oil_value, usd_value)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, [dt, vix_regime, vix_term_structure, credit_regime, yield_curve_regime,
-              oil_regime, dollar_regime, overall, reasoning])
+              oil_regime, dollar_regime, overall, reasoning,
+              vix_value, vix3m_value, hy_spread_value, yield_curve_value, oil_value, usd_value])
 
     def get_latest_regime(self) -> Optional[dict]:
         rows = self.conn.execute(

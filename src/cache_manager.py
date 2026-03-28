@@ -86,9 +86,15 @@ class CacheManager:
 
     # ── 共通: Parquet読み書き ──
 
-    def _save_parquet(self, path: Path, df: pd.DataFrame, symbol: str, metadata_dict: dict, metadata_file: str):
+    def _save_parquet(self, path: Path, df: pd.DataFrame, symbol: str, metadata_dict: dict, metadata_file: str, source: str = None):
         if df.empty:
             return
+
+        # ADR-009: source/updated_at列を付与
+        if source is not None:
+            df = df.copy()
+            df["source"] = source
+            df["updated_at"] = datetime.now()
 
         if path.exists():
             bak = path.with_suffix(".parquet.bak")
@@ -130,9 +136,9 @@ class CacheManager:
 
     # ── 日足 ──
 
-    def save_daily(self, symbol: str, df: pd.DataFrame):
+    def save_daily(self, symbol: str, df: pd.DataFrame, source: str = None):
         path = self.daily_dir / f"{symbol}.parquet"
-        self._save_parquet(path, df, symbol, self._metadata, "metadata.json")
+        self._save_parquet(path, df, symbol, self._metadata, "metadata.json", source=source)
 
     def load_daily(self, symbol: str, start_date: date = None, end_date: date = None) -> pd.DataFrame:
         return self._load_parquet(self.daily_dir / f"{symbol}.parquet", start_date, end_date)
@@ -142,9 +148,9 @@ class CacheManager:
 
     # ── 5分足 ──
 
-    def save_intraday(self, symbol: str, df: pd.DataFrame):
+    def save_intraday(self, symbol: str, df: pd.DataFrame, source: str = None):
         path = self.intraday_dir / f"{symbol}_5min.parquet"
-        self._save_parquet(path, df, symbol, self._metadata_intraday, "metadata_intraday.json")
+        self._save_parquet(path, df, symbol, self._metadata_intraday, "metadata_intraday.json", source=source)
 
     def load_intraday(self, symbol: str, start_date: date = None, end_date: date = None) -> pd.DataFrame:
         path = self.intraday_dir / f"{symbol}_5min.parquet"
@@ -165,9 +171,9 @@ class CacheManager:
 
     # ── マクロ指標 ──
 
-    def save_macro(self, series_name: str, df: pd.DataFrame):
+    def save_macro(self, series_name: str, df: pd.DataFrame, source: str = None):
         path = self.macro_dir / f"{series_name}.parquet"
-        self._save_parquet(path, df, series_name, self._metadata_macro, "metadata_macro.json")
+        self._save_parquet(path, df, series_name, self._metadata_macro, "metadata_macro.json", source=source)
 
     def load_macro(self, series_name: str) -> pd.DataFrame:
         return self._load_parquet(self.macro_dir / f"{series_name}.parquet")
