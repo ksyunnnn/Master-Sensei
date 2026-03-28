@@ -95,3 +95,4 @@ data/
 - DuckDBテーブルのスキーマはsrc/db.pyで管理（マイグレーション対応）
 - 横断クエリ（価格×レジーム等）はDuckDBのVIEW経由で実現
 - 見直しトリガー: Parquetファイルが100MB超、またはクエリ応答が1秒超になった場合
+- ADR-009により、Parquetにsource/updated_at列を追加。生データの保存先をParquetに一本化

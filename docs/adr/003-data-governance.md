@@ -67,7 +67,7 @@ Master SenseiのDuckDB（sensei.duckdb）に何を書き込み、何を書き込
 
 | 条件 | Write? | 理由 |
 |------|--------|------|
-| マクロデータ更新後のレジーム判定 | Yes | 日次で記録。判断時点のスナップショット |
+| マクロデータ更新後のレジーム判定 | Yes | 日次で記録。入力値スナップショット（6指標の生値）必須（ADR-009） |
 | データ未更新で前日と同じ | **No** | 冗長。前日の記録を参照すればよい |
 | 判定ロジック変更後の再判定 | Yes（新レコード） | 旧判定は上書きしない（Decision Tracking） |
 
@@ -137,7 +137,7 @@ Master SenseiのDuckDB（sensei.duckdb）に何を書き込み、何を書き込
 
 | 監視ポイント | 現状 | トリガー |
 |-------------|------|---------|
-| regime_assessments のカラム数 | 9（date + 6 regime + overall + reasoning） | 指標が15以上に増えたら (date, indicator, value) 形式への分解を検討 |
+| regime_assessments のカラム数 | 16（date + 6 regime + 6 input values + overall + reasoning + created_at）（ADR-009） | カラム数が20を超えたら (date, indicator, value) 形式への分解を検討 |
 | knowledge.confidence がVARCHAR | 'low'/'medium'/'high' の3値 | 分析クエリで数値化が頻繁に必要になったらDOUBLEに変更 |
 | predictions.brier_score の冗長性 | confidence + outcome から再計算可能 | 単一ユーザーシステムでは許容。パフォーマンス問題が出たら削除 |
 

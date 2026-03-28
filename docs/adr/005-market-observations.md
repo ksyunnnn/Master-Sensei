@@ -1,6 +1,6 @@
 # ADR-005: 手動マクロデータ投入（market_observations）
 
-Status: accepted
+Status: superseded by ADR-009
 Date: 2026-03-27
 
 ## Context

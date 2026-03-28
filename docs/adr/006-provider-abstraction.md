@@ -98,5 +98,5 @@ for provider in providers:
 - src/providers.py に Protocol定義 + FredAdapter, YFinanceAdapter, NasdaqAdapter を実装
 - 既存のsrc/fred_client.pyは変更しない（Adapterでラップ）
 - update_data.pyのマクロ取得部分をフォールバックチェーン方式に変更
-- 取得した値はsource付きでmarket_observationsに記録（ADR-005）
+- 取得した値はParquetにsource列付きで記録。レジーム判定時の入力値はregime_assessmentsスナップショットで保存（ADR-009）
 - Tiingo（価格OHLCV）は対象外。マクロ指標のプロバイダのみ抽象化
