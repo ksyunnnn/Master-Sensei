@@ -109,6 +109,22 @@ class TestSourceTracking:
         assert len(loaded) == 3
         assert all(loaded["source"] == "fred")  # keep="last"で上書き
 
+    def test_merge_with_legacy_parquet_without_source(self, cache):
+        """移行期: source列なしの既存Parquetにsource付きデータを追記"""
+        idx1 = pd.date_range("2026-03-03", periods=3, freq="B")
+        df_legacy = pd.DataFrame({"value": [25.0, 26.0, 24.5]}, index=idx1)
+        cache.save_macro("VIX", df_legacy)  # source未指定（旧形式）
+
+        idx2 = pd.date_range("2026-03-06", periods=2, freq="B")
+        df_new = pd.DataFrame({"value": [27.0, 28.0]}, index=idx2)
+        cache.save_macro("VIX", df_new, source="fred")
+
+        loaded = cache.load_macro("VIX")
+        assert len(loaded) == 5
+        assert "source" in loaded.columns
+        # 新しい行はsource="fred"、古い行はNone/NaN
+        assert loaded.iloc[-1]["source"] == "fred"
+
 
 class TestMetadata:
     def test_get_all_metadata(self, cache):

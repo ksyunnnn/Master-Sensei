@@ -100,6 +100,11 @@ class CacheManager:
             bak = path.with_suffix(".parquet.bak")
             shutil.copy2(path, bak)
             existing = pd.read_parquet(path)
+            # 既存ファイルにsource列がない場合（移行期）、デフォルト値で補完
+            if source is not None and "source" not in existing.columns:
+                existing = existing.copy()
+                existing["source"] = ""
+                existing["updated_at"] = datetime.min
             df = pd.concat([existing, df])
             df = df[~df.index.duplicated(keep="last")]
             df = df.sort_index()

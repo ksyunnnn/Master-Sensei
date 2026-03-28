@@ -165,7 +165,7 @@ def main():
     run_all = not (args.macro_only or args.daily_only or args.intraday_only)
 
     if run_all or args.macro_only:
-        logger.info("=== Updating macro data (FRED) ===")
+        logger.info("=== Updating macro data (ProviderChain) ===")
         update_macro(cache)
 
     if run_all or args.daily_only:
