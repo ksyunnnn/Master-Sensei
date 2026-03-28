@@ -19,10 +19,17 @@ from src.db import JST  # timezone(timedelta(hours=9))
 
 ## 品質基準
 
+### ソース管理
 - 記憶に基づく登録は禁止。必ずWebSearchの検索結果からURLと事実を取得してから登録する
+- ソースTier: Tier 1（政府・企業IR・国際機関）> Tier 2（Reuters, AP, CNBC, CNN, NPR, Al Jazeera, BBC）> Tier 3（個人ブログ・SNS・無名サイト）
+- **Tier 3ソースのイベントは登録不可**
+
+### 検証ルール
+- **定性イベント（戦争・政策等）**: 2つ以上の独立したTier 1-2ソースで確認できたもののみ登録。1ソースのみの情報は登録しない
+- **定量データ（VIX・原油価格等）**: Parquetの値と照合可能な場合は照合する。WebSearch値とParquet値が矛盾する場合は不採用
 - 検索結果の日付（年を含む）とイベント日付が一致することを確認する
 - 固有名詞（作戦名、法律名、人名等）は検索結果の表記をそのまま使用する
-- ソース優先順位: 一次ソース（政府・企業・国際機関） > メジャーメディア（Reuters, AP, CNBC, CNN, NPR, Al Jazeera）
+- 検証レベルをimpact_reasoningに含める（例: 「FRB公式声明で確認」「CNBC+NPRで報道」）
 
 ## 手順
 
