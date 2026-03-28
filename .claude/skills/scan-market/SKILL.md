@@ -1,0 +1,150 @@
+---
+name: scan-market
+description: WebSearchで最新のニュース・市場動向を調査し、イベントをDBに登録する。地政学・FRB・半導体・原油・関税・市場動向の6カテゴリを網羅的に調査する。
+---
+
+市場ニュースの調査・イベント登録を実行してください。
+
+## タイムゾーン
+
+現在時刻(JST): !`python3 -c "from datetime import datetime, timezone, timedelta; jst=timezone(timedelta(hours=9)); print(datetime.now(tz=jst).strftime('%Y-%m-%d %H:%M JST'))"`
+
+すべてのevent_timestampは **JST (Asia/Tokyo)** で記録する。
+
+```python
+from src.db import JST  # timezone(timedelta(hours=9))
+# OK:  datetime(2026, 3, 28, 15, 0, tzinfo=JST)
+# NG:  datetime(2026, 3, 28, 15, 0)  ← naive、_require_awareでエラー
+```
+
+## 品質基準
+
+- 記憶に基づく登録は禁止。必ずWebSearchの検索結果からURLと事実を取得してから登録する
+- 検索結果の日付（年を含む）とイベント日付が一致することを確認する
+- 固有名詞（作戦名、法律名、人名等）は検索結果の表記をそのまま使用する
+- ソース優先順位: 一次ソース（政府・企業・国際機関） > メジャーメディア（Reuters, AP, CNBC, CNN, NPR, Al Jazeera）
+
+## 手順
+
+### 1. 既存イベントの確認
+
+重複登録を防ぐため、直近のイベントを確認する。
+
+```bash
+python -c "
+import duckdb
+from src.db import SenseiDB
+conn = duckdb.connect('data/sensei.duckdb')
+db = SenseiDB(conn)
+events = db.get_active_events()
+print(f'=== 登録済みイベント ({len(events)}件) ===')
+for e in events[:10]:
+    print(f\"  [{e['category']}] {e['event_timestamp']} {e['summary'][:60]}\")
+conn.close()
+"
+```
+
+### 2. 過去のlessonを確認
+
+impact判定の前に、過去のevent_reviewsで修正があったもの（lesson）を参照する。
+
+```bash
+python -c "
+import duckdb
+from src.db import SenseiDB
+conn = duckdb.connect('data/sensei.duckdb')
+db = SenseiDB(conn)
+reviews = conn.execute('''
+    SELECT e.category, e.summary, er.original_impact, er.revised_impact, er.lesson
+    FROM event_reviews er
+    JOIN events e ON er.event_id = e.id
+    WHERE er.original_impact != er.revised_impact
+    ORDER BY er.review_date DESC LIMIT 5
+''').fetchdf().to_dict('records')
+if reviews:
+    print('=== 過去のimpact修正 ===')
+    for r in reviews:
+        print(f\"  [{r['category']}] {r['summary'][:50]}\")
+        print(f\"    {r['original_impact']} -> {r['revised_impact']}: {r['lesson']}\")
+else:
+    print('lesson記録なし（初回）')
+conn.close()
+"
+```
+
+### 3. WebSearchでニュース調査
+
+以下の6カテゴリについて、直近7日間のニュースをWebSearchで調査する。
+
+1. **地政学リスク** — 戦争・制裁・紛争（Iran, Middle East等）
+2. **FRB・金融政策** — 利上げ/利下げ・インフレ・雇用
+3. **半導体セクター** — NVIDIA, AMD, SOX index, TSMC
+4. **原油・エネルギー** — Brent, WTI, Strait of Hormuz
+5. **関税・通商政策** — Section 232, Section 301, tariffs
+6. **米国株式市場** — S&P 500, Nasdaq, VIX, sector rotation
+
+各カテゴリで最低1回はWebSearchを実行する。
+
+### 4. イベント登録
+
+調査結果から、対象シンボル（TQQQ/SOXL/TECL/SPXL等）の価格に影響しうるイベントを登録する。
+
+ADR-003 Write基準:
+- 対象シンボルの価格に影響しうるイベントのみ登録
+- スコープ外（個別株、仮想通貨等）は登録しない
+- 既存イベントと重複する場合は登録しない
+
+```bash
+python -c "
+import duckdb
+from datetime import datetime
+from src.db import SenseiDB, JST
+conn = duckdb.connect('data/sensei.duckdb')
+db = SenseiDB(conn)
+
+db.add_event(
+    event_timestamp=datetime(2026, 3, 28, 15, 0, tzinfo=JST),  # 必ずJST
+    category='geopolitical',  # geopolitical / fed / semiconductor / oil / tariff / market
+    summary='イベントの1行サマリ',
+    impact='negative',        # positive / negative / neutral
+    impact_reasoning='なぜその影響度か（1文）',
+    relevance='direct',       # direct(半導体直撃) / indirect(マクロ経由) / background(遠因)
+    source_url='https://...',
+)
+print('Event added')
+conn.close()
+"
+```
+
+複数イベントがある場合は1つのスクリプト内で複数回 `db.add_event()` を呼ぶ。
+
+### 5. 調査報告
+
+以下のフォーマットで報告する。
+
+```
+## 調査報告
+- 調査実施: {現在時刻 JST}
+- 検索クエリ対象: 直近7日間
+- 取得できた最新情報: {検索結果で最も新しい記事の日時とソース名}
+- 登録イベント: {N}件
+- スキップ（重複/スコープ外）: {M}件
+
+### 登録イベント一覧
+| 日時(JST) | カテゴリ | サマリ | impact | ソース |
+|-----------|---------|--------|--------|--------|
+| ... | ... | ... | ... | ... |
+
+### 市場環境の要約
+{6カテゴリの調査結果を2-3文で要約}
+
+Sources:
+- [Source Title](URL)
+- ...
+```
+
+## 注意事項
+
+- SQLは直接書かず、SenseiDBのメソッドを使用する（ADR-008）
+- event_timestampは必ずJST timezone-awareで記録する
+- 「取得できた最新情報」は実際の検索結果の最新記事日時を正直に記載する（推測しない）
