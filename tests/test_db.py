@@ -18,6 +18,17 @@ class TestSchema:
         ).fetchall()
         names = {t[0] for t in tables}
         assert names >= {"events", "predictions", "knowledge", "regime_assessments", "event_reviews"}
+        assert "market_observations" not in names  # ADR-009: 廃止
+
+    def test_regime_assessments_has_snapshot_columns(self, db):
+        """ADR-009: regime_assessmentsに入力値スナップショットカラムが存在する"""
+        cols = db.conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'regime_assessments' AND table_schema = 'main'"
+        ).fetchall()
+        col_names = {c[0] for c in cols}
+        snapshot_cols = {"vix_value", "vix3m_value", "hy_spread_value", "yield_curve_value", "oil_value", "usd_value"}
+        assert snapshot_cols <= col_names
 
     def test_init_idempotent(self, db_conn):
         SenseiDB(db_conn)
@@ -165,52 +176,46 @@ class TestRegime:
         regime = db.get_latest_regime()
         assert regime["overall"] == "risk_on"
 
+    def test_save_regime_with_snapshot(self, db):
+        """ADR-009: 入力値スナップショットが保存・取得できる"""
+        db.save_regime(
+            date(2026, 3, 28),
+            vix_regime="high",
+            vix_term_structure="backwardation",
+            credit_regime="normal",
+            yield_curve_regime="normal",
+            oil_regime="elevated",
+            dollar_regime="normal",
+            overall="risk_off",
+            reasoning="VIX 26.9 > 25",
+            vix_value=26.9,
+            vix3m_value=26.5,
+            hy_spread_value=3.19,
+            yield_curve_value=0.49,
+            oil_value=103.8,
+            usd_value=104.2,
+        )
+        regime = db.get_latest_regime()
+        assert regime["vix_value"] == 26.9
+        assert regime["vix3m_value"] == 26.5
+        assert regime["hy_spread_value"] == 3.19
+        assert regime["yield_curve_value"] == 0.49
+        assert regime["oil_value"] == 103.8
+        assert regime["usd_value"] == 104.2
 
-class TestMarketObservations:
-    def test_add_observation(self, db):
-        ts = datetime(2026, 3, 27, 10, 0, tzinfo=JST)
-        db.add_observation(date(2026, 3, 27), "VIX", 25.5, "cboe", ts)
-        rows = db.get_observations_for_date(date(2026, 3, 27))
-        assert len(rows) == 1
-        assert rows[0]["value"] == 25.5
-        assert rows[0]["source"] == "cboe"
-        assert rows[0]["status"] == "unverified"
-
-    def test_add_observation_upsert(self, db):
-        ts = datetime(2026, 3, 27, 10, 0, tzinfo=JST)
-        db.add_observation(date(2026, 3, 27), "VIX", 25.5, "cboe", ts)
-        ts2 = datetime(2026, 3, 27, 15, 0, tzinfo=JST)
-        db.add_observation(date(2026, 3, 27), "VIX", 26.0, "cboe", ts2)
-        rows = db.get_observations_for_date(date(2026, 3, 27))
-        assert len(rows) == 1
-        assert rows[0]["value"] == 26.0
-
-    def test_add_observation_naive_datetime_raises(self, db):
-        with pytest.raises(ValueError, match="timezone-aware"):
-            db.add_observation(date(2026, 3, 27), "VIX", 25.5, "cboe", datetime(2026, 3, 27, 10, 0))
-
-    def test_multiple_sources_same_series(self, db):
-        ts = datetime(2026, 3, 27, 10, 0, tzinfo=JST)
-        db.add_observation(date(2026, 3, 27), "VIX", 25.5, "cboe", ts)
-        db.add_observation(date(2026, 3, 27), "VIX", 25.6, "investing.com", ts)
-        rows = db.get_observations_for_date(date(2026, 3, 27))
-        assert len(rows) == 2
-
-    def test_get_latest_observations(self, db):
-        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
-        db.add_observation(date(2026, 3, 26), "VIX", 26.0, "cboe", ts)
-        ts2 = datetime(2026, 3, 27, 10, 0, tzinfo=JST)
-        db.add_observation(date(2026, 3, 27), "VIX", 25.0, "cboe", ts2)
-        latest = db.get_latest_observations()
-        assert len(latest) == 1
-        assert latest[0]["value"] == 25.0
-
-    def test_verify_observation(self, db):
-        ts = datetime(2026, 3, 27, 10, 0, tzinfo=JST)
-        db.add_observation(date(2026, 3, 27), "VIX", 25.5, "cboe", ts)
-        db.verify_observation(date(2026, 3, 27), "VIX", "cboe")
-        rows = db.get_observations_for_date(date(2026, 3, 27))
-        assert rows[0]["status"] == "verified"
+    def test_save_regime_snapshot_nullable(self, db):
+        """ADR-009: スナップショットカラムはNULL許容（API障害時）"""
+        import math
+        db.save_regime(
+            date(2026, 3, 28),
+            overall="risk_off",
+            reasoning="Partial data",
+            vix_value=26.9,
+        )
+        regime = db.get_latest_regime()
+        assert regime["vix_value"] == 26.9
+        # DuckDB returns NaN for NULL DOUBLE via fetchdf().to_dict()
+        assert regime["vix3m_value"] is None or math.isnan(regime["vix3m_value"])
 
 
 class TestEventReviews:

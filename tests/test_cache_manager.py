@@ -70,6 +70,46 @@ class TestMacro:
         assert meta.row_count == 3
 
 
+class TestSourceTracking:
+    """ADR-009: Parquetにsource/updated_at列を追加"""
+
+    def test_save_macro_with_source(self, cache):
+        idx = pd.date_range("2026-03-01", periods=3, freq="B")
+        df = pd.DataFrame({"value": [25.0, 26.0, 24.5]}, index=idx)
+        cache.save_macro("VIX", df, source="fred")
+        loaded = cache.load_macro("VIX")
+        assert "source" in loaded.columns
+        assert all(loaded["source"] == "fred")
+
+    def test_save_macro_with_updated_at(self, cache):
+        idx = pd.date_range("2026-03-01", periods=3, freq="B")
+        df = pd.DataFrame({"value": [25.0, 26.0, 24.5]}, index=idx)
+        cache.save_macro("VIX", df, source="yfinance")
+        loaded = cache.load_macro("VIX")
+        assert "updated_at" in loaded.columns
+        assert all(loaded["updated_at"].notna())
+
+    def test_save_daily_with_source(self, cache):
+        df = _make_daily_df()
+        cache.save_daily("TQQQ", df, source="tiingo")
+        loaded = cache.load_daily("TQQQ")
+        assert "source" in loaded.columns
+        assert all(loaded["source"] == "tiingo")
+
+    def test_source_updated_on_overwrite(self, cache):
+        """上書き時にsourceが更新される"""
+        idx = pd.date_range("2026-03-03", periods=3, freq="B")
+        df1 = pd.DataFrame({"value": [25.0, 26.0, 24.5]}, index=idx)
+        cache.save_macro("VIX", df1, source="yfinance")
+
+        df2 = pd.DataFrame({"value": [25.1, 26.1, 24.6]}, index=idx)
+        cache.save_macro("VIX", df2, source="fred")
+
+        loaded = cache.load_macro("VIX")
+        assert len(loaded) == 3
+        assert all(loaded["source"] == "fred")  # keep="last"で上書き
+
+
 class TestMetadata:
     def test_get_all_metadata(self, cache):
         df = _make_daily_df()
