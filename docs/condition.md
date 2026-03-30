@@ -14,6 +14,14 @@ Last updated: 2026-03-30
 - Skills: `/verify-knowledge`, `/update-regime`, `/scan-market`, `/review-events`
 - GDR-001 Phase 1: source_prediction_id, root_cause_category, Brier 3成分分解, Baseline Score, Kolbサイクル率
 
+### エントリーSkill設計メモ
+- 口座残高・許容損失は実行時パラメータ（ハードコードしない）
+- 出力: シナリオ分析 + 具体注文候補(複数) + 実証ベース推奨
+- 手段はSkillに限定しない（Python CLI等も検討）
+- feasibility_study/trading-rules.mdの旧ルールは無視。白紙から再設計
+- ユーザーの発注パターン: (P1)開場前発注 / (P2)開場1h内 / (P3)開場3h内(避けたい)
+- サマータイム中の開場: 22:30 JST（標準時: 23:30 JST）
+
 ## Next Session Priority
 
 1. **エントリーシグナル研究の実行** — ADR-013 + hypothesis_space.md + ideation_catalog.parquetに基づく。残タスク: (a)データ品質検証 → (b)utils.py作成 → (c)検出力分析 → (d)4 Agent並列起動 → (e)結果統合(Stage 1→2→3) → (f)10アイデア選定 → (g)Skill/ツール設計・実装
