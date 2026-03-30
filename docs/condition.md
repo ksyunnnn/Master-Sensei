@@ -6,17 +6,17 @@ Last updated: 2026-03-30
 
 - Phase 3（運用サイクル確立）
 - Charter v0.1.0（習熟度 Lv.1 見習い）
-- 独立gitリポジトリ。ADR 12本、GDR 1本（Phase 1実装済み）、99テスト全パス
+- 独立gitリポジトリ。ADR 13本、GDR 1本（Phase 1実装済み）、99テスト全パス
 - データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
 - sensei.duckdb: レジーム3件、予測2件（解決1/未解決1、Brier 0.2025）、知見19件（K-017〜019: プレマーケット/30-60分/前日リターンの予測力検証結果）、イベント55件
-- エントリーシグナル研究: ADR-013策定、62カテゴリ・推定1080-1770仮説（20手法適用）、レポート作成済み
+- エントリーシグナル研究: ADR-013策定、96件カタログ(63シグナル+3メタ+30設計原則)、推定1000-1400仮説（20手法適用）、レポート+Parquet保存済み
 - MCP DuckDB接続: `.mcp.json`（相対パス、read-only）でsensei.duckdbに接続
 - Skills: `/verify-knowledge`, `/update-regime`, `/scan-market`, `/review-events`
 - GDR-001 Phase 1: source_prediction_id, root_cause_category, Brier 3成分分解, Baseline Score, Kolbサイクル率
 
 ## Next Session Priority
 
-1. **エントリーシグナル研究の実行** — ADR-013 + hypothesis_space.md（62カテゴリ, ~1080-1770仮説）に基づき4 Agent並列起動。残タスク: データ品質検証→utils.py作成→検出力分析→Agent起動→結果統合→10アイデア選定
+1. **エントリーシグナル研究の実行** — ADR-013 + hypothesis_space.md + ideation_catalog.parquetに基づく。残タスク: (a)データ品質検証 → (b)utils.py作成 → (c)検出力分析 → (d)4 Agent並列起動 → (e)結果統合(Stage 1→2→3) → (f)10アイデア選定 → (g)Skill/ツール設計・実装
 2. **予測#2のモニタリング** — SOXL $40割れ予測（期限4/11）。4/6イラン攻撃期限が最初の判定ポイント
 3. **日次ワークフロー**（ADR-012）— scan-market → update_data.py → update-regime → review-events
 4. **予測の追加記録** — 現在2件のみ。Lv.2到達（N>=30）の最大ボトルネック
