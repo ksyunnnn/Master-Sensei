@@ -102,3 +102,4 @@ conn.close()
   - ただし未検証イベントの取得クエリは `get_active_events()` にフィルタがないため、手順1のSQLは許容する
 - lessonは将来の `/scan-market` 実行時に参照される。具体的かつ再利用可能な知見にする
 - impact修正は正直に記録する。外れたこと自体は問題ではない（Charter 4.4）
+- 検証結果のactual_outcomeには具体的なポジション影響を含める（例: 「SOXLロングなら-21%」）。抽象的なpositive/negativeだけでなく、次回のimpact判定精度向上に使える具体性を持たせる
