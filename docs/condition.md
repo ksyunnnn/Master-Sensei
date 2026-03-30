@@ -21,6 +21,7 @@ Last updated: 2026-03-30
 - feasibility_study/trading-rules.mdの旧ルールは無視。白紙から再設計
 - ユーザーの発注パターン: (P1)開場前発注 / (P2)開場1h内 / (P3)開場3h内(避けたい)
 - サマータイム中の開場: 22:30 JST（標準時: 23:30 JST）
+- 未定義: MAP分析のスコアリング枠組み（3要素の定義、-2〜+2スケール、加重方法）。Skill設計時に正式定義する
 
 ## Next Session Priority
 
