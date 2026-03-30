@@ -39,21 +39,21 @@ from src.db import JST  # timezone(timedelta(hours=9))
 前回の`/scan-market`実行時刻を取得し、調査対象期間を決定する。
 
 ```bash
-python -c "
+python << 'PYEOF'
 import duckdb
 from src.db import SenseiDB
 conn = duckdb.connect('data/sensei.duckdb')
 db = SenseiDB(conn)
 last = db.get_last_skill_execution('scan-market')
 if last:
-    print(f'前回実行: {last[\"executed_at\"]}')
-    print(f'結果: {last[\"result_summary\"]}')
+    print(f'前回実行: {last["executed_at"]}')
+    print(f'結果: {last["result_summary"]}')
     if last.get('metadata'):
-        print(f'メタデータ: {last[\"metadata\"]}')
+        print(f'メタデータ: {last["metadata"]}')
 else:
     print('初回実行（前回記録なし）→ 直近7日間を対象')
 conn.close()
-"
+PYEOF
 ```
 
 - 前回記録あり → 前回の`executed_at`以降のニュースを調査
@@ -64,7 +64,7 @@ conn.close()
 重複登録を防ぐため、直近のイベントを確認する。
 
 ```bash
-python -c "
+python << 'PYEOF'
 import duckdb
 from src.db import SenseiDB
 conn = duckdb.connect('data/sensei.duckdb')
@@ -72,9 +72,9 @@ db = SenseiDB(conn)
 events = db.get_active_events()
 print(f'=== 登録済みイベント ({len(events)}件) ===')
 for e in events[:10]:
-    print(f\"  [{e['category']}] {e['event_timestamp']} {e['summary'][:60]}\")
+    print(f"  [{e['category']}] {e['event_timestamp']} {e['summary'][:60]}")
 conn.close()
-"
+PYEOF
 ```
 
 ### 3. 過去のlessonを確認
@@ -82,27 +82,33 @@ conn.close()
 impact判定の前に、過去のevent_reviewsで修正があったもの（lesson）を参照する。
 
 ```bash
-python -c "
+python << 'PYEOF'
 import duckdb
 from src.db import SenseiDB
 conn = duckdb.connect('data/sensei.duckdb')
 db = SenseiDB(conn)
-reviews = conn.execute('''
-    SELECT e.category, e.summary, er.original_impact, er.revised_impact, er.lesson
-    FROM event_reviews er
-    JOIN events e ON er.event_id = e.id
-    WHERE er.original_impact != er.revised_impact
-    ORDER BY er.review_date DESC LIMIT 5
-''').fetchdf().to_dict('records')
+sql = (
+    "SELECT e.category, e.summary, er.original_impact, er.revised_impact, er.lesson "
+    "FROM event_reviews er "
+    "JOIN events e ON er.event_id = e.id "
+    "WHERE er.original_impact != er.revised_impact "
+    "ORDER BY er.review_date DESC LIMIT 5"
+)
+reviews = conn.execute(sql).fetchdf().to_dict('records')
 if reviews:
     print('=== 過去のimpact修正 ===')
     for r in reviews:
-        print(f\"  [{r['category']}] {r['summary'][:50]}\")
-        print(f\"    {r['original_impact']} -> {r['revised_impact']}: {r['lesson']}\")
+        cat = r.get('category')
+        sm = r.get('summary', '')[:50]
+        oi = r.get('original_impact')
+        ri = r.get('revised_impact')
+        ls = r.get('lesson')
+        print(f'  [{cat}] {sm}')
+        print(f'    {oi} -> {ri}: {ls}')
 else:
     print('lesson記録なし（初回）')
 conn.close()
-"
+PYEOF
 ```
 
 ### 4. WebSearchでニュース調査
@@ -135,7 +141,7 @@ ADR-003 Write基準:
 - `source`: 必ず `'scan-market'` を指定
 
 ```bash
-python -c "
+python << 'PYEOF'
 import duckdb
 from datetime import datetime
 from src.db import SenseiDB, JST
@@ -153,18 +159,18 @@ db.add_event(
 )
 print('Event added')
 conn.close()
-"
+PYEOF
 ```
 
 複数イベントがある場合は1つのスクリプト内で複数回 `db.add_event()` を呼ぶ。
-**重要**: inline Pythonスクリプト内で `#` コメントを使わないこと（Bashのセキュリティ警告が出る）。
+**重要**: heredoc方式（`python << 'PYEOF'`）を使用すること。`python -c "..."` + `f\"` パターンやトリプルクォート（`'''` / `"""`）はobfuscation検出警告が出る（詳細: `~/.claude/CLAUDE.md`）。
 
 ### 6. 実行記録と調査報告
 
 イベント登録後、実行履歴をskill_executionsに記録する。
 
 ```bash
-python -c "
+python << 'PYEOF'
 import json
 from datetime import datetime
 import duckdb
@@ -181,7 +187,7 @@ db.record_skill_execution(
     }),
 )
 conn.close()
-"
+PYEOF
 ```
 
 以下のフォーマットで報告する。
