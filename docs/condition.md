@@ -16,7 +16,7 @@ Last updated: 2026-03-31
 
 ## Next Session Priority
 
-1. **エントリーシグナル研究の実行** — 詳細は @data/research/WIP-progress.md
+1. **エントリーシグナル研究** — 検証バイアス対策の設計 → (b) utils.py → (c) 検出力分析。詳細は @data/research/WIP-progress.md
 2. **予測モニタリング** — #2 SOXL $40割れ(55%, 期限4/11)、#3 SOXS +10%超再出現(75%, 期限4/11)
 3. **日次ワークフロー**（ADR-012）— scan-market → update_data.py → update-regime → review-events
 4. **予測の追加記録** — 現在3件（解決1/未解決2）。Lv.2到達（N>=30）の最大ボトルネック
