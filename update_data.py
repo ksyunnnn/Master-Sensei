@@ -299,12 +299,31 @@ def main():
     parser.add_argument("--daily-only", action="store_true")
     parser.add_argument("--intraday-only", action="store_true")
     parser.add_argument("--status", action="store_true")
+    parser.add_argument("--symbol", type=str, help="Single symbol to update (e.g. SOXL)")
     args = parser.parse_args()
 
     cache = CacheManager(DATA_DIR)
 
     if args.status:
         show_status(cache)
+        return
+
+    # --symbol: 単一銘柄の5分足のみ高速取得
+    if args.symbol:
+        symbol = args.symbol.upper()
+        logger.info(f"=== Updating {symbol} intraday only ===")
+        config = TiingoConfig.from_env()
+        fetcher = TiingoFetcher(config)
+        meta = cache.get_intraday_metadata(symbol)
+        start = (meta.end_date) if meta else None
+        df = fetcher.fetch_intraday(symbol, start_date=start, end_date=date.today())
+        if not df.empty:
+            cache.save_intraday(symbol, df, source="tiingo")
+            logger.info(f"{symbol}: saved {len(df)} intraday bars")
+            latest = df.iloc[-1]
+            print(f"\n{symbol}: ${latest['Close']:.2f} ({df.index[-1]})")
+        else:
+            logger.info(f"{symbol}: no new data")
         return
 
     run_all = not (args.macro_only or args.daily_only or args.intraday_only)

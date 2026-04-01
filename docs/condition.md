@@ -1,6 +1,6 @@
 # Condition
 
-Last updated: 2026-04-01 (session 5)
+Last updated: 2026-04-01 (session 6)
 
 ## Current Condition
 
@@ -8,7 +8,7 @@ Last updated: 2026-04-01 (session 5)
 - Charter v0.1.0（習熟度 Lv.1 見習い）
 - 独立gitリポジトリ。ADR 18本、GDR 1本（Phase 1実装済み）、150テスト全パス
 - データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
-- sensei.duckdb: レジーム6件、予測3件（解決1/未解決2、Brier 0.2025）、知見22件、イベント93件、**トレード1件（SOXL +10%）**
+- sensei.duckdb: レジーム6件、予測3件（解決1/未解決2、Brier 0.2025）、知見22件、イベント98件、**トレード2件（#1 SOXL +10%利確済、#2 SOXL long $51.65 保有中）**
 - エントリーシグナル研究: @data/research/WIP-progress.md
 - MCP DuckDB接続: `.mcp.json`（相対パス、read-only）でsensei.duckdbに接続
 - Skills: `/verify-knowledge`, `/update-regime`, `/scan-market`, `/review-events`, **`/entry-analysis`（NEW）**
@@ -17,27 +17,33 @@ Last updated: 2026-04-01 (session 5)
 
 ## Next Session Priority
 
-1. **`/entry-analysis` 実戦テスト** — 実際にスキルを実行して出力フォーマットを調整する
-2. **4/2 トランプ演説後の市場判断** — 演説(4/2 10:00 JST)の結果確認。4/6ホルムズ期限が最大リスク
-3. **IRGC tech脅威の影響確認** — 4/2 00:30 JST攻撃開始期限。SOXL/TQQQ/TECL構成銘柄直撃
-4. **予測モニタリング** — #2 SOXL $40割れ(55%, 4/11)、#3 SOXS +10%超(75%, 4/11)。#3の反証条件（VIX<25）が成立しつつある
-5. **stale知見の検証** — 7件が180日以上未検証（SessionStart警告）
-6. **予測の追加記録** — 現在3件（解決1/未解決2）。Lv.2到達（N>=30）の最大ボトルネック
+1. **Trade #2 管理** — SOXL long $51.65×26株。TP$55/SL$48（期限4/8）。判断マトリクスに基づくSL/TP調整
+2. **Trump演説後の市場判断** — 演説(4/2 10:00 JST)の結果確認。和平具体策ならSL引上げ、曖昧なら据え置き
+3. **IRGC期限の結果確認** — 4/2 00:30 JST攻撃開始期限。沈黙/声明のみ/実行で対応分岐
+4. **ISM物価78.3の中期影響評価** — Prices Paid大幅上振れ。和平が崩れた場合の売り加速リスク
+5. **予測モニタリング** — #2 SOXL $40割れ(55%, 4/11)は開場後$52で遠のいた。#3 SOXS +10%超(75%, 4/11)
+6. **stale知見の検証** — 7件が180日以上未検証（SessionStart警告）
+7. **予測の追加記録** — 現在3件（解決1/未解決2）。ISM物価関連の予測を検討
 
-## 今セッションの成果（session 5, 4/1 夜）
+## 今セッションの成果（session 6, 4/1 夜）
 
-### 設計・実装
-- **`/entry-analysis` スキル実装（ADR-018）** — MAP分析→シナリオ別注文設定→trade記録の1フロー
-  - 3軸MAP: Regime(assess_regime) + Flow(assess_flow) + Event Risk(DuckDB events)
-  - `compute_flow_inputs()`: Parquetからassess_flow()入力値を自動計算（8テスト追加）
-  - シナリオはテンプレ固定せず動的構築。TP/SLはσ・SMAから統計的根拠
-  - Confidence: Master Senseiが3段階提示→ユーザー選択
-  - 自己評価でSession 3アンカリング・複雑性バイアスを検出→最小版に絞り込み
-  - レビューで3件修正（get_open→get_pending、5分足記述削除、知見フィルタ撤去）
+### トレード実行
+- **Trade #2: SOXL long** — `/entry-analysis`初実戦。MAP分析→シナリオ構築→成行エントリー→TP/SL設定
+  - エントリー: $51.65×26株（$1,343）。開場直後の成行買い
+  - TP $55.00 / SL $48.00（有効期限4/8）
+  - Confidence 35%（A~B: 和平加速〜膠着シナリオ）
+  - ISM PMI 52.7（予想上振れ）通過後、$52.74まで上昇（+2.1%）
 
 ### 日次ワークフロー
-- scan-market: 4件登録（クウェート空港ドローン攻撃、IRGC tech18社脅威、トランプ演説予定、ベイルート空爆）
-- update-regime: risk_off維持（変化なし。VIX 24.3, Brent $101.5）。トランプ演説後に再評価予定
+- scan-market: 5件登録（NATO離脱検討、ホルムズ条件緩和、ガソリン$4突破、IEA供給警告、ISM PMI/物価）
+- ISM物価78.3（予想74.0大幅上振れ）→ スタグフレーション兆候だが短期は和平期待が上回る
+- 自律監視ループ（5分→10分間隔）で開場前後をカバー
+
+### 実装
+- `update_data.py --symbol SOXL`: 単一銘柄5分足の高速取得（1.4秒 vs 全銘柄60秒+）
+
+### 前セッション（session 5, 4/1 夜）の成果
+- `/entry-analysis` スキル実装（ADR-018）、compute_flow_inputs()、scan-market 4件
 
 ### 前セッション（session 4, 4/1 午後）の成果
 - assess_flow()新設（ADR-017）、scan-market 4件、update-regime risk_off維持、review-events 1件
@@ -48,17 +54,18 @@ Last updated: 2026-04-01 (session 5)
 ### 前々セッション（session 2, 3/31）の成果
 - エントリーシグナル研究: バイアス対策設計（ADR-013追記、K-020/021）
 
-## マクロ環境メモ（4/1 21:00 JST時点）
+## マクロ環境メモ（4/1 23:20 JST時点）
 
 - レジーム: risk_off（スコア-0.71）
-  - VIX 24.3 elevated、VIX/VIX3M 0.951 flat、HY 3.46 widening、Brent $101.5 crisis
-- イラン: Day33。クウェート空港ドローン攻撃（湾岸全域に波及）、IRGC がNVIDIA/Apple等18社を「正当な標的」宣言
-- **4/2 00:30 JST**: IRGC攻撃開始期限。SOXL/TQQQ/TECL構成銘柄に直接関連
-- **4/2 10:00 JST**: トランプ初プライムタイム演説。「2-3週間で終わる」発言。停戦/エスカレ両面リスク
+  - VIX 25.2 elevated、VIX/VIX3M 0.99 flat、HY 3.46 widening、Brent $101.9 crisis
+- ISM PMI 52.7（予想上振れ）、**物価78.3（予想74.0大幅上振れ、2022年6月以来最高）**
+- NATO離脱「強く検討」（Telegraph）、ホルムズ条件緩和（WSJ）の相反シグナル
+- ガソリン$4.02突破（AAA）、IEA「4月供給喪失は3月の2倍」
+- **4/2 00:30 JST**: IRGC攻撃開始期限。テック18社。沈黙/声明/実行で分岐
+- **4/2 10:00 JST**: トランプ初プライムタイム演説
 - **4/6 ホルムズ期限** — 最重要イベント
-- 4/1夜: ISM製造業PMI（23:00 JST）+ ADP雇用。結果未確認
 - 4/3: NFP（Good Friday休場、反応は4/7月曜）
-- 保有ポジション: **なし**
+- 保有ポジション: **SOXL long $51.65×26株（TP$55/SL$48、4/8期限）**
 
 ## フィードバックループの進捗
 
