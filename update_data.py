@@ -14,6 +14,7 @@ import os
 import sys
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -135,7 +136,7 @@ def update_intraday(cache: CacheManager):
 
 
 def show_status(cache: CacheManager):
-    """キャッシュ状態を表示"""
+    """キャッシュ状態を表示（--status用の詳細表示）"""
     meta = cache.get_all_metadata()
     print("\n=== Master Sensei Data Status ===\n")
 
@@ -146,6 +147,150 @@ def show_status(cache: CacheManager):
         for name, info in sorted(data.items()):
             print(f"  {name}: {info['start_date']} → {info['end_date']} ({info['row_count']} rows)")
         print()
+
+
+def _read_last_row(path: Path) -> Optional[pd.DataFrame]:
+    """Parquetファイルの最終行を読み取る"""
+    if not path.exists():
+        return None
+    df = pd.read_parquet(path)
+    if df.empty:
+        return None
+    return df.iloc[[-1]]
+
+
+def show_summary(cache: CacheManager):
+    """データサマリーを表示（認知負荷を最小化した一覧）"""
+    from datetime import datetime as dt
+    now = dt.now()
+    print(f"\n=== Data Summary (取得: {now.strftime('%Y-%m-%d %H:%M')} JST) ===\n")
+
+    # ── マクロ ──
+    # 意味的ペアで並べる（関連指標を横に配置）
+    macro_pairs = [
+        ("VIX", "VIX3M"),
+        ("HY_SPREAD", "US10Y"),
+        ("BRENT", "USD_INDEX"),
+        ("YIELD_CURVE", "VXN"),
+        ("FEDFUNDS", None),
+    ]
+    print("[マクロ]")
+    for left, right in macro_pairs:
+        parts = []
+        for name in [left, right]:
+            if name is None:
+                continue
+            row = _read_last_row(cache.macro_dir / f"{name}.parquet")
+            if row is not None:
+                val = row["value"].iloc[0]
+                idx = row.index[0]
+                d = idx.date() if hasattr(idx, "date") else idx
+                parts.append(f"  {name:<12s}{val:>8.2f}  ({d.month}/{d.day:02d})")
+            else:
+                parts.append(f"  {name:<12s}{'---':>8s}  (---)")
+        print("    ".join(parts))
+    print()
+
+    # ── 日足 ──
+    daily_latest_date = None
+    daily_items = []
+    all_symbols = sorted(cache._metadata.keys())
+    for symbol in all_symbols:
+        row = _read_last_row(cache.daily_dir / f"{symbol}.parquet")
+        if row is not None:
+            close_col = "Close" if "Close" in row.columns else "close"
+            close = row[close_col].iloc[0]
+            idx = row.index[0]
+            d = idx.date() if hasattr(idx, "date") else idx
+            if daily_latest_date is None or d > daily_latest_date:
+                daily_latest_date = d
+            daily_items.append((symbol, close))
+
+    if daily_items:
+        d = daily_latest_date
+        print(f"[日足 → {d.month}/{d.day:02d}]")
+        # 5銘柄ずつ横並び
+        for i in range(0, len(daily_items), 5):
+            chunk = daily_items[i:i + 5]
+            parts = [f"{sym:<5s}{close:>7.2f}" for sym, close in chunk]
+            print("  " + "   ".join(parts))
+    print()
+
+    # ── 5分足 ──
+    intraday_items = []
+    intraday_latest_ts = None
+    intraday_symbols = sorted(cache._metadata_intraday.keys())
+    for symbol in intraday_symbols:
+        row = _read_last_row(cache.intraday_dir / f"{symbol}_5min.parquet")
+        if row is not None:
+            close_col = "Close" if "Close" in row.columns else "close"
+            close = row[close_col].iloc[0]
+            ts = row.index[0]
+            if intraday_latest_ts is None or ts > intraday_latest_ts:
+                intraday_latest_ts = ts
+            intraday_items.append((symbol, close, ts))
+
+    if intraday_items:
+        # タイムスタンプをET表示
+        if intraday_latest_ts is not None:
+            try:
+                et_ts = intraday_latest_ts.tz_convert("US/Eastern")
+            except TypeError:
+                et_ts = intraday_latest_ts
+            header_time = f"{et_ts.month}/{et_ts.day:02d} {et_ts.strftime('%H:%M')} ET"
+        else:
+            header_time = "---"
+
+        # 全銘柄同一タイムスタンプかチェック
+        all_same_ts = len(set(ts for _, _, ts in intraday_items)) == 1
+
+        if all_same_ts:
+            print(f"[5分足 → {header_time}]")
+            for i in range(0, len(intraday_items), 4):
+                chunk = intraday_items[i:i + 4]
+                parts = [f"{sym:<5s}{close:>7.2f}" for sym, close, _ in chunk]
+                print("  " + "   ".join(parts))
+        else:
+            print(f"[5分足 → 最新 {header_time}]")
+            for i in range(0, len(intraday_items), 4):
+                chunk = intraday_items[i:i + 4]
+                parts = []
+                for sym, close, ts in chunk:
+                    try:
+                        et = ts.tz_convert("US/Eastern")
+                    except TypeError:
+                        et = ts
+                    parts.append(f"{sym:<5s}{close:>7.2f} ({et.strftime('%H:%M')})")
+                print("  " + "   ".join(parts))
+    print()
+
+    # ── 鮮度 ──
+    macro_dates = []
+    for name in cache._metadata_macro:
+        meta = cache._metadata_macro[name]
+        macro_dates.append(meta.end_date)
+    macro_max = max(macro_dates) if macro_dates else None
+
+    daily_max = daily_latest_date
+    n_macro = len(cache._metadata_macro)
+    n_daily = len(cache._metadata)
+    n_intraday = len(cache._metadata_intraday)
+
+    print("[鮮度]")
+    macro_str = f"{macro_max.month}/{macro_max.day:02d}" if macro_max else "---"
+    daily_str = f"{daily_max.month}/{daily_max.day:02d}" if daily_max else "---"
+    if intraday_latest_ts is not None:
+        try:
+            et_ts = intraday_latest_ts.tz_convert("US/Eastern")
+        except TypeError:
+            et_ts = intraday_latest_ts
+        intraday_str = f"{et_ts.month}/{et_ts.day:02d} {et_ts.strftime('%H:%M')} ET"
+    else:
+        intraday_str = "---"
+
+    print(f"  マクロ: {n_macro:>2d}系列 最新 {macro_str}    日足: {n_daily:>2d}銘柄 最新 {daily_str}")
+    print(f"  5分足: {n_intraday:>2d}銘柄 最新 {intraday_str}")
+    print()
 
 
 def main():
@@ -176,7 +321,7 @@ def main():
         logger.info("=== Updating intraday data (Tiingo) ===")
         update_intraday(cache)
 
-    show_status(cache)
+    show_summary(cache)
 
 
 if __name__ == "__main__":
