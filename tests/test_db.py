@@ -381,3 +381,128 @@ class TestBiasCheck:
         result = db.get_bias_check()
         assert result["total"] == 10
         assert result["bullish_pct"] == 100.0  # All confidence > 0.5
+
+
+class TestTrades:
+    """ADR-015: トレード記録"""
+
+    def test_schema_has_trades_table(self, db):
+        tables = db.conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+        ).fetchall()
+        assert "trades" in {t[0] for t in tables}
+
+    def test_trades_has_all_columns(self, db):
+        cols = db.conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'trades' AND table_schema = 'main'"
+        ).fetchall()
+        col_names = {c[0] for c in cols}
+        expected = {
+            "id", "instrument", "direction", "entry_date", "entry_price",
+            "exit_date", "exit_price", "quantity", "pnl_usd", "pnl_pct",
+            "commission_usd", "holding_days",
+            "regime_at_entry", "vix_at_entry", "brent_at_entry",
+            "confidence_at_entry", "setup_type", "entry_reasoning", "exit_reasoning",
+            "discipline_score", "review_notes", "prediction_id", "created_at",
+        }
+        assert expected <= col_names
+
+    def test_add_trade(self, db):
+        tid = db.add_trade(
+            instrument="SOXL",
+            direction="long",
+            entry_date=date(2026, 3, 31),
+            entry_price=42.949,
+            quantity=28,
+            regime_at_entry="risk_off",
+            vix_at_entry=28.92,
+            brent_at_entry=107.94,
+            confidence_at_entry=0.65,
+            setup_type="de_escalation_bounce",
+            entry_reasoning="WSJ peace signal + TurboQuant reversal",
+        )
+        assert tid == 1
+
+    def test_add_trade_returns_incremental_id(self, db):
+        tid1 = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 3, 31), entry_price=42.949, quantity=28,
+        )
+        tid2 = db.add_trade(
+            instrument="TQQQ", direction="long",
+            entry_date=date(2026, 3, 31), entry_price=39.0, quantity=30,
+        )
+        assert tid2 == tid1 + 1
+
+    def test_close_trade(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 3, 31), entry_price=42.949, quantity=28,
+        )
+        db.close_trade(
+            trade_id=tid,
+            exit_date=date(2026, 3, 31),
+            exit_price=47.24,
+            exit_reasoning="OCO take profit hit",
+        )
+        row = db.conn.execute("SELECT * FROM trades WHERE id = ?", [tid]).fetchdf().to_dict("records")[0]
+        assert row["exit_price"] == 47.24
+        assert abs(row["pnl_usd"] - (47.24 - 42.949) * 28) < 0.01
+        assert abs(row["pnl_pct"] - ((47.24 / 42.949) - 1) * 100) < 0.01
+        assert row["holding_days"] == 0  # same day
+
+    def test_close_trade_multiday(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 3, 28), entry_price=46.61, quantity=10,
+        )
+        db.close_trade(tid, exit_date=date(2026, 3, 31), exit_price=47.91)
+        row = db.conn.execute("SELECT holding_days FROM trades WHERE id = ?", [tid]).fetchone()
+        assert row[0] == 3
+
+    def test_close_trade_short_direction(self, db):
+        tid = db.add_trade(
+            instrument="SOXS", direction="short",
+            entry_date=date(2026, 3, 31), entry_price=48.74, quantity=10,
+        )
+        db.close_trade(tid, exit_date=date(2026, 3, 31), exit_price=39.86)
+        row = db.conn.execute("SELECT pnl_usd, pnl_pct FROM trades WHERE id = ?", [tid]).fetchone()
+        # Short: profit when price goes down
+        assert row[0] > 0  # positive PnL
+        assert row[1] > 0  # positive pct
+
+    def test_review_trade(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 3, 31), entry_price=42.949, quantity=28,
+        )
+        db.close_trade(tid, exit_date=date(2026, 3, 31), exit_price=47.24)
+        db.review_trade(tid, discipline_score=4, review_notes="Followed the plan. OCO worked well.")
+        row = db.conn.execute(
+            "SELECT discipline_score, review_notes FROM trades WHERE id = ?", [tid]
+        ).fetchone()
+        assert row[0] == 4
+        assert "OCO" in row[1]
+
+    def test_review_trade_discipline_validation(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 3, 31), entry_price=42.949, quantity=28,
+        )
+        with pytest.raises(ValueError, match="1-5"):
+            db.review_trade(tid, discipline_score=6)
+
+    def test_get_open_trades(self, db):
+        db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 3, 31), entry_price=42.949, quantity=28,
+        )
+        tid2 = db.add_trade(
+            instrument="TQQQ", direction="long",
+            entry_date=date(2026, 3, 31), entry_price=39.0, quantity=30,
+        )
+        db.close_trade(tid2, exit_date=date(2026, 3, 31), exit_price=41.0)
+        open_trades = db.get_open_trades()
+        assert len(open_trades) == 1
+        assert open_trades[0]["instrument"] == "SOXL"

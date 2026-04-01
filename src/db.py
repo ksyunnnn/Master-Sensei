@@ -131,6 +131,35 @@ class SenseiDB:
         """)
         self.conn.execute("CREATE SEQUENCE IF NOT EXISTS skill_executions_id_seq START 1")
 
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY,
+                instrument VARCHAR NOT NULL,
+                direction VARCHAR NOT NULL,
+                entry_date DATE NOT NULL,
+                entry_price DOUBLE NOT NULL,
+                exit_date DATE,
+                exit_price DOUBLE,
+                quantity INTEGER NOT NULL,
+                pnl_usd DOUBLE,
+                pnl_pct DOUBLE,
+                commission_usd DOUBLE,
+                holding_days INTEGER,
+                regime_at_entry VARCHAR,
+                vix_at_entry DOUBLE,
+                brent_at_entry DOUBLE,
+                confidence_at_entry DOUBLE,
+                setup_type VARCHAR,
+                entry_reasoning TEXT,
+                exit_reasoning TEXT,
+                discipline_score INTEGER,
+                review_notes TEXT,
+                prediction_id INTEGER,
+                created_at TIMESTAMP DEFAULT current_timestamp
+            )
+        """)
+        self.conn.execute("CREATE SEQUENCE IF NOT EXISTS trades_id_seq START 1")
+
     # ── events ──
 
     def add_event(
@@ -477,6 +506,87 @@ class SenseiDB:
             [skill_name],
         ).fetchdf().to_dict("records")
         return rows[0] if rows else None
+
+    # ── trades (ADR-015) ──
+
+    def add_trade(
+        self,
+        instrument: str,
+        direction: str,
+        entry_date: date,
+        entry_price: float,
+        quantity: int,
+        *,
+        regime_at_entry: str = None,
+        vix_at_entry: float = None,
+        brent_at_entry: float = None,
+        confidence_at_entry: float = None,
+        setup_type: str = None,
+        entry_reasoning: str = None,
+        prediction_id: int = None,
+    ) -> int:
+        if confidence_at_entry is not None and not (0.0 <= confidence_at_entry <= 1.0):
+            raise ValueError("confidence_at_entry must be 0.0-1.0")
+        tid = self.conn.execute("SELECT nextval('trades_id_seq')").fetchone()[0]
+        self.conn.execute(
+            "INSERT INTO trades "
+            "(id, instrument, direction, entry_date, entry_price, quantity, "
+            "regime_at_entry, vix_at_entry, brent_at_entry, confidence_at_entry, "
+            "setup_type, entry_reasoning, prediction_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [tid, instrument, direction, entry_date, entry_price, quantity,
+             regime_at_entry, vix_at_entry, brent_at_entry, confidence_at_entry,
+             setup_type, entry_reasoning, prediction_id],
+        )
+        return tid
+
+    def close_trade(
+        self,
+        trade_id: int,
+        exit_date: date,
+        exit_price: float,
+        *,
+        exit_reasoning: str = None,
+        commission_usd: float = None,
+    ):
+        row = self.conn.execute(
+            "SELECT entry_price, quantity, direction, entry_date FROM trades WHERE id = ?",
+            [trade_id],
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Trade {trade_id} not found")
+        entry_price, quantity, direction, entry_dt = row
+        if direction == "long":
+            pnl_usd = (exit_price - entry_price) * quantity
+        else:
+            pnl_usd = (entry_price - exit_price) * quantity
+        pnl_pct = (pnl_usd / (entry_price * quantity)) * 100
+        holding_days = (exit_date - entry_dt).days
+        self.conn.execute(
+            "UPDATE trades SET exit_date = ?, exit_price = ?, pnl_usd = ?, pnl_pct = ?, "
+            "commission_usd = ?, holding_days = ?, exit_reasoning = ? WHERE id = ?",
+            [exit_date, exit_price, pnl_usd, pnl_pct, commission_usd, holding_days,
+             exit_reasoning, trade_id],
+        )
+
+    def review_trade(
+        self,
+        trade_id: int,
+        discipline_score: int = None,
+        review_notes: str = None,
+    ):
+        if discipline_score is not None and not (1 <= discipline_score <= 5):
+            raise ValueError("discipline_score must be 1-5")
+        self.conn.execute(
+            "UPDATE trades SET discipline_score = ?, review_notes = ? WHERE id = ?",
+            [discipline_score, review_notes, trade_id],
+        )
+
+    def get_open_trades(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT * FROM trades WHERE exit_date IS NULL ORDER BY entry_date"
+        ).fetchdf().to_dict("records")
+        return rows
 
     # ── self-evaluation ──
 
