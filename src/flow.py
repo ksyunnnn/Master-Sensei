@@ -21,6 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+import pandas as pd
+
 from src.regime import IndicatorAssessment
 
 
@@ -214,6 +216,64 @@ def assess_sigma_position(sigma: float) -> IndicatorAssessment:
             "SIGMA_POSITION", sigma, "extreme_low", -2,
             f"σ={sigma:+.2f}: SMA20大幅下方"
         )
+
+
+def compute_flow_inputs(
+    daily_df: pd.DataFrame,
+    vix_df: pd.DataFrame,
+) -> dict:
+    """Parquetの日足・VIXデータから assess_flow() の入力値を計算する。
+
+    Args:
+        daily_df: 日足DataFrame（index=Date, columns含む: Close, Volume）
+        vix_df: VIXマクロDataFrame（index=Date, columns含む: value）
+
+    Returns:
+        dict with keys: daily_return_1d, daily_return_3d, vix_change_1d,
+                        volume_ratio, sigma_position
+        データ不足の場合、該当キーはNone。
+    """
+    result = {
+        "daily_return_1d": None,
+        "daily_return_3d": None,
+        "vix_change_1d": None,
+        "volume_ratio": None,
+        "sigma_position": None,
+    }
+
+    if daily_df.empty or len(daily_df) < 2:
+        return result
+
+    closes = daily_df["Close"]
+
+    # daily_return_1d: (最終日 - 前日) / 前日
+    result["daily_return_1d"] = (closes.iloc[-1] - closes.iloc[-2]) / closes.iloc[-2]
+
+    # daily_return_3d: (最終日 - 3日前) / 3日前
+    if len(daily_df) >= 4:
+        result["daily_return_3d"] = (closes.iloc[-1] - closes.iloc[-4]) / closes.iloc[-4]
+
+    # volume_ratio: 最終日Volume / 20日平均Volume
+    if len(daily_df) >= 21 and "Volume" in daily_df.columns:
+        vol_20d_avg = daily_df["Volume"].iloc[-21:-1].mean()
+        if vol_20d_avg > 0:
+            result["volume_ratio"] = float(daily_df["Volume"].iloc[-1] / vol_20d_avg)
+
+    # sigma_position: (Close - SMA20) / std20
+    if len(daily_df) >= 21:
+        sma20 = closes.iloc[-20:].mean()
+        std20 = closes.iloc[-20:].std()
+        if std20 > 0:
+            result["sigma_position"] = float((closes.iloc[-1] - sma20) / std20)
+
+    # vix_change_1d: (最終日VIX - 前日VIX) / 前日VIX
+    if not vix_df.empty and len(vix_df) >= 2:
+        vix_vals = vix_df["value"]
+        result["vix_change_1d"] = float(
+            (vix_vals.iloc[-1] - vix_vals.iloc[-2]) / vix_vals.iloc[-2]
+        )
+
+    return result
 
 
 # フロー指標の重み

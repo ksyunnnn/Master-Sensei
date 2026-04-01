@@ -1,10 +1,13 @@
 """フロー評価ロジックのテスト"""
+import pandas as pd
+import pytest
 from src.flow import (
     assess_price_momentum,
     assess_vix_change,
     assess_volume_surge,
     assess_sigma_position,
     assess_flow,
+    compute_flow_inputs,
     FlowAssessment,
 )
 from src.regime import IndicatorAssessment
@@ -233,3 +236,85 @@ class TestAssessFlow:
         assert len(result.indicators) == 1
         ind = result.indicators[0]
         assert isinstance(ind, IndicatorAssessment)
+
+
+class TestComputeFlowInputs:
+    """Parquetデータからassess_flow()の入力値を自動計算"""
+
+    @pytest.fixture
+    def daily_df(self):
+        """25日分の日足データ（20日SMA/σ計算に十分な長さ）"""
+        dates = pd.date_range("2026-03-01", periods=25, freq="B")
+        # 緩やかな上昇トレンド + 最終日に大きな上昇
+        closes = [40 + i * 0.5 for i in range(24)] + [60.0]
+        volumes = [1_000_000] * 24 + [2_500_000]  # 最終日は出来高サージ
+        return pd.DataFrame(
+            {"Close": closes, "Volume": volumes},
+            index=pd.DatetimeIndex(dates, name="Date"),
+        )
+
+    @pytest.fixture
+    def vix_df(self):
+        """25日分のVIXデータ"""
+        dates = pd.date_range("2026-03-01", periods=25, freq="B")
+        # 安定推移 + 最終日に急落
+        values = [25.0] * 24 + [20.0]
+        return pd.DataFrame(
+            {"value": values},
+            index=pd.DatetimeIndex(dates, name="Date"),
+        )
+
+    def test_returns_all_keys(self, daily_df, vix_df):
+        result = compute_flow_inputs(daily_df, vix_df)
+        expected_keys = {
+            "daily_return_1d", "daily_return_3d",
+            "vix_change_1d", "volume_ratio", "sigma_position",
+        }
+        assert set(result.keys()) == expected_keys
+
+    def test_daily_return_1d(self, daily_df, vix_df):
+        result = compute_flow_inputs(daily_df, vix_df)
+        # 前日Close=51.5, 最終日Close=60.0 → (60-51.5)/51.5
+        expected = (60.0 - 51.5) / 51.5
+        assert abs(result["daily_return_1d"] - expected) < 0.001
+
+    def test_daily_return_3d(self, daily_df, vix_df):
+        result = compute_flow_inputs(daily_df, vix_df)
+        # 3日前Close=50.5, 最終日Close=60.0
+        expected = (60.0 - 50.5) / 50.5
+        assert abs(result["daily_return_3d"] - expected) < 0.001
+
+    def test_vix_change_1d(self, daily_df, vix_df):
+        result = compute_flow_inputs(daily_df, vix_df)
+        # 前日VIX=25.0, 最終日VIX=20.0 → (20-25)/25 = -0.20
+        assert abs(result["vix_change_1d"] - (-0.20)) < 0.001
+
+    def test_volume_ratio(self, daily_df, vix_df):
+        result = compute_flow_inputs(daily_df, vix_df)
+        # 最終日Volume=2,500,000、20日平均は全部1,000,000
+        # ratio = 2,500,000 / 1,000,000 = 2.5
+        assert result["volume_ratio"] > 2.0
+
+    def test_sigma_position(self, daily_df, vix_df):
+        result = compute_flow_inputs(daily_df, vix_df)
+        # 最終日Close=60.0は20日SMAより大幅に上方 → 正のσ
+        assert result["sigma_position"] > 1.0
+
+    def test_insufficient_daily_data(self, vix_df):
+        """日足が20日未満の場合、volume_ratioとsigma_positionはNone"""
+        dates = pd.date_range("2026-03-20", periods=5, freq="B")
+        short_df = pd.DataFrame(
+            {"Close": [40, 41, 42, 43, 44], "Volume": [1_000_000] * 5},
+            index=pd.DatetimeIndex(dates, name="Date"),
+        )
+        result = compute_flow_inputs(short_df, vix_df)
+        assert result["daily_return_1d"] is not None  # 2日あればOK
+        assert result["volume_ratio"] is None  # 20日分ないのでNone
+        assert result["sigma_position"] is None
+
+    def test_no_vix_data(self, daily_df):
+        """VIXデータなしの場合、vix_change_1dはNone"""
+        empty_vix = pd.DataFrame(columns=["value"])
+        result = compute_flow_inputs(daily_df, empty_vix)
+        assert result["vix_change_1d"] is None
+        assert result["daily_return_1d"] is not None

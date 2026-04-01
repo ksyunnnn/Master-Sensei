@@ -71,6 +71,7 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - `/update-regime` — 最新データ取得・レジーム再判定
 - `/review-events` — イベント事後検証・lesson記録
 - `/verify-knowledge` — stale知見の検証・検証日更新
+- `/entry-analysis` — MAP分析→シナリオ別注文設定→trade記録（ADR-018）
 
 ### セッション終了前（Stop Hook）
 - condition.mdの最終更新日が今日でなければ更新する
