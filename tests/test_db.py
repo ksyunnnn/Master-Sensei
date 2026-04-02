@@ -287,6 +287,33 @@ class TestEventReviews:
         assert event[0] == "reviewed"
 
 
+class TestImpactLessons:
+    def test_get_impact_lessons_returns_corrections(self, db):
+        """impact修正があったレビューをlessonとして取得できる"""
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        eid = db.add_event(ts, "tariff", "Tariff announcement")
+        db.add_event_review(eid, date(2026, 3, 28), "negative", "neutral", "Market ignored", "Overestimated impact")
+        lessons = db.get_impact_lessons(limit=5)
+        assert len(lessons) == 1
+        assert lessons[0]["category"] == "tariff"
+        assert lessons[0]["original_impact"] == "negative"
+        assert lessons[0]["revised_impact"] == "neutral"
+        assert lessons[0]["lesson"] == "Overestimated impact"
+
+    def test_get_impact_lessons_excludes_unchanged(self, db):
+        """impact変更なしのレビューは返さない"""
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        eid = db.add_event(ts, "fed", "FOMC meeting")
+        db.add_event_review(eid, date(2026, 3, 28), "negative", "negative", "As expected", "No lesson")
+        lessons = db.get_impact_lessons(limit=5)
+        assert len(lessons) == 0
+
+    def test_get_impact_lessons_empty(self, db):
+        """レビューがない場合は空リスト"""
+        lessons = db.get_impact_lessons(limit=5)
+        assert lessons == []
+
+
 class TestGDR001Phase1:
     """GDR-001 Phase 1: source_prediction_id, root_cause_category, Brier 3成分分解"""
 

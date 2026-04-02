@@ -493,6 +493,18 @@ class SenseiDB:
         """, [event_id, review_date, original_impact, revised_impact, actual_outcome, lesson])
         self.update_event_status(event_id, "reviewed")
 
+    def get_impact_lessons(self, limit: int = 5) -> list[dict]:
+        """impact修正があったレビューを取得する（過去の判定ミスから学ぶ用）"""
+        rows = self.conn.execute(
+            "SELECT e.category, e.summary, er.original_impact, er.revised_impact, er.lesson "
+            "FROM event_reviews er "
+            "JOIN events e ON er.event_id = e.id "
+            "WHERE er.original_impact != er.revised_impact "
+            "ORDER BY er.review_date DESC LIMIT ?",
+            [limit],
+        ).fetchdf().to_dict("records")
+        return rows
+
     # ── skill_executions ──
 
     def record_skill_execution(

@@ -43,24 +43,19 @@ description: Parquetから最新マクロデータを読み取り、レジーム
    )
    ```
 
-4. 結果をユーザーに��示し、確認を得る。
+4. 結果をユーザーに提示し、確認を得る。表示には以下を使う:
+   ```python
+   print(f"overall: {result.overall} (score: {result.overall_score:.2f})")
+   print(f"reasoning: {result.reasoning}")
+   for ind in result.indicators:
+       print(f"  {ind.name}: {ind.regime} (score={ind.score:+d}, value={ind.value}) {ind.note}")
+   ```
 
-5. 確認後、`SenseiDB` を使って入力値スナップショット付きで記録する（ADR-009）:
+5. 確認後、`to_save_kwargs()` で `save_regime()` に渡す kwargs を生成し記録する（ADR-009）:
    ```python
    from src.db import SenseiDB, today_jst
    db = SenseiDB(conn)
-   db.save_regime(
-       today_jst(),
-       vix_regime=...,
-       overall=...,
-       reasoning=...,
-       vix_value=values.get("VIX"),
-       vix3m_value=values.get("VIX3M"),
-       hy_spread_value=values.get("HY_SPREAD"),
-       yield_curve_value=values.get("YIELD_CURVE"),
-       oil_value=values.get("BRENT"),
-       usd_value=values.get("USD_INDEX"),
-   )
+   db.save_regime(today_jst(), **result.to_save_kwargs(values))
    ```
 
 ## 注意事項

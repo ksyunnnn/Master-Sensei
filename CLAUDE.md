@@ -67,7 +67,8 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - regime_assessmentsには必ず入力値スナップショット（6指標の生値）を含める（ADR-009）
 
 ### ユーザー起点（Skill）
-- `/scan-market` — ニュース調査・イベントDB登録
+- `/scan-market` — ニュース調査・イベントDB登録（網羅的、6カテゴリ個別検索）
+- `/scan-market-quick` — 簡易スキャン（2検索で広く浅く、深掘りフラグ付き）
 - `/update-regime` — 最新データ取得・レジーム再判定
 - `/review-events` — イベント事後検証・lesson記録
 - `/verify-knowledge` — stale知見の検証・検証日更新
