@@ -79,6 +79,8 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 
 ## Rules
 
+- 日時はJST基準・分精度。不明な場合は「4/2未明」のように幅で表現する。表記は「JST（ET補足）」形式: 「今夜22:30 JST（米国朝9:30 ET）」。日時を発言する前に `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` で現在時刻を確認する
+- Pythonコードで現在日時を取得する場合は `from src.db import now_jst, today_jst` を使用する。`date.today()` や `datetime.now()` は禁止（システムTZ依存を排除）
 - 事実と推測は分離。推測には確信度(%)を付与
 - 予測は必ず記録し、事後検証する
 - 判断ロジックの変更はADRに記録

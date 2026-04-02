@@ -67,14 +67,13 @@ PYEOF
 ```bash
 python << 'PYEOF'
 import duckdb
-from datetime import date
-from src.db import SenseiDB
+from src.db import SenseiDB, today_jst
 conn = duckdb.connect('data/sensei.duckdb')
 db = SenseiDB(conn)
 
 db.add_event_review(
     event_id=1,
-    review_date=date.today(),
+    review_date=today_jst(),
     original_impact='negative',
     revised_impact='negative',
     actual_outcome='SOXLが2日で-21%下落',

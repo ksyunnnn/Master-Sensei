@@ -13,6 +13,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.db import today_jst, now_jst
+
 DATA_DIR = PROJECT_ROOT / "data"
 DB_PATH = DATA_DIR / "sensei.duckdb"
 PARQUET_DIR = DATA_DIR / "parquet"
@@ -28,7 +30,7 @@ def to_date(val) -> date:
 def check_predictions(db) -> list[str]:
     """期限切れ・期限間近の予測を検出"""
     messages = []
-    today = date.today()
+    today = today_jst()
 
     counts = db.get_prediction_counts()
     if counts["total"] > 0:
@@ -54,7 +56,7 @@ def check_regime(db) -> list[str]:
     if not regime:
         return ["  レジーム: 未判定"]
 
-    age = (date.today() - to_date(regime["date"])).days
+    age = (today_jst() - to_date(regime["date"])).days
     freshness = "" if age == 0 else f" ({age}日前)"
     messages = [f"  レジーム: {regime['overall']}{freshness}"]
     if regime.get("reasoning"):
@@ -84,7 +86,7 @@ def check_brier(db) -> list[str]:
 def check_data_freshness() -> list[str]:
     """Parquetデータの鮮度を確認"""
     messages = []
-    today = date.today()
+    today = today_jst()
 
     for meta_file, label in [
         (PARQUET_DIR / "metadata.json", "日足"),
@@ -111,7 +113,12 @@ def check_data_freshness() -> list[str]:
 
 
 def main():
-    lines = ["[Master Sensei 状態チェック]", ""]
+    now = now_jst()
+    lines = [
+        "[Master Sensei 状態チェック]",
+        f"  現在: {now.strftime('%Y-%m-%d %H:%M JST')}",
+        "",
+    ]
 
     if DB_PATH.exists():
         import duckdb

@@ -14,6 +14,9 @@ from datetime import date
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+from src.db import today_jst
+
 CONDITION_MD = PROJECT_ROOT / "docs" / "condition.md"
 DB_PATH = PROJECT_ROOT / "data" / "sensei.duckdb"
 
@@ -29,8 +32,8 @@ def check_condition_md() -> str | None:
         return "condition.mdにLast updatedが見つかりません"
 
     last_updated = date.fromisoformat(match.group(1))
-    if last_updated < date.today():
-        return f"condition.mdの最終更新日が{last_updated}（今日は{date.today()}）"
+    if last_updated < today_jst():
+        return f"condition.mdの最終更新日が{last_updated}（今日は{today_jst()}）"
     return None
 
 
@@ -44,7 +47,7 @@ def check_unresolved_predictions() -> str | None:
     conn = duckdb.connect(str(DB_PATH), read_only=True)
     overdue = conn.execute(
         "SELECT COUNT(*) FROM predictions WHERE outcome IS NULL AND deadline <= ?",
-        [date.today()],
+        [today_jst()],
     ).fetchone()[0]
     conn.close()
 

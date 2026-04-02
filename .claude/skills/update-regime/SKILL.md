@@ -5,6 +5,10 @@ description: Parquetから最新マクロデータを読み取り、レジーム
 
 レジーム更新ワークフローを実行してください。
 
+## タイムゾーン
+
+現在時刻(JST): !`python3 -c "from datetime import datetime, timezone, timedelta; jst=timezone(timedelta(hours=9)); print(datetime.now(tz=jst).strftime('%Y-%m-%d %H:%M JST'))"`
+
 ## 手順
 
 1. まず `update_data.py --macro-only` を実行��てParquetを最新化する:
@@ -43,10 +47,10 @@ description: Parquetから最新マクロデータを読み取り、レジーム
 
 5. 確認後、`SenseiDB` を使って入力値スナップショット付きで記録する（ADR-009）:
    ```python
-   from src.db import SenseiDB
+   from src.db import SenseiDB, today_jst
    db = SenseiDB(conn)
    db.save_regime(
-       date.today(),
+       today_jst(),
        vix_regime=...,
        overall=...,
        reasoning=...,

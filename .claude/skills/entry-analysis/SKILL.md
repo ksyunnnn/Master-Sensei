@@ -247,14 +247,14 @@ C) {高め}% — {根拠}
 python << 'PYEOF'
 import duckdb
 from datetime import date
-from src.db import SenseiDB
+from src.db import SenseiDB, today_jst
 conn = duckdb.connect('data/sensei.duckdb')
 db = SenseiDB(conn)
 
 tid = db.add_trade(
     instrument="{銘柄}",
     direction="{long/short}",
-    entry_date=date.today(),
+    entry_date=today_jst(),
     entry_price={エントリー価格},
     quantity={数量},
     regime_at_entry="{regime.overall}",

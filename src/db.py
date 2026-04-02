@@ -18,6 +18,16 @@ import duckdb
 JST = timezone(offset=__import__("datetime").timedelta(hours=9))
 
 
+def now_jst() -> datetime:
+    """現在時刻をJSTで取得（分精度）。システムTZに依存しない。"""
+    return datetime.now(tz=JST)
+
+
+def today_jst() -> date:
+    """JSTの「今日」を取得。システムTZに依存しない。"""
+    return datetime.now(tz=JST).date()
+
+
 def _require_aware(dt: datetime, param_name: str = "dt") -> datetime:
     if dt.tzinfo is None:
         raise ValueError(
@@ -379,7 +389,7 @@ class SenseiDB:
         source_prediction_id: int = None,
     ) -> str:
         if discovered_date is None:
-            discovered_date = date.today()
+            discovered_date = today_jst()
 
         existing = self.conn.execute(
             "SELECT id FROM knowledge WHERE id = ?", [knowledge_id]
@@ -389,7 +399,7 @@ class SenseiDB:
                 UPDATE knowledge SET content = ?, evidence = ?, confidence = ?,
                     last_verified_date = ?, source_prediction_id = COALESCE(?, source_prediction_id)
                 WHERE id = ?
-            """, [content, evidence, confidence, date.today(), source_prediction_id, knowledge_id])
+            """, [content, evidence, confidence, today_jst(), source_prediction_id, knowledge_id])
             return knowledge_id
 
         self.conn.execute("""
@@ -402,7 +412,7 @@ class SenseiDB:
         valid = {"hypothesis", "tested", "validated", "invalidated"}
         if status not in valid:
             raise ValueError(f"status must be one of {valid}")
-        params = [status, date.today()]
+        params = [status, today_jst()]
         query = "UPDATE knowledge SET verification_status = ?, last_verified_date = ?"
         if status == "invalidated" and reason:
             query += ", invalidation_reason = ?"

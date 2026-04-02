@@ -13,6 +13,8 @@ import logging
 import os
 import sys
 from datetime import date, timedelta
+
+from src.db import today_jst
 from pathlib import Path
 from typing import Optional
 
@@ -56,7 +58,7 @@ def update_macro(cache: CacheManager):
     取得した値はsource列付きでParquetに保存する。
     """
     chain = _build_provider_chain()
-    today = date.today()
+    today = today_jst()
 
     for name in sorted(chain.available_series()):
         meta = cache.get_macro_metadata(name)
@@ -91,7 +93,7 @@ def update_daily(cache: CacheManager):
     """
     config = TiingoConfig.from_env()
     fetcher = TiingoFetcher(config)
-    today = date.today()
+    today = today_jst()
     all_symbols = TRADING_SYMBOLS + REFERENCE_SYMBOLS
 
     for symbol in all_symbols:
@@ -121,7 +123,7 @@ def update_intraday(cache: CacheManager):
     """
     config = TiingoConfig.from_env()
     fetcher = TiingoFetcher(config)
-    today = date.today()
+    today = today_jst()
 
     for symbol in TRADING_SYMBOLS:
         meta = cache.get_intraday_metadata(symbol)
@@ -316,7 +318,7 @@ def main():
         fetcher = TiingoFetcher(config)
         meta = cache.get_intraday_metadata(symbol)
         start = (meta.end_date) if meta else None
-        df = fetcher.fetch_intraday(symbol, start_date=start, end_date=date.today())
+        df = fetcher.fetch_intraday(symbol, start_date=start, end_date=today_jst())
         if not df.empty:
             cache.save_intraday(symbol, df, source="tiingo")
             logger.info(f"{symbol}: saved {len(df)} intraday bars")

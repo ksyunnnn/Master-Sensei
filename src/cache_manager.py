@@ -9,6 +9,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from src.db import now_jst
+
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -94,7 +96,7 @@ class CacheManager:
         if source is not None:
             df = df.copy()
             df["source"] = source
-            df["updated_at"] = datetime.now()
+            df["updated_at"] = now_jst()
 
         if path.exists():
             bak = path.with_suffix(".parquet.bak")
@@ -114,7 +116,7 @@ class CacheManager:
             symbol=symbol,
             start_date=df.index[0].date() if hasattr(df.index[0], 'date') else df.index[0],
             end_date=df.index[-1].date() if hasattr(df.index[-1], 'date') else df.index[-1],
-            last_updated=datetime.now(),
+            last_updated=now_jst(),
             row_count=len(df),
         )
         self._save_metadata(metadata_file, metadata_dict)

@@ -3,12 +3,25 @@ from datetime import date, datetime, timezone, timedelta
 
 import pytest
 
-from src.db import SenseiDB, JST
+from src.db import SenseiDB, JST, now_jst, today_jst
 
 
 @pytest.fixture
 def db(db_conn):
     return SenseiDB(db_conn)
+
+
+class TestTimeHelpers:
+    def test_now_jst_returns_aware_datetime_with_jst(self):
+        result = now_jst()
+        assert isinstance(result, datetime)
+        assert result.tzinfo is not None
+        assert result.utcoffset() == timedelta(hours=9)
+
+    def test_today_jst_returns_date(self):
+        result = today_jst()
+        assert isinstance(result, date)
+        assert not isinstance(result, datetime)
 
 
 class TestSchema:

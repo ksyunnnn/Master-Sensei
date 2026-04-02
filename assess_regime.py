@@ -13,6 +13,8 @@ import argparse
 from datetime import date
 from pathlib import Path
 
+from src.db import today_jst
+
 import duckdb
 
 from src.cache_manager import CacheManager
@@ -70,7 +72,7 @@ def run(dry_run: bool = False):
     db = SenseiDB(conn)
 
     existing = db.get_latest_regime()
-    today = date.today()
+    today = today_jst()
 
     if existing and existing["date"] == today and existing["overall"] == result.overall:
         print(f"本日({today})の判定は既に記録済み（{result.overall}）。変化なしのためスキップ。")
