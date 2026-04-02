@@ -1,12 +1,12 @@
 # Condition
 
-Last updated: 2026-04-02 (session 7)
+Last updated: 2026-04-02 (session 8)
 
 ## Current Condition
 
 - Phase 3（運用サイクル確立）
 - Charter v0.1.0（習熟度 Lv.1 見習い）
-- 独立gitリポジトリ。ADR 19本、GDR 1本（Phase 1実装済み）、152テスト全パス
+- 独立gitリポジトリ。ADR 20本、GDR 1本（Phase 1実装済み）、217テスト全パス
 - データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
 - sensei.duckdb: レジーム7件、予測3件（解決1/未解決2、Brier 0.2025）、知見23件、イベント105件、**トレード2件（#1 SOXL +10%利確済、#2 SOXL -0.04%スクラッチ決済）**
 - エントリーシグナル研究: @data/research/WIP-progress.md
@@ -17,14 +17,34 @@ Last updated: 2026-04-02 (session 7)
 
 ## Next Session Priority
 
-1. **Trump演説結果の消化** — 演説(4/2 10:00 JST)の内容確認。和平具体策 vs NATO離脱強調で市場反応分岐
-2. **��のエントリー機会の検討** — Trade #2スクラッチ決済済み。ノーポジション。演説後の方向性を見て再エントリーを検討
+1. **(c) 検出力分析** — Polygon 5年分でのMDE算出。research_utils.py完成により着手可能
+2. **(d-pre) Parquetスキーマ拡充** — utils.pyの要件に基づきAgentが必要とする情報を構造化
 3. **予測モニタリング** — #2 SOXL $40割れ(55%, 4/11): $52.26で遠い。#3 SOXS +10%超(75%, 4/11): 反証条件VIX<25がほぼ成立(24.54)
-4. **ISM物価78.3の中期影響評価** — Prices Paid大幅上振れ。和平が崩れた場合の売り加速リスク
-5. **stale知見の検証** — 7件が180日以上未検証（SessionStart警告）
-6. **予測の追加記録** — 現在3件（解決1/未解決2）。Lv.2到達の最大ボトルネック
+4. **stale知見の検証** — 7件が180日以上未検証（SessionStart警告）
+5. **予測の追加記録** — 現在3件（解決1/未解決2）。Lv.2到達の最大ボトルネック
 
-## 今セッションの成果（session 7, 4/2 朝）
+## 今セッションの成果（session 8, 4/2 午後）
+
+### research_utils.py 実装（タスク b 完了）
+- **src/research_utils.py** 新規作成 — 12関数、ADR-013/014準拠
+  - データ読み込み（スプリット調整）、Stage 1スクリーニング、Stage 2統計検証（BH/walk-forward/regime/multi-symbol）、反証テスト4種、CSV記録
+- **65テスト** 全パス（既存152と合わせて217）
+- データ参照先: `../master_sensei/`（読み取り専用）
+
+### コードレビュー → 5件修正
+- Critical 2件: シャッフルテストp値反保守的（Phipson & Smyth補正）、record_result TOCTOU競合
+- High 3件: 全Trueシグナル無警告、float 0/1誤判定、regime N整合性
+
+### テスト恣意性レビュー → 指針明文化 + テスト改善
+- docs/testing-guidelines.md: 6原則（4層構造、seed正当性、閾値根拠、境界決定論、不変量parametrize、参照実装比較）
+- 境界テスト8件 + 不変量テスト16件追加（40→65テスト）
+
+### ドキュメント新設
+- ADR-020: 統計・金融コードのレビュー基準導入
+- docs/code-review-checklist.md: レビューチェックリスト（4領域）
+- docs/testing-guidelines.md: テスト設計原則
+
+### 前セッション（session 7, 4/2 朝）の成果
 
 ### Trade #2 決済・振り返り
 - **Trade #2: SOXL long → スクラッチ決済** — $51.65→$51.631（-$0.49, -0.04%）

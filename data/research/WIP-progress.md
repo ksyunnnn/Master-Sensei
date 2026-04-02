@@ -20,7 +20,7 @@
 | a2 | Polygon 5分足データ取得（18銘柄×5年、OHLCV+n+vw） | **完了** | — |
 | a3 | バイアス対策設計（反証テスト関数・カテゴリタイプ・プロンプト設計） | **完了** | — |
 | a4 | カテゴリタイプ分類（68件→4タイプ、ideation_catalog.parquetにbias_test_type列追加） | **完了** | a3 |
-| b | utils.py作成（検証テスト+反証テスト・BH法・Walk-forward・スプリット調整） | 未着手 | a, a2, a3 |
+| b | utils.py作成（検証テスト+反証テスト・BH法・Walk-forward・スプリット調整） | **完了** | a, a2, a3 |
 | c | 検出力分析（Polygon 5年分でのMDE算出） | 未着手 | a2 |
 | d | 4 Agent並列起動 | 未着手 | b, c, **d-pre** |
 | d-pre | Parquetスキーマ拡充（utils.pyの要件に基づきAgentが必要とする情報をParquetに構造化） | 未着手 | b |
@@ -102,12 +102,93 @@
 - 「宝を捨てたくない」ファネル思想が全設計判断の一貫した指針になる
 
 **次にやること:**
-- (b) utils.py作成: 検証テスト（一致率/BH法/Walk-forward/スプリット調整）+ 反証テスト（シャッフル/ランダム対照/逆方向/期間除外）
 - (c) 検出力分析: Polygon 5年分でのMDE算出
 - (d-pre) Parquetスキーマ拡充: utils.pyの要件に基づきAgentが必要とする情報を構造化
+- (d) 4 Agent並列起動: Stage 1スクリーニング
+
+## ワークログ
+
+### 2026-04-02 session 8: research_utils.py実装 (タスク b)
+
+**やったこと:**
+1. `src/research_utils.py` を新規作成（12関数、~700行）
+2. `tests/test_research_utils.py` を新規作成（40テスト全パス）
+3. `requirements.txt` に scipy, numpy を追加
+4. TDDで5フェーズに分けて実装
+
+**実装した関数:**
+- データ読み込み: `load_daily`, `load_polygon_5min`（ADR-014スプリット調整含む）
+- Stage 1: `screen_signal`（bool/float両対応、二項検定/Spearman相関）
+- Stage 2: `bh_correction`, `walk_forward_test`, `regime_stability_test`, `multi_symbol_test`
+- 反証テスト: `shuffle_test`, `random_data_control`, `reverse_direction_test`, `period_exclusion_test`
+- 記録: `record_result`（fcntl.flock排他ロック、4 Agent並列対応）
+
+**設計判断:**
+- データパスは引数化（デフォルト: `../master_sensei/...`）。master_senseiは読み取り専用
+- 日足indexがnaive、5分足indexがtz-awareの不一致 → Python dateで統一マッピング
+- クロスアセット8銘柄は日足なし → スプリット調整係数=1.0
+- numpy boolとPython boolの不一致 → `bool()`でキャスト
+
+**テスト設計で学んだこと:**
+- 全バーTrueのシグナルはシャッフルテストで意味をなさない（シャッフルしても同一）
+- ランダムリターン×全True信号の偽陽性率は~50%（期待通り）
+- 期間除外テストの脆弱シグナルは背景リターンを明確に負にしないと検出できない
+
+**全テスト: 192 passed（既存152 + 新規40）**
+
+### 2026-04-02 session 8 (続): コードレビュー + 修正 + チェックリスト導入
+
+**レビュー方法:**
+Web検索で11カテゴリのレビュー観点を収集し、コードレビュ���エージェントで全項目を検査。
+自己バイアス（確証バイアス、テスト通過バイアス、スピードバイアス）を事前に列挙。
+
+**発見・修正した問題（5件）:**
+1. **Critical**: シャッフルテストp値���反保守的 → Phipson & Smyth (2010) 補正適用
+2. **Critical**: record_result TOCTOU��合 → ロック取得後にfile_existsチェック
+3. **High**: shuffle_test全True信号でno-op → 定数シグナル検出+早期リターン
+4. **High**: float 0.0/1.0がboolと誤��定 → pd.api.types.is_bool_dtype使用
+5. **High**: regime_stability_test N整合性 → screen_signal結果のn_samplesで判定
+
+**ドキュメント導入:**
+- ADR-020: 統計・金融コードのレビュー基準導入
+- docs/code-review-checklist.md: 処方的チェックリスト（3領域: 統計的正確���、金融データ処理、並行処理）
+- CLAUDE.md: Rules にチェックリスト参照を追加
+
+**学び:**
+- p値計算��+1補正は学術論文レベルの知識が必要。TDDだけでは防げない
+- TOCTOU は「テストでは再現しにくいが本番で必ず起きる」並行処理バグの典型
+- 自作コードのレビューは「テストが通っている=正しい」バイアスが強い。外部観点（Web調査+レビューエージェント）が必須
+
+**全テスト: 192 passed（修正後も全パス）**
+
+### 2026-04-02 session 8 (続2): テスト恣意性レビュー + テスト指針明文化
+
+**調査した原則（Web調査）:**
+- NumPy Testing Guidelines: seed固定は正当。決定論的テスト推奨
+- Martin Fowler: 非決定論的テストの排除
+- Oracle Problem: 参照実装比較、不変量テスト、変成テスト
+- 科学Python: 4層構造（既知解・境界・不変量・反例）
+
+**恣意性評価の再検証:**
+- 先の評価で「恣意的」とした10件中、4件は過剰指摘と再判定
+  - seed固定+既知解テストは正当（NumPy公式推奨）
+  - 問題はテストの欠如と名前/assert不一致
+- 本当の問題: テスト名詐欺2件、境界テスト欠如、不変量テスト欠如
+
+**修正内容:**
+1. テスト名/assert不一致修正: `test_random_signal_fails` → `test_noise_signal_structure`、`test_selective_signal_low_fp_rate` → `test_random_data_control_structure`
+2. 境界テスト8件追加: screen_signal 51%/50%/N=30、BH p==threshold/単一/空入力、walk_forward 奇数分割/セグメント小、regime 全スキップ
+3. 不変量テスト16件追加（parametrize×4seed）: p値∈[0,1]、メトリクス∈[0,1]、n_samples>=0、BH出力長一致、alpha単調性、shuffle最小p値
+
+**ドキュメント新設:**
+- docs/testing-guidelines.md: 6原則（4層構造、seed正当性、閾値根拠、境界は決定論的、不変量はparametrize、参照実装比較）+ テスト命名規則
+- docs/code-review-checklist.md: テスト設計セクション追加
+
+**全テスト: 217 passed（既存152 + research_utils 65）**
 
 ## 完了済み
 
+- [x] research_utils.py（12関数、40テスト全パス。ADR-013/014準拠）
 - [x] カテゴリタイプ分類（68件: unconditional 37, regime_conditional 15, structural 9, direction_fixed 7）
 - [x] バイアス対策設計（ADR-013追記: 反証テスト4種、カテゴリタイプ4種、プロンプト対策5点）
 - [x] ADR-013設計（3段階ファネル、6領域参照方法論）
