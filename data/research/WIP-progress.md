@@ -21,9 +21,11 @@
 | a3 | バイアス対策設計（反証テスト関数・カテゴリタイプ・プロンプト設計） | **完了** | — |
 | a4 | カテゴリタイプ分類（68件→4タイプ、ideation_catalog.parquetにbias_test_type列追加） | **完了** | a3 |
 | b | utils.py作成（検証テスト+反証テスト・BH法・Walk-forward・スプリット調整） | **完了** | a, a2, a3 |
-| c | 検出力分析（Polygon 5年分でのMDE算出） | 未着手 | a2 |
-| d | 4 Agent並列起動 | 未着手 | b, c, **d-pre** |
-| d-pre | Parquetスキーマ拡充（utils.pyの要件に基づきAgentが必要とする情報をParquetに構造化） | 未着手 | b |
+| c | 検出力分析（Polygon 5年分でのMDE算出） | **完了** | a2 |
+| d-pre | ~~Parquetスキーマ拡充~~ → ADR-021でsignal_defs.pyに統合。**不要** | **廃止** | — |
+| d1 | signal_defs.py 信号生成関数 + HYPOTHESESリスト（ADR-021 Round 1準備） | **完了** | b, c |
+| d2 | signal_runner.py（HYPOTHESESを機械実行） | 未着手 | d1 |
+| d3 | Round 1 実行（全仮説スクリーニング） | 未着手 | d2 |
 | e | 結果統合（Stage 1→2→3フィルタ） | 未着手 | d |
 | f | 10アイデア選定 | 未着手 | e |
 | g | Skill/ツール設計・実装 | 未着手 | f |
@@ -37,6 +39,13 @@
 - ユーザーの発注パターン: (P1)開場前発注 / (P2)開場1h内 / (P3)開場3h内(避けたい)
 - サマータイム中の開場: 22:30 JST（標準時: 23:30 JST）
 - 未定義: MAP分析のスコアリング枠組み（3要素の定義、-2〜+2スケール、加重方法）。タスク(f)完了後に正式定義する
+- **外部データ依存**: 193サブシグナルの約45%（Cat 3,4,7,8,13,17,18,27,28,32,35,36,37,43,44,47,50,52,53,59等）はVIX/マクロ/イベントデータが必要。signal_defs.pyのヘルパー関数は現時点でOHLCV系のみ。外部データ用ヘルパーはd1実装時に追加する
+- **signal_defs.pyヘルパー**: 28関数（既存25 + VIX期間構造, VIXスパイク, ストレス日数）。VIXヘルパーはCat 3,7,8,13,18,27,32,35,37用
+- **signal_defs.py信号関数**: 163関数（47カテゴリ）。パラメータ展開含む（Cat 1高安距離×4期間、MA乖離×4期間等）
+- **HYPOTHESESリスト**: 314エントリ（long/short展開。direction_fixed=12件は片方向のみ）
+- **ROUND2_CANDIDATES**: 21カテゴリ、49サブシグナル（Stage 1結果依存8, 評価指標5, 非エントリー6, DuckDB依存2）
+- **Look-Ahead Bias修正**: h_01_09（OR確定前バーをNaN化）、h_03_07（当日→前日の日中Volに変更）
+- **543テスト全パス**（signal_defs 290 + research_utils 101 + その他152）
 
 ## タスク(a) 品質検証結果
 
@@ -107,6 +116,55 @@
 - (d) 4 Agent並列起動: Stage 1スクリーニング
 
 ## ワークログ
+
+### 2026-04-02 session 9: 検出力分析 + ADR-021 + ヘルパー関数 (タスク c, d-pre再定義)
+
+**やったこと（検出力分析に加えて）:**
+
+6. ADR-021「シグナル定義と探索の実装方式」を起草・承認
+   - 10+ソース調査（AlphaAgent, DFS, PAP, tsfresh, arxiv 2512.12924, Claude Code worktree等）
+   - コンセプト: **Dig with intent, verify with discipline.**
+   - 2ラウンド制: Round 1（確認: signal_defs.py→signal_runner.py機械実行）→ Round 2（探索）
+   - 4 Agent並列→単一スクリプトに縮小（計算3分、Agent裁量不要）
+   - タスク d-pre（Parquetスキーマ拡充）→ 不要に（signal_defs.pyが仮説定義のSoT）
+7. `src/signal_defs.py` ヘルパー関数25個を TDD で実装
+   - 61テスト（自己評価で不備23件追加修正: assert欠落1件、未テスト関数5件、境界7件、反例3件）
+   - _bb_positionのstd=0対策修正
+8. 自己評価実施 → 総合5.5/10。テスト品質の問題を検出・修正
+
+**自己評価で発見した問題:**
+- test_known_at_meanにassert文がなかった（Critical — 空テストで常にパス）
+- 5/25関数がテストなし（TDD原則違反）
+- 境界テスト・反例テストがほぼなかった
+- ADR-021がユーザーに3回修正されてから完成（目的理解不足）
+
+### 2026-04-02 session 9 (続): 検出力分析 (タスク c)
+
+**やったこと:**
+1. `compute_mde_binomial()` 実装 — scipy exact binomial + bisect法。正規近似より小サンプルで正確
+2. `compute_mde_spearman()` 実装 — Fisher z変換による解析解
+3. `power_analysis_report()` 実装 — 全シンボルの5分足読み込み→MDE一覧表
+4. 36テスト追加（4層構造: 既知解4、境界4、不変量16(parametrize含む)、反例4、レポート5）
+5. 全101テストパス
+
+**MDE結果（α=0.20片側、power=0.80、全18シンボル、5年1254日）:**
+
+| 粒度 | N | MDE二項 | MDE Spearman |
+|------|---|---------|-------------|
+| 日足 | 1,254 | 52.4% | |r|≥0.048 |
+| 5分足バー | ~97,000 | 50.3% | |r|≥0.005 |
+| WF2分割(日足) | 627 | 53.4% | |r|≥0.067 |
+
+**解釈:**
+- 日足ベースの仮説: 勝率52.4%以上のシグナルのみ検出可能。K-018(60-65%)は十分検出圏内
+- 5分足バー単位: 50.3%で検出可能。バーレベルの仮説は高感度だが、ノイズも拾いやすい
+- WF2分割: 各セグメント627日で53.4%。安定性要求でMDEが1%上昇
+- UUP: バー数93,774（他シンボルは97,462）。流動性問題(55%が78バー未満)の影響
+
+**コードレビュー修正（3件）:**
+1. Critical: binom.isf + sf の off-by-one → 棄却域を1つ広く取り検出力過大評価。int化+sf(k_crit)に修正
+2. Important: Fisher z近似の前提条件をdocstringに明記（fat-tail下で小サンプル過大評価）
+3. Important: n_wf極小時のクランプをNaN返却に変更（実行不可能な状況の誤誘導防止）
 
 ### 2026-04-02 session 8: research_utils.py実装 (タスク b)
 
@@ -188,7 +246,11 @@ Web検索で11カテゴリのレビュー観点を収集し、コードレビュ
 
 ## 完了済み
 
-- [x] research_utils.py（12関数、40テスト全パス。ADR-013/014準拠）
+- [x] signal_defs.py信号関数+HYPOTHESES（163関数、314エントリ、21 R2候補。290テスト。Look-Ahead修正2件、_stress_daysバグ修正1件）
+- [x] ADR-021（シグナル定義方式。2ラウンド制、signal_defs.py+signal_runner.py、d-pre不要化）
+- [x] signal_defs.pyヘルパー関数（28関数（25+VIX系3）、61+12テスト。自己評価→23件不備修正）
+- [x] 検出力分析（MDE算出: 日足52.4%/バー50.3%/WF53.4%。3関数+36テスト、レビュー修正3件、全101テストパス）
+- [x] research_utils.py（15関数、101テスト全パス。ADR-013/014準拠）
 - [x] カテゴリタイプ分類（68件: unconditional 37, regime_conditional 15, structural 9, direction_fixed 7）
 - [x] バイアス対策設計（ADR-013追記: 反証テスト4種、カテゴリタイプ4種、プロンプト対策5点）
 - [x] ADR-013設計（3段階ファネル、6領域参照方法論）
@@ -201,6 +263,7 @@ Web検索で11カテゴリのレビュー観点を収集し、コードレビュ
 
 - ADR-013: docs/adr/013-entry-signal-research-methodology.md
 - ADR-014: docs/adr/014-parquet-raw-and-split-adjustment.md
+- ADR-021: docs/adr/021-signal-definition-approach.md
 - 仮説空間: data/research/hypothesis_space.md
 - 調査レポート: data/research/ideation_report.md
 - カタログ: data/research/ideation_catalog.parquet

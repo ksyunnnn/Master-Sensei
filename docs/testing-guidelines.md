@@ -109,6 +109,35 @@ def test_shuffle_pvalue_in_range(seed):
 | `test_X_invariant_Y` | 不変量Yの検証 | 数学的性質（範囲、単調性等） |
 | `test_X_reference` | 参照実装との一致 | 既知の正解との比較 |
 
+## 原則 7: assert文の存在を保証する（session 9で追加）
+
+テスト関数には必ず1つ以上の assert 文が必要。assert がないテストは常にパスし、
+テスト名が主張する内容を一切検証しない「空テスト」になる。
+
+**発見経緯**: session 9の自己評価で `test_known_at_mean` にassert文がないことを発見。
+テストは38件全パスと報告されていたが、実際には1件が検証を行わずパスしていた。
+
+**NG例:**
+```python
+def test_known_at_mean(self):
+    """既知解: 定数系列 → BB position = 0.5"""
+    pos = _bb_position(close, 20, 2.0)
+    valid = pos.dropna()
+    # ← assert がない。常にパス
+```
+
+**OK例:**
+```python
+def test_known_constant_returns_half(self):
+    """既知解: 定数系列 → BB position = 0.5"""
+    pos = _bb_position(close, 20, 2.0)
+    valid = pos.dropna()
+    assert len(valid) > 0, "定数系列でもNaN以外の値があるべき"
+    assert valid.iloc[-1] == pytest.approx(0.5)
+```
+
+**防止策**: テスト実装後に `grep -c assert tests/test_*.py` で各テスト関数のassert数を確認する。
+
 ## 更新ルール
 
 - テスト恣意性のレビューで新たなパターンを発見したら追記する

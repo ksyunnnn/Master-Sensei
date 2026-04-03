@@ -60,6 +60,7 @@ Created: 2026-04-02
 
 テスト設計の詳細原則は @docs/testing-guidelines.md を参照。
 
+- [ ] テスト関数にassert文が1つ以上存在するか（assert欠落テストは常にパスする。session 9で発見）
 - [ ] テスト名が assert の内容と一致しているか（`test_X_fails` なら `passed is False` を検証）
 - [ ] 既知解・境界・不変量・反例の4層が揃っているか
 - [ ] 境界テストは決定論的データ（ランダム性なし）で構築されているか

@@ -8,6 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats as sp_stats
 
 from src.research_utils import (
     SignalTestResult,
@@ -24,6 +25,9 @@ from src.research_utils import (
     reverse_direction_test,
     period_exclusion_test,
     record_result,
+    compute_mde_binomial,
+    compute_mde_spearman,
+    power_analysis_report,
 )
 
 
@@ -827,3 +831,314 @@ class TestInvariantsShuffleTest:
         # Phipson & Smyth: 最小p値 = 1/(n_perms+1)
         assert result.pvalue >= 1 / (n_perms + 1)
         assert result.pvalue <= 1.0
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 検出力分析 (Power Analysis) テスト
+# ══════════════════════════════════════════════════════════════════════
+
+
+class TestComputeMdeBinomial:
+    """compute_mde_binomial: 二項検定のMDE算出"""
+
+    # ── 既知解テスト ──
+
+    def test_known_solution_n100(self):
+        """既知解: N=100, alpha=0.20(片側), power=0.80 のMDE検証。
+
+        正規近似: MDE ≈ 0.5 + (z_alpha + z_beta) * sqrt(0.25/N)
+        z_0.80 = 0.8416, sqrt(0.25/100) = 0.05
+        MDE ≈ 0.5 + 1.6832 * 0.05 ≈ 0.584
+
+        ただし正規近似はp≈0.5で正確なので±0.01の許容で検証。
+        """
+        mde = compute_mde_binomial(n=100, alpha=0.20, power=0.80)
+        # 正規近似からの理論値 ≈ 0.584
+        assert 0.56 <= mde <= 0.60, f"N=100のMDE={mde}は理論値0.584付近であるべき"
+
+    def test_known_solution_n1000(self):
+        """既知解: N=1000 では MDE が 0.50 に近づく。
+
+        MDE ≈ 0.5 + 1.6832 * sqrt(0.25/1000) ≈ 0.5 + 0.0266 ≈ 0.527
+        """
+        mde = compute_mde_binomial(n=1000, alpha=0.20, power=0.80)
+        assert 0.52 <= mde <= 0.54, f"N=1000のMDE={mde}は理論値0.527付近であるべき"
+
+    def test_crosscheck_with_binomtest(self):
+        """参照実装比較: 算出したMDEでbinomtestのpowerが≈targetになることを確認。
+
+        MDE = compute_mde_binomial(N, alpha, power=0.80)
+        → binomtest(k, N, 0.5) でp<alpha となる確率が ≈ 0.80
+        """
+        n = 200
+        alpha = 0.20
+        target_power = 0.80
+        mde = compute_mde_binomial(n=n, alpha=alpha, power=target_power)
+
+        # モンテカルロで検証: p=mde のbinomial分布から10000サンプル生成
+        rng = np.random.default_rng(42)
+        n_sims = 10000
+        rejections = 0
+        for _ in range(n_sims):
+            x = rng.binomial(n, mde)
+            pval = sp_stats.binomtest(x, n, 0.5, alternative="greater").pvalue
+            if pval < alpha:
+                rejections += 1
+        empirical_power = rejections / n_sims
+        # 許容: ±5%（モンテカルロ誤差を考慮）
+        assert abs(empirical_power - target_power) < 0.05, (
+            f"MDE={mde}でのempirical power={empirical_power}, 期待≈{target_power}"
+        )
+
+    # ── 境界テスト ──
+
+    def test_boundary_n30_minimum(self):
+        """境界: N=30（screen_signalの最小サンプル）ではMDEが大きくなる"""
+        mde = compute_mde_binomial(n=30, alpha=0.20, power=0.80)
+        # N=30ではMDE > 0.60 が期待される（検出力が低い）
+        assert mde > 0.60, f"N=30のMDE={mde}は0.60超であるべき"
+        assert mde < 1.0, f"MDE={mde}は1.0未満であるべき"
+
+    def test_boundary_very_large_n(self):
+        """境界: N=100000 ではMDEが0.50にほぼ収束する"""
+        mde = compute_mde_binomial(n=100000, alpha=0.20, power=0.80)
+        assert 0.500 < mde < 0.505, f"N=100000のMDE={mde}は0.50+εであるべき"
+
+    # ── 不変量テスト ──
+
+    @pytest.mark.parametrize("n", [50, 100, 500, 1000, 5000])
+    def test_invariant_mde_above_half(self, n):
+        """不変量: MDE > 0.50（H0=0.50の片側検定なので必ず0.50超）"""
+        mde = compute_mde_binomial(n=n, alpha=0.20, power=0.80)
+        assert mde > 0.50
+
+    def test_invariant_mde_decreases_with_n(self):
+        """不変量: N が増えるとMDEは単調減少する"""
+        ns = [30, 50, 100, 200, 500, 1000, 5000]
+        mdes = [compute_mde_binomial(n=n, alpha=0.20, power=0.80) for n in ns]
+        for i in range(len(mdes) - 1):
+            assert mdes[i] > mdes[i + 1], (
+                f"MDE(N={ns[i]})={mdes[i]} <= MDE(N={ns[i+1]})={mdes[i+1]}: 単調減少違反"
+            )
+
+    def test_invariant_mde_increases_with_power(self):
+        """不変量: 要求powerが高いほどMDEは大きくなる（より大きな効果が必要）"""
+        n = 200
+        mde_60 = compute_mde_binomial(n=n, alpha=0.20, power=0.60)
+        mde_80 = compute_mde_binomial(n=n, alpha=0.20, power=0.80)
+        mde_95 = compute_mde_binomial(n=n, alpha=0.20, power=0.95)
+        assert mde_60 < mde_80 < mde_95
+
+    def test_invariant_mde_decreases_with_alpha(self):
+        """不変量: alphaが大きいほどMDEは小さくなる（棄却しやすい）"""
+        n = 200
+        mde_05 = compute_mde_binomial(n=n, alpha=0.05, power=0.80)
+        mde_10 = compute_mde_binomial(n=n, alpha=0.10, power=0.80)
+        mde_20 = compute_mde_binomial(n=n, alpha=0.20, power=0.80)
+        assert mde_05 > mde_10 > mde_20
+
+    # ── 反例テスト ──
+
+    def test_error_n_too_small(self):
+        """反例: N < 1 はエラー"""
+        with pytest.raises(ValueError):
+            compute_mde_binomial(n=0, alpha=0.20, power=0.80)
+
+    def test_error_invalid_alpha(self):
+        """反例: alpha ∉ (0, 1) はエラー"""
+        with pytest.raises(ValueError):
+            compute_mde_binomial(n=100, alpha=0.0, power=0.80)
+        with pytest.raises(ValueError):
+            compute_mde_binomial(n=100, alpha=1.0, power=0.80)
+
+    def test_error_invalid_power(self):
+        """反例: power ∉ (0, 1) はエラー"""
+        with pytest.raises(ValueError):
+            compute_mde_binomial(n=100, alpha=0.20, power=0.0)
+        with pytest.raises(ValueError):
+            compute_mde_binomial(n=100, alpha=0.20, power=1.0)
+
+
+class TestComputeMdeSpearman:
+    """compute_mde_spearman: Spearman相関のMDE算出"""
+
+    # ── 既知解テスト ──
+
+    def test_known_solution_fisher_z(self):
+        """既知解: Fisher z変換による理論値との一致。
+
+        r_min = tanh((z_alpha + z_beta) / sqrt(N - 3))
+        N=100, alpha=0.20(片側), power=0.80:
+        z_alpha = z_beta = 0.8416
+        r_min = tanh(1.6832 / sqrt(97)) = tanh(0.1709) ≈ 0.1692
+        """
+        mde = compute_mde_spearman(n=100, alpha=0.20, power=0.80)
+        # Fisher z 理論値 ≈ 0.169
+        assert abs(mde - 0.169) < 0.01, f"N=100のMDE_r={mde}は理論値0.169付近であるべき"
+
+    def test_known_solution_n1000(self):
+        """既知解: N=1000 での理論値。
+
+        r_min = tanh(1.6832 / sqrt(997)) ≈ tanh(0.0533) ≈ 0.0533
+        """
+        mde = compute_mde_spearman(n=1000, alpha=0.20, power=0.80)
+        assert abs(mde - 0.053) < 0.005, f"N=1000のMDE_r={mde}は理論値0.053付近であるべき"
+
+    # ── 境界テスト ──
+
+    def test_boundary_n30(self):
+        """境界: N=30 ではMDEが大きい"""
+        mde = compute_mde_spearman(n=30, alpha=0.20, power=0.80)
+        assert mde > 0.25, f"N=30のMDE_r={mde}は0.25超であるべき"
+        assert mde < 1.0
+
+    def test_boundary_n4_minimum(self):
+        """境界: N=4 (Fisher z で N-3=1) では非常に大きなMDE"""
+        mde = compute_mde_spearman(n=4, alpha=0.20, power=0.80)
+        assert mde > 0.80, f"N=4のMDE_r={mde}は0.80超であるべき"
+
+    # ── 不変量テスト ──
+
+    @pytest.mark.parametrize("n", [30, 100, 500, 1000])
+    def test_invariant_mde_positive(self, n):
+        """不変量: MDE > 0"""
+        mde = compute_mde_spearman(n=n, alpha=0.20, power=0.80)
+        assert mde > 0
+
+    @pytest.mark.parametrize("n", [30, 100, 500, 1000])
+    def test_invariant_mde_below_one(self, n):
+        """不変量: MDE < 1.0"""
+        mde = compute_mde_spearman(n=n, alpha=0.20, power=0.80)
+        assert mde < 1.0
+
+    def test_invariant_mde_decreases_with_n(self):
+        """不変量: N増加でMDE単調減少"""
+        ns = [30, 50, 100, 200, 500, 1000]
+        mdes = [compute_mde_spearman(n=n, alpha=0.20, power=0.80) for n in ns]
+        for i in range(len(mdes) - 1):
+            assert mdes[i] > mdes[i + 1]
+
+    def test_invariant_mde_increases_with_power(self):
+        """不変量: 要求power増加でMDE増加"""
+        n = 200
+        mde_60 = compute_mde_spearman(n=n, alpha=0.20, power=0.60)
+        mde_80 = compute_mde_spearman(n=n, alpha=0.20, power=0.80)
+        mde_95 = compute_mde_spearman(n=n, alpha=0.20, power=0.95)
+        assert mde_60 < mde_80 < mde_95
+
+    # ── 反例テスト ──
+
+    def test_error_n_below_4(self):
+        """反例: N < 4 はFisher z変換不能"""
+        with pytest.raises(ValueError):
+            compute_mde_spearman(n=3, alpha=0.20, power=0.80)
+
+
+class TestPowerAnalysisReport:
+    """power_analysis_report: シンボル別MDE一覧表"""
+
+    @pytest.fixture
+    def polygon_dir(self, tmp_path):
+        """合成5分足Parquet。2シンボル、各100営業日×78バー"""
+        for sym in ("AAA", "BBB"):
+            dates = []
+            for d in pd.bdate_range("2021-01-04", periods=100):
+                times = pd.date_range(
+                    f"{d.date()} 09:30", periods=78, freq="5min", tz="US/Eastern"
+                )
+                dates.extend(times)
+            idx = pd.DatetimeIndex(dates)
+            rng = np.random.default_rng(42 if sym == "AAA" else 99)
+            df = pd.DataFrame(
+                {
+                    "Open": rng.uniform(50, 60, len(idx)),
+                    "High": rng.uniform(60, 65, len(idx)),
+                    "Low": rng.uniform(45, 50, len(idx)),
+                    "Close": rng.uniform(50, 60, len(idx)),
+                    "Volume": rng.integers(1000, 10000, len(idx)),
+                    "VWAP": rng.uniform(50, 60, len(idx)),
+                    "NumTrades": rng.integers(10, 100, len(idx)),
+                },
+                index=idx,
+            )
+            df.to_parquet(tmp_path / f"{sym}_5min.parquet")
+        return tmp_path
+
+    @pytest.fixture
+    def empty_daily_dir(self, tmp_path):
+        """日足なし（クロスアセット想定）"""
+        return tmp_path / "daily_empty"
+
+    def test_report_structure(self, polygon_dir, empty_daily_dir):
+        """既知解: レポートが正しいカラム構造を持つ"""
+        report = power_analysis_report(
+            symbols=["AAA", "BBB"],
+            data_dir=polygon_dir,
+            daily_dir=empty_daily_dir,
+            alpha=0.20,
+            power=0.80,
+            n_splits=2,
+        )
+        assert isinstance(report, pd.DataFrame)
+        expected_cols = {
+            "symbol", "n_days", "n_bars",
+            "mde_binomial_daily", "mde_spearman_daily",
+            "mde_binomial_bar", "mde_spearman_bar",
+            "mde_binomial_wf", "mde_spearman_wf",
+        }
+        assert expected_cols.issubset(set(report.columns)), (
+            f"不足カラム: {expected_cols - set(report.columns)}"
+        )
+        assert len(report) == 2
+
+    def test_report_n_values(self, polygon_dir, empty_daily_dir):
+        """既知解: 合成データのN値が正しい"""
+        report = power_analysis_report(
+            symbols=["AAA"],
+            data_dir=polygon_dir,
+            daily_dir=empty_daily_dir,
+            alpha=0.20,
+            power=0.80,
+            n_splits=2,
+        )
+        row = report.iloc[0]
+        assert row["n_days"] == 100
+        # 100日 × 78バー = 7800
+        assert row["n_bars"] == 7800
+
+    def test_report_mde_consistency(self, polygon_dir, empty_daily_dir):
+        """不変量: bar MDE < daily MDE（バー数 > 日数なので）"""
+        report = power_analysis_report(
+            symbols=["AAA"],
+            data_dir=polygon_dir,
+            daily_dir=empty_daily_dir,
+            alpha=0.20,
+            power=0.80,
+            n_splits=2,
+        )
+        row = report.iloc[0]
+        assert row["mde_binomial_bar"] < row["mde_binomial_daily"]
+        assert row["mde_spearman_bar"] < row["mde_spearman_daily"]
+
+    def test_report_wf_mde_larger_than_daily(self, polygon_dir, empty_daily_dir):
+        """不変量: walk-forward MDE > daily MDE（N/n_splits < N なので）"""
+        report = power_analysis_report(
+            symbols=["AAA"],
+            data_dir=polygon_dir,
+            daily_dir=empty_daily_dir,
+            alpha=0.20,
+            power=0.80,
+            n_splits=2,
+        )
+        row = report.iloc[0]
+        assert row["mde_binomial_wf"] > row["mde_binomial_daily"]
+        assert row["mde_spearman_wf"] > row["mde_spearman_daily"]
+
+    def test_report_empty_symbols(self):
+        """反例: シンボル空リストは空DataFrameを返す"""
+        report = power_analysis_report(
+            symbols=[],
+            data_dir="/nonexistent",
+            daily_dir="/nonexistent",
+        )
+        assert len(report) == 0

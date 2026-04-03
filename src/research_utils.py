@@ -681,6 +681,178 @@ def period_exclusion_test(
     )
 
 
+# ── 検出力分析 (Power Analysis) ──
+
+
+def compute_mde_binomial(
+    n: int,
+    alpha: float = 0.20,
+    power: float = 0.80,
+) -> float:
+    """二項検定のMDE（最小検出可能効果）を算出する。
+
+    H0: p = 0.50（ランダム）に対する片側検定で、
+    検出力 >= power となる最小の方向一致率 p_min を返す。
+
+    scipy.stats.binomtest を使った exact 計算。
+    bisect で p_min を探索する（正規近似より小サンプルで正確）。
+
+    Args:
+        n: サンプル数（発火回数）
+        alpha: 有意水準（片側）
+        power: 要求する検出力
+
+    Returns:
+        MDE（最小検出可能な方向一致率）。0.50超の値。
+
+    Raises:
+        ValueError: n < 1 or alpha/power ∉ (0, 1)
+    """
+    from scipy import stats as sp_stats
+
+    if n < 1:
+        raise ValueError(f"n must be >= 1, got {n}")
+    if not (0 < alpha < 1):
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    if not (0 < power < 1):
+        raise ValueError(f"power must be in (0, 1), got {power}")
+
+    # 棄却域の臨界値 k_crit: binom.isf(alpha, n, 0.5) は
+    # P(X > k_crit | p=0.5) <= alpha を満たす最小整数を返す。
+    # 棄却条件は X > k_crit（= X >= k_crit+1）。
+    # 検出力 = P(X > k_crit | p=p1) = binom.sf(k_crit, n, p1)
+    from scipy.stats import binom
+    k_crit = int(binom.isf(alpha, n, 0.5))
+
+    def _power_at(p1: float) -> float:
+        """p=p1 のとき H0 を棄却する確率（検出力）"""
+        return float(binom.sf(k_crit, n, p1))
+
+    # bisect: power_at(p1) = power となる p1 を探索
+    lo, hi = 0.50 + 1e-10, 1.0 - 1e-10
+    for _ in range(100):  # 二分法 100 回で十分な精度
+        mid = (lo + hi) / 2
+        if _power_at(mid) < power:
+            lo = mid
+        else:
+            hi = mid
+
+    return round(hi, 6)
+
+
+def compute_mde_spearman(
+    n: int,
+    alpha: float = 0.20,
+    power: float = 0.80,
+) -> float:
+    """Spearman相関のMDE（最小検出可能効果）を算出する。
+
+    Fisher z変換による解析解:
+      r_min = tanh((z_alpha + z_beta) / sqrt(N - 3))
+
+    片側検定を仮定（direction で符号を指定するため）。
+
+    Args:
+        n: サンプル数
+        alpha: 有意水準（片側）
+        power: 要求する検出力
+
+    Returns:
+        MDE（最小検出可能な |r|）
+
+    Note:
+        Fisher z 変換は厳密には Pearson 相関向け。Spearman 相関への適用は
+        連続・近似正規分布を仮定した場合の近似値。金融リターンの fat-tail 分布
+        下では小サンプル(N<100)で検出力が過大評価される可能性がある。
+
+    Raises:
+        ValueError: n < 4 (Fisher z で N-3 >= 1 が必要)
+    """
+    from scipy.stats import norm
+
+    if n < 4:
+        raise ValueError(f"n must be >= 4 for Fisher z transform, got {n}")
+    if not (0 < alpha < 1):
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    if not (0 < power < 1):
+        raise ValueError(f"power must be in (0, 1), got {power}")
+
+    z_alpha = norm.ppf(1 - alpha)
+    z_beta = norm.ppf(power)
+    z_r = (z_alpha + z_beta) / np.sqrt(n - 3)
+    r_min = float(np.tanh(z_r))
+
+    return round(r_min, 6)
+
+
+def power_analysis_report(
+    symbols: list[str],
+    data_dir: Path | str = DEFAULT_INTRADAY_DIR,
+    daily_dir: Path | str = DEFAULT_DAILY_DIR,
+    alpha: float = 0.20,
+    power: float = 0.80,
+    n_splits: int = 2,
+) -> pd.DataFrame:
+    """シンボル別の検出力分析レポートを生成する。
+
+    各シンボルの Polygon 5分足を読み込み、
+    日単位・バー単位・walk-forward分割でのMDEを算出する。
+
+    Args:
+        symbols: ティッカーリスト
+        data_dir: Polygon 5分足ディレクトリ
+        daily_dir: 日足ディレクトリ（スプリット調整用）
+        alpha: 有意水準
+        power: 要求検出力
+        n_splits: walk-forward分割数
+
+    Returns:
+        DataFrame (columns: symbol, n_days, n_bars,
+                   mde_binomial_daily, mde_spearman_daily,
+                   mde_binomial_bar, mde_spearman_bar,
+                   mde_binomial_wf, mde_spearman_wf)
+    """
+    if not symbols:
+        return pd.DataFrame()
+
+    rows = []
+    for sym in symbols:
+        try:
+            df = load_polygon_5min(sym, data_dir=data_dir, daily_dir=daily_dir,
+                                   session="regular")
+        except FileNotFoundError:
+            logger.warning("power_analysis_report: %s のデータが見つかりません", sym)
+            continue
+
+        n_bars = len(df)
+        # 営業日数 = ユニークな日付数
+        n_days = len(set(ts.date() for ts in df.index))
+
+        # walk-forward: 日単位でn_splits分割した各セグメントのN
+        n_wf = n_days // n_splits
+
+        row = {
+            "symbol": sym,
+            "n_days": n_days,
+            "n_bars": n_bars,
+            "mde_binomial_daily": compute_mde_binomial(max(n_days, 1), alpha, power),
+            "mde_spearman_daily": compute_mde_spearman(max(n_days, 4), alpha, power),
+            "mde_binomial_bar": compute_mde_binomial(max(n_bars, 1), alpha, power),
+            "mde_spearman_bar": compute_mde_spearman(max(n_bars, 4), alpha, power),
+            "mde_binomial_wf": (
+                compute_mde_binomial(n_wf, alpha, power) if n_wf >= 1
+                else float("nan")
+            ),
+            "mde_spearman_wf": (
+                compute_mde_spearman(n_wf, alpha, power) if n_wf >= 4
+                else float("nan")
+            ),
+        }
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
 # ── 結果記録 ──
 
 REQUIRED_COLUMNS = [
