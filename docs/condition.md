@@ -17,21 +17,23 @@ Last updated: 2026-04-03 (session 10)
 
 ## Next Session Priority
 
-1. **(d1) 信号生成関数 + HYPOTHESESリスト** — プラン70%完了。残: 各カテゴリの具体関数マッピング、延期判断精査、マクロN制約明記。Cat 1-2（OHLCVのみ）から着手可能
-2. **(d2) signal_runner.py** — HYPOTHESESを機械的に実行するランナー
+1. **(d2) signal_runner.py** — HYPOTHESESを機械的に実行するランナー。d1完了済みのため次の最優先
+2. **d1コードレビュー** — 163関数のLook-Ahead Bias再チェック（新セッション冒頭で実施推奨）
 3. **(d3) Round 1 実行** — 全仮説スクリーニング（~3分）
 4. **予測モニタリング** — #2 SOXL $40割れ(55%, 4/11): $52.26で遠い。#3 SOXS +10%超(75%, 4/11): 反証条件VIX<25がほぼ成立(24.54)
 5. **stale知見の検証** — 7件が180日以上未検証（SessionStart警告）
 
 ## 今セッションの成果（session 10, 4/3 朝）
 
-### タスク d1 準備（信号生成関数 + HYPOTHESES）
-- hypothesis_space.md 全文読了（68カテゴリ × 193サブシグナル）
-- ideation_catalog.parquet 直接検証: bias_test_type分布確認（unconditional:37, regime_conditional:15, structural:9, direction_fixed:7）
-- Explore Agent 3並列: signal function interface、catalog構造、macro data availability
-- マクロデータ制約確認: 9系列×N=252-268（~1年）。日足5年との結合でマクロ依存シグナルはN≤268
-- プランファイル作成（70%完了。残: 具体関数マッピング、延期判断精査、マクロN制約明記）
-- 設計方針: runner がマクロ/ペアデータを df にマージ → h_XX_XX(df) は df のみ受取
+### タスク d1 完了（信号生成関数 + HYPOTHESES）
+- signal_defs.py: **163信号関数**（47カテゴリ）+ 28ヘルパー（既存25+VIX系3）
+- HYPOTHESES: **314エントリ**（long/short展開。direction_fixed=12件は片方向）
+- ROUND2_CANDIDATES: **21カテゴリ/49サブシグナル**（Stage 1結果依存8, 評価指標5, 非エントリー6, DuckDB依存2）
+- 290テスト新規追加（構造テスト+代表テスト+VIXヘルパー4層テスト）。全543テストパス
+- Look-Ahead Bias修正2件（h_01_09 OR確定前NaN化、h_03_07 前日Vol使用）
+- _stress_daysバグ修正1件（グループ計算ロジック）
+- 自動整合性チェック8項目全PASS（全関数HYPOTHESES含有、ID一意、R1/R2重複なし、全カテゴリカバー）
+- コミット: dbd64d9
 
 ### グローバルCLAUDE.md更新
 - `python3 -c` 内 `#` コメント禁止ルール追加（obfuscation検出回避）
