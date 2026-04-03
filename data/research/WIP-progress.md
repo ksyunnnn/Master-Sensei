@@ -45,6 +45,14 @@
 - **HYPOTHESESリスト**: 314エントリ（long/short展開。direction_fixed=12件は片方向のみ）
 - **ROUND2_CANDIDATES**: 21カテゴリ、49サブシグナル（Stage 1結果依存8, 評価指標5, 非エントリー6, DuckDB依存2）
 - **Look-Ahead Bias修正**: h_01_09（OR確定前バーをNaN化）、h_03_07（当日→前日の日中Volに変更）
+- **signal_runner.py設計仕様（d2実装時の参照）**:
+  - 全信号関数は `h_XX_XX(df) -> pd.Series` のインターフェース。dfのみ受け取る
+  - HYPOTHESESエントリの `requires_macro` フィールド: runnerがマクロParquetを読み、日付ベースでdfに列マージ（例: `df['vix']`, `df['hy_spread']`）
+  - HYPOTHESESエントリの `requires_pair` フィールド: runnerがペアシンボルのデータを読み、`df['pair_Close']`, `df['pair_Volume']`としてマージ
+  - `timeframe` フィールド: `daily`（日足のみ）/ `daily_macro`（日足+マクロ）/ `intraday`（5分足）。runnerがデータ読込先を切替
+  - マクロデータはN=252-268（~1年）。日足5年と結合時、マクロ範囲外はNaN
+  - runnerはAgent裁量なし。HYPOTHESESを順次読み、screen_signal + 反証テストを機械実行
+  - 結果はsignal_ideas.csvに記録（ADR-013準拠）
 - **543テスト全パス**（signal_defs 290 + research_utils 101 + その他152）
 
 ## タスク(a) 品質検証結果
