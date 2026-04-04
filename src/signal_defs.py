@@ -621,10 +621,15 @@ def h_12_01(df):
 
 
 def h_12_02(df):
-    """日足→日中方向一致: 前日リターンの符号。5分足に日足方向を伝搬。"""
+    """日足→日中方向一致: 前日リターンの符号。5分足に日足方向を伝搬。
+
+    Look-Ahead修正: transform('last')は同日終値を全バーに伝播するため、
+    日単位で終値を集約し、前日リターンの符号を各バーにマッピングする。
+    """
     dates = pd.Series(df.index.date, index=df.index)
-    daily_ret = df.groupby(dates)['Close'].transform('last').pct_change()
-    return daily_ret.shift(1).apply(np.sign)
+    eod_close = df.groupby(dates)['Close'].last()
+    prev_ret_sign = eod_close.pct_change().shift(1).apply(np.sign)
+    return dates.map(prev_ret_sign).astype(float)
 
 
 def h_12_03(df):
@@ -659,15 +664,16 @@ def h_13_03(df):
 
 
 def h_14_01(df):
-    """OpEx週フラグ: 月の第3金曜を含む週。"""
-    # 第3金曜 = day 15-21 のうち金曜日
+    """OpEx週フラグ: 月の第3金曜を含む週。
+
+    Look-Ahead修正: bfill()は未来行から逆伝播するため使わない。
+    ISO週番号でOpEx週を決定論的に判定（カレンダー情報のみで計算可能）。
+    """
     dom = df.index.day
     dow = df.index.dayofweek
     third_friday = (dom >= 15) & (dom <= 21) & (dow == 4)
-    # その週（月-金）全体をフラグ
-    # 簡易実装: 第3金曜の週番号と一致
     week_num = df.index.isocalendar().week.values
-    opex_weeks = pd.Series(week_num, index=df.index).where(third_friday).ffill().bfill()
+    opex_weeks = pd.Series(week_num, index=df.index).where(third_friday).ffill()
     return pd.Series(week_num, index=df.index) == opex_weeks
 
 
@@ -1474,29 +1480,38 @@ def h_71_03(df):
 
 
 def h_72_01(df):
-    """アフターマーケット最終値 → 翌朝オープンの乖離率 (%)。"""
+    """アフターマーケット最終値 → 翌朝オープンの乖離率 (%)。
+
+    Look-Ahead修正: transform('last/first')は同日内未来バーを含むため、
+    日単位で集約してからマッピングする。
+    """
     if 'VWAP' not in df.columns:
         return pd.Series(np.nan, index=df.index)
     import datetime
     after_hours = df.index.time >= datetime.time(16, 0)
     dates = pd.Series(df.index.date, index=df.index)
-    after_last = df['Close'].where(after_hours).groupby(dates).transform('last')
-    # 翌日のオープンとの乖離
-    next_day_open = df.groupby(dates)['Open'].transform('first')
-    gap = (next_day_open - after_last.shift(1)) / after_last.shift(1) * 100
-    return gap
+    after_close_by_day = df['Close'].where(after_hours).groupby(dates).last()
+    open_by_day = df.groupby(dates)['Open'].first()
+    gap_by_day = (open_by_day - after_close_by_day.shift(1)) / after_close_by_day.shift(1) * 100
+    return dates.map(gap_by_day).astype(float)
 
 
 def h_72_02(df):
-    """アフターマーケット出来高水準: 高ければ翌日ボラティリティ予測。"""
+    """アフターマーケット出来高水準: 高ければ翌日ボラティリティ予測。
+
+    Look-Ahead修正: transform('sum')は同日内未来バーを含むため、
+    日単位で集約してからマッピングする。前日のアフター/レギュラー比率を使用。
+    """
     if 'VWAP' not in df.columns:
         return pd.Series(np.nan, index=df.index)
     import datetime
     after_hours = df.index.time >= datetime.time(16, 0)
     dates = pd.Series(df.index.date, index=df.index)
-    after_vol = df['Volume'].where(after_hours).groupby(dates).transform('sum')
-    reg_vol = df['Volume'].where(~after_hours).groupby(dates).transform('sum')
-    return (after_vol / reg_vol).where(reg_vol > 0, np.nan)
+    after_vol_day = df['Volume'].where(after_hours).groupby(dates).sum()
+    reg_vol_day = df['Volume'].where(~after_hours).groupby(dates).sum()
+    ratio_day = (after_vol_day / reg_vol_day).where(reg_vol_day > 0, np.nan)
+    ratio_prev = ratio_day.shift(1)
+    return dates.map(ratio_prev).astype(float)
 
 
 # ══════════════════════════════════════════════════════════════════════

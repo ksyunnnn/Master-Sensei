@@ -24,8 +24,9 @@
 | c | 検出力分析（Polygon 5年分でのMDE算出） | **完了** | a2 |
 | d-pre | ~~Parquetスキーマ拡充~~ → ADR-021でsignal_defs.pyに統合。**不要** | **廃止** | — |
 | d1 | signal_defs.py 信号生成関数 + HYPOTHESESリスト（ADR-021 Round 1準備） | **完了** | b, c |
-| d2 | signal_runner.py（HYPOTHESESを機械実行） | 未着手 | d1 |
-| d3 | Round 1 実行（全仮説スクリーニング） | 未着手 | d2 |
+| d1-review | d1 Look-Ahead Bias再チェック（163関数全件） | **完了** | d1 |
+| d2 | signal_runner.py（HYPOTHESESを機械実行） | **完了** | d1 |
+| d3 | Round 1 実行（全仮説スクリーニング） | **実行中** | d2 |
 | e | 結果統合（Stage 1→2→3フィルタ） | 未着手 | d |
 | f | 10アイデア選定 | 未着手 | e |
 | g | Skill/ツール設計・実装 | 未着手 | f |
@@ -53,7 +54,10 @@
   - マクロデータはN=252-268（~1年）。日足5年と結合時、マクロ範囲外はNaN
   - runnerはAgent裁量なし。HYPOTHESESを順次読み、screen_signal + 反証テストを機械実行
   - 結果はsignal_ideas.csvに記録（ADR-013準拠）
-- **543テスト全パス**（signal_defs 290 + research_utils 101 + その他152）
+- **574テスト全パス**（signal_defs 290 + research_utils 101 + signal_runner 31 + その他152）
+- **d1-review Look-Ahead Bias追加修正**: Critical 3件（h_12_02, h_72_01, h_72_02: transform伝播）、Important 1件（h_14_01: bfill→ffill）
+- **float信号の反証テスト設計問題**: random_data_control（FP率≈50%）とreverse_direction_test（diff=0）はfloat信号で不適切。判定対象から除外し、データは記録する設計に修正
+- **signal_runner.py**: 314仮説×10-18シンボル=3,468実行。データキャッシュ、エラー耐性、bias_test_type別判定を実装
 
 ## タスク(a) 品質検証結果
 
@@ -122,6 +126,30 @@
 - (c) 検出力分析: Polygon 5年分でのMDE算出
 - (d-pre) Parquetスキーマ拡充: utils.pyの要件に基づきAgentが必要とする情報を構造化
 - (d) 4 Agent並列起動: Stage 1スクリーニング
+
+### 2026-04-03 session 10: d1レビュー + d2実装 + d3実行（タスク d1-review, d2, d3）
+
+**やったこと:**
+1. d1 Look-Ahead Bias再チェック（163信号関数全件レビュー）
+   - Critical 3件修正: h_12_02（transform('last')同日終値伝播）、h_72_01（アフターマーケット終値+翌朝Open同日伝播）、h_72_02（アフターマーケットVolume合計同日伝播）
+   - Important 1件修正: h_14_01（bfill→ffillに変更、OpEx週フラグの逆伝播防止）
+   - Important 6件注釈記録: time-of-day全体平均（h_02_04, h_25_01, h_25_02, h_68_02, h_71_01/02/03）は方向性に影響しないため許容
+2. signal_runner.py TDD実装（31テスト → 574テスト全パス）
+   - データ準備: merge_macro（FREDマクロParquet）、merge_pair（Polygon ETF）
+   - ペアマッピング: BEAR_PAIR_MAP（Bull→Bear）、VIXY_PAIR_CATEGORIES（Cat 8）、CROSS_SECTOR_PAIR_MAP（Cat 11）
+   - 反証テスト: 全4種実行 + bias_test_type別判定 + float/bool信号型別の判定除外
+   - エラー耐性: 信号関数・screen_signal・反証テストのエラーを結果として記録
+3. スモークテスト → float信号の反証テスト設計問題を発見・修正
+4. Round 1 本実行開始（314仮説×10-18シンボル=3,468実行、推定77分）
+
+**重要な発見（反証テスト設計問題）:**
+- random_data_controlはfloat信号でFP率が常に~50%（ランダムリターンとの相関が正になる確率）
+- reverse_direction_testはfloat信号でdiff=0（Spearman rは方向ラベルに依存しない）
+- 解決: 全テスト実行してデータは記録するが、float信号ではこの2つを判定から除外
+
+**データソース方針:**
+- requires_macro → FREDマクロParquet（精度優先、N=252-268）
+- requires_pair → Polygon ETFデータ（Bull/Bear対応、クロスセクター、VIXY）
 
 ## ワークログ
 
@@ -254,7 +282,9 @@ Web検索で11カテゴリのレビュー観点を収集し、コードレビュ
 
 ## 完了済み
 
-- [x] signal_defs.py信号関数+HYPOTHESES（163関数、314エントリ、21 R2候補。290テスト。Look-Ahead修正2件、_stress_daysバグ修正1件）
+- [x] d1-review: Look-Ahead Bias再チェック（Critical 3件+Important 1件修正。290テスト全パス）
+- [x] d2: signal_runner.py（31テスト、574全パス。3,468実行規模、エラー耐性、float信号判定修正）
+- [x] signal_defs.py信号関数+HYPOTHESES（163関数、314エントリ、21 R2候補。290テスト。Look-Ahead修正2+4件、_stress_daysバグ修正1件）
 - [x] ADR-021（シグナル定義方式。2ラウンド制、signal_defs.py+signal_runner.py、d-pre不要化）
 - [x] signal_defs.pyヘルパー関数（28関数（25+VIX系3）、61+12テスト。自己評価→23件不備修正）
 - [x] 検出力分析（MDE算出: 日足52.4%/バー50.3%/WF53.4%。3関数+36テスト、レビュー修正3件、全101テストパス）
