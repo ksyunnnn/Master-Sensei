@@ -77,11 +77,16 @@ DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parent.parent / "data" / "researc
 
 # ADR-013 L136-146: bias_test_typeごとの反証テスト判定マッピング
 # 全テストを全仮説に対して「実行」するが、「判定に使う」のはこのマッピングに従う
+#
+# random_data_controlはStage 1判定から除外（選択肢1、2026-04-05決定）:
+#   screen_signalの通過基準（方向一致率>50%）が意図的に緩い（Stage 1偽陰性回避）ため、
+#   ランダムリターンに対してFP率≈50%となり閾値10%を常に超える。Stage 1の設計思想と矛盾する。
+#   実行・記録は継続し、Stage 2でp値ベースの判定に使う。
 REFUTATION_JUDGE_MAP: dict[str, list[str]] = {
-    "unconditional": ["shuffle", "random_data", "reverse_direction", "period_exclusion"],
-    "regime_conditional": ["shuffle", "random_data", "reverse_direction"],
-    "structural": ["shuffle", "random_data", "reverse_direction", "period_exclusion"],
-    "direction_fixed": ["shuffle", "random_data", "period_exclusion"],
+    "unconditional": ["shuffle", "reverse_direction", "period_exclusion"],
+    "regime_conditional": ["shuffle", "reverse_direction"],
+    "structural": ["shuffle", "reverse_direction", "period_exclusion"],
+    "direction_fixed": ["shuffle", "period_exclusion"],
 }
 
 

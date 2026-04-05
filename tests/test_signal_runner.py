@@ -102,20 +102,23 @@ class TestConstants:
         assert set(REFUTATION_JUDGE_MAP.keys()) == {
             "unconditional", "regime_conditional", "structural", "direction_fixed",
         }
-        # unconditional と structural は4つ全て
+        # random_dataはStage 1判定から除外（Stage 1の緩い閾値との矛盾回避、2026-04-05決定）
+        for bt in REFUTATION_JUDGE_MAP.values():
+            assert "random_data" not in bt
+        # unconditional と structural は3つ（random_data除外後）
         assert set(REFUTATION_JUDGE_MAP["unconditional"]) == {
-            "shuffle", "random_data", "reverse_direction", "period_exclusion",
+            "shuffle", "reverse_direction", "period_exclusion",
         }
         assert set(REFUTATION_JUDGE_MAP["structural"]) == {
-            "shuffle", "random_data", "reverse_direction", "period_exclusion",
+            "shuffle", "reverse_direction", "period_exclusion",
         }
-        # regime_conditional: シャッフル + ランダム対照 + 逆方向
+        # regime_conditional: シャッフル + 逆方向
         assert set(REFUTATION_JUDGE_MAP["regime_conditional"]) == {
-            "shuffle", "random_data", "reverse_direction",
+            "shuffle", "reverse_direction",
         }
-        # direction_fixed: シャッフル + ランダム対照 + 期間除外
+        # direction_fixed: シャッフル + 期間除外
         assert set(REFUTATION_JUDGE_MAP["direction_fixed"]) == {
-            "shuffle", "random_data", "period_exclusion",
+            "shuffle", "period_exclusion",
         }
 
 
