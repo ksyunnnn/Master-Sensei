@@ -141,7 +141,7 @@ Master SenseiのDuckDB（sensei.duckdb）に何を書き込み、何を書き込
 | 監視ポイント | 現状 | トリガー |
 |-------------|------|---------|
 | regime_assessments のカラム数 | 16（date + 6 regime + 6 input values + overall + reasoning + created_at）（ADR-009） | カラム数が20を超えたら (date, indicator, value) 形式への分解を検討 |
-| knowledge のカラム数 | 12（+source_prediction_id、ADR-011） | 20超で分解検討 |
+| knowledge のカラム数 | 13（+tldr/related_knowledge_ids、ADR-020） | 20超で分解検討 |
 | knowledge.source_prediction_id NULL率 | 86%（14件中12件NULL） | 予測起因でない知見は本質的にNULL。50%未満が3ヶ月続いたら子テーブル分離検討（ADR-011） |
 | predictions のカラム数 | 13（+root_cause_category、ADR-011） | 20超で分解検討 |
 | knowledge.confidence がVARCHAR | 'low'/'medium'/'high' の3値 | 分析クエリで数値化が頻繁に必要になったらDOUBLEに変更 |

@@ -166,6 +166,86 @@ class TestKnowledge:
         assert len(stale) == 1
 
 
+class TestKnowledgeLinking:
+    """ADR-020: knowledge linking + tldr"""
+
+    def test_knowledge_has_tldr_column(self, db):
+        cols = db.conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'knowledge' AND table_schema = 'main'"
+        ).fetchall()
+        assert "tldr" in {c[0] for c in cols}
+
+    def test_knowledge_has_related_ids_column(self, db):
+        cols = db.conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'knowledge' AND table_schema = 'main'"
+        ).fetchall()
+        assert "related_knowledge_ids" in {c[0] for c in cols}
+
+    def test_add_knowledge_with_tldr(self, db):
+        db.add_knowledge(
+            "K-001", "market_pattern", "Long content here", "Evidence",
+            tldr="Short summary"
+        )
+        row = db.conn.execute(
+            "SELECT tldr FROM knowledge WHERE id = 'K-001'"
+        ).fetchone()
+        assert row[0] == "Short summary"
+
+    def test_add_knowledge_with_related_ids(self, db):
+        db.add_knowledge("K-001", "meta", "base", "ev")
+        db.add_knowledge("K-002", "meta", "base2", "ev")
+        db.add_knowledge(
+            "K-003", "meta", "derived", "ev",
+            related_knowledge_ids=["K-001", "K-002"]
+        )
+        row = db.conn.execute(
+            "SELECT related_knowledge_ids FROM knowledge WHERE id = 'K-003'"
+        ).fetchone()
+        assert list(row[0]) == ["K-001", "K-002"]
+
+    def test_add_knowledge_upsert_preserves_related_ids_if_none(self, db):
+        db.add_knowledge(
+            "K-001", "meta", "v1", "ev",
+            related_knowledge_ids=["K-009"]
+        )
+        db.add_knowledge("K-001", "meta", "v2", "ev")
+        row = db.conn.execute(
+            "SELECT related_knowledge_ids FROM knowledge WHERE id = 'K-001'"
+        ).fetchone()
+        assert list(row[0]) == ["K-009"]
+
+    def test_add_knowledge_upsert_updates_related_ids_when_given(self, db):
+        db.add_knowledge(
+            "K-001", "meta", "v1", "ev",
+            related_knowledge_ids=["K-009"]
+        )
+        db.add_knowledge(
+            "K-001", "meta", "v2", "ev",
+            related_knowledge_ids=["K-017", "K-024"]
+        )
+        row = db.conn.execute(
+            "SELECT related_knowledge_ids FROM knowledge WHERE id = 'K-001'"
+        ).fetchone()
+        assert list(row[0]) == ["K-017", "K-024"]
+
+    def test_get_backlinks_returns_knowledge_referencing_target(self, db):
+        db.add_knowledge("K-009", "meta", "base pattern", "ev")
+        db.add_knowledge("K-020", "meta", "derivative", "ev",
+                         related_knowledge_ids=["K-009"])
+        db.add_knowledge("K-024", "meta", "another", "ev",
+                         related_knowledge_ids=["K-009", "K-020"])
+        db.add_knowledge("K-100", "meta", "unrelated", "ev")
+        backlinks = db.get_backlinks("K-009")
+        ids = {k["id"] for k in backlinks}
+        assert ids == {"K-020", "K-024"}
+
+    def test_get_backlinks_empty_when_no_references(self, db):
+        db.add_knowledge("K-001", "meta", "lonely", "ev")
+        assert db.get_backlinks("K-001") == []
+
+
 class TestRegime:
     def test_save_and_get_regime(self, db):
         db.save_regime(

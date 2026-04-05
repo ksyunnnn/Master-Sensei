@@ -91,9 +91,22 @@ class SenseiDB:
                 last_verified_date DATE,
                 invalidation_reason VARCHAR,
                 source_prediction_id INTEGER,
+                tldr VARCHAR,
+                related_knowledge_ids VARCHAR[],
                 created_at TIMESTAMP DEFAULT current_timestamp
             )
         """)
+        # ADR-020 migration: add columns if missing (for existing DBs)
+        existing_cols = {
+            row[0] for row in self.conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'knowledge' AND table_schema = 'main'"
+            ).fetchall()
+        }
+        if "tldr" not in existing_cols:
+            self.conn.execute("ALTER TABLE knowledge ADD COLUMN tldr VARCHAR")
+        if "related_knowledge_ids" not in existing_cols:
+            self.conn.execute("ALTER TABLE knowledge ADD COLUMN related_knowledge_ids VARCHAR[]")
 
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS regime_assessments (
@@ -387,6 +400,8 @@ class SenseiDB:
         confidence: str = "low",
         discovered_date: date = None,
         source_prediction_id: int = None,
+        tldr: str = None,
+        related_knowledge_ids: list[str] = None,
     ) -> str:
         if discovered_date is None:
             discovered_date = today_jst()
@@ -397,16 +412,29 @@ class SenseiDB:
         if existing:
             self.conn.execute("""
                 UPDATE knowledge SET content = ?, evidence = ?, confidence = ?,
-                    last_verified_date = ?, source_prediction_id = COALESCE(?, source_prediction_id)
+                    last_verified_date = ?, source_prediction_id = COALESCE(?, source_prediction_id),
+                    tldr = COALESCE(?, tldr),
+                    related_knowledge_ids = COALESCE(?, related_knowledge_ids)
                 WHERE id = ?
-            """, [content, evidence, confidence, today_jst(), source_prediction_id, knowledge_id])
+            """, [content, evidence, confidence, today_jst(), source_prediction_id,
+                  tldr, related_knowledge_ids, knowledge_id])
             return knowledge_id
 
         self.conn.execute("""
-            INSERT INTO knowledge (id, category, content, evidence, confidence, discovered_date, source_prediction_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, [knowledge_id, category, content, evidence, confidence, discovered_date, source_prediction_id])
+            INSERT INTO knowledge (id, category, content, evidence, confidence, discovered_date,
+                                   source_prediction_id, tldr, related_knowledge_ids)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [knowledge_id, category, content, evidence, confidence, discovered_date,
+              source_prediction_id, tldr, related_knowledge_ids])
         return knowledge_id
+
+    def get_backlinks(self, knowledge_id: str) -> list[dict]:
+        """Return all knowledge entries referencing knowledge_id (ADR-020)."""
+        return self.conn.execute("""
+            SELECT * FROM knowledge
+            WHERE list_contains(related_knowledge_ids, ?)
+            ORDER BY id
+        """, [knowledge_id]).fetchdf().to_dict("records")
 
     def update_knowledge_status(self, knowledge_id: str, status: str, reason: str = None):
         valid = {"hypothesis", "tested", "validated", "invalidated"}
