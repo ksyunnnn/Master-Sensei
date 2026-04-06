@@ -1,6 +1,6 @@
 # Condition
 
-Last updated: 2026-04-05 (session 13)
+Last updated: 2026-04-06 (session 14)
 
 ## Current Condition
 
@@ -8,7 +8,7 @@ Last updated: 2026-04-05 (session 13)
 - Charter v0.1.0（習熟度 Lv.1 見習い）
 - 独立gitリポジトリ。ADR 20本、GDR 1本（Phase 1実装済み）、166テスト全パス
 - データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
-- sensei.duckdb: レジーム9件、予測3件（解決1/未解決2、Brier 0.2025）、知見25件（18 tested, 6 hypothesis, 1 validated、tldr/related_knowledge_ids列追加済・バックフィル待ち）、イベント137件（85 reviewed, レビュー率62%）、トレード3件（#1 +10%利確、#2 スクラッチ、#3 SL決済-4.4%）
+- sensei.duckdb: レジーム9件、予測3件（解決1/未解決2、Brier 0.2025）、知見25件（18 tested, 6 hypothesis, 1 validated、tldr/related_knowledge_ids列追加済・バックフィル待ち）、イベント140件（85 reviewed, レビュー率61%）、トレード3件（#1 +10%利確、#2 スクラッチ、#3 SL決済-4.4%）
 - GitHub Public repo設定: `ksyunnnn/Master-Sensei`（origin）。.gitignore強化 + permissions.deny + noreply email設定済み
 - エントリーシグナル研究: @data/research/WIP-progress.md
 - MCP DuckDB接続: `.mcp.json`（相対パス、read-only）でsensei.duckdbに接続
@@ -18,13 +18,26 @@ Last updated: 2026-04-05 (session 13)
 
 ## Next Session Priority
 
-1. **4/6月曜のエントリー評価** — NFP +178K(大幅ビート)+OPEC+(4/5結果)+Trump停止期限(4/7 9:00 JST)消化後の新レジームで判断。銘柄選定も再検討（SPXL/TQQQ含む）
-2. **Trade #3振り返りの知見化** — プレマーケット悲観(-1.84%)→開場後dip buyingで反転→SLヒット。K-017再実証。「織り込み済みネガティブでのベアエントリー」のリスクを知見化すべき
-3. **予測モニタリング** — #2 SOXL $40割れ(55%, 4/11): 4/2引け$52付近で遠い。#3 SOXS +10%超(75%, 4/11): 4/2にSOXS +9.8%（惜しくも未達）
-4. **F-15E撃墜の影響評価** — 初の米固定翼機喪失+WSO行方不明。政治的エスカレーションリスク。月曜市場への影響を注視
-5. **予測の追加記録** — 現在3件（解決1/未解決2）。Lv.2到達の最大ボトルネック
+1. **4/6月曜エントリー評価** — プレマ先物-0.6%穏やか＋Trump ultimatum撤回で gap down回避。NFP+178K・OPEC+合意消化後の寄付・開場1hで判断。銘柄選定も再検討（SPXL/TQQQ含む）
+2. **update-regime** — 月曜市場データ更新後にregime再判定（現在neutral -0.29、4/3判定で凍結中）
+3. **Trade #3振り返りの知見化** — 「織り込み済みネガティブでのベアエントリー」リスクをK-XXXへ
+4. **予測モニタリング** — #2 SOXL $40割れ(55%, 4/11): $52で遠い。#3 SOXS +10%超(75%, 4/11): 9.8%で惜しくも未達
+5. **既存knowledge 25件のtldrバックフィル**（ADR-020）
+6. **予測の追加記録** — 現在3件。Lv.2到達の最大ボトルネック
 
-## 今セッションの成果（session 13, 4/5 JST）
+## 今セッションの成果（session 14, 4/6 朝 JST）
+
+### scan-market（月曜開場前、4/6 09:14 JST）: 3件登録
+- **Trump 48h ultimatum撤回+5日新停止期限**(4/6): K-009パターン完結（脅迫→IRGC反撃宣言→撤回→交渉延長）→ **positive**
+- **IRGC声明: 地域インフラ全体を報復対象に拡大**(4/6): 標的範囲拡大（イスラエル→地域経済全体）→ negative
+- **プレマーケット先物-0.6%**(4/6): 穏やかなgap down。ultimatum撤回がギャップダウン回避に寄与
+
+### 市場環境メモ更新
+- **Trump ultimatum撤回**: K-009パターンが再び完結。5日後に同じ期限が来る構造
+- **F-15E WSO救出済み**: エスカレーション発火点消失（session 13で更新済み）
+- **プレマーケット先物-0.6%**: NFP +178K vs ultimatum不確実性が相殺。穏やか
+
+### 前セッション（session 13, 4/5 JST）
 
 ### セキュリティ強化（Public Repo対応）
 - **.gitignore強化**: `.env.*`, `*.pem`, `*.key`, `.claude/settings.local.json`, `CLAUDE.local.md`, `.claude/scheduled_tasks.lock` 追加。セクション整理
@@ -164,18 +177,18 @@ Last updated: 2026-04-05 (session 13)
 ### 前々セッション（session 2, 3/31）の成果
 - エントリーシグナル研究: バイアス対策設計（ADR-013追記、K-020/021）
 
-## マクロ環境メモ（4/5 19:57 JST時点）
+## マクロ環境メモ（4/6 09:14 JST時点）
 
-- レジーム: **neutral（スコア-0.29）** — 4/3判定のまま。週末で新データなし
+- レジーム: **neutral（スコア-0.29）** — 4/3判定のまま。月曜市場データ後に再判定
   - VIX 23.87 elevated、VIX/VIX3M 0.966 flat、HY 3.16 normal、Brent $109.1 crisis、USD 120.9 normal
-- 週間: S&P +3.4%, Nasdaq +4.4%（戦争開始以来初の週間プラス）
-- **NFP +178K**（コンセンサス+57Kの3倍超）。Good Fridayで市場反応は4/6月曜に持ち越し
-- **F-15E WSO救出完了**（4/5）: 米軍KIA回避、エスカレーション発火点1つ消失
+- 先週: S&P +3.4%, Nasdaq +4.4%（戦争開始以来初の週間プラス）
+- **NFP +178K**（コンセンサス+57Kの3倍超）。4/6月曜に市場初反応
+- **Trump 48h ultimatum撤回**(4/6): K-009完結。5日間新停止期限に移行。ギャップダウン回避
+- **IRGC**: 米がイラン発電所攻撃なら地域全体のインフラ報復。標的範囲拡大
 - **関税三重苦**: 鉄鋼50%(4/6発効) + 医薬品100%(120日後) + 原油高
-- **Iran-Oman Hormuzプロトコル**: 封鎖→恒久的通行許可制。WTI>Brent逆転
 - **OPEC+ 206k bpd May hike**: 原則合意(4/5)、Hormuz封鎖下でsymbolic
-- **4/6周辺の二重期限**: Trump 48h Hormuzウルトゥマタム + エネルギー攻撃停止期限(4/7 9:00 JST)
-- 保有ポジション: **なし**。4/6月曜に二重期限消化後の新レジームでエントリー判断
+- **プレマーケット先物**: S&P/Nasdaq/Dow -0.6%（穏やか）
+- 保有ポジション: **なし**。開場後の寄付・1h動向でエントリー判断
 - **銘柄選定見直し中**: SPXL/TQQQも検討対象（半導体感度は間接的）
 
 ## フィードバックループの進捗
