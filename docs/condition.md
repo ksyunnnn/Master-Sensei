@@ -8,7 +8,7 @@ Last updated: 2026-04-06 (session 14)
 - Charter v0.1.0（習熟度 Lv.1 見習い）
 - 独立gitリポジトリ。ADR 20本、GDR 1本（Phase 1実装済み）、166テスト全パス
 - データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
-- sensei.duckdb: レジーム9件、予測3件（解決1/未解決2、Brier 0.2025）、知見25件（18 tested, 6 hypothesis, 1 validated、tldr/related_knowledge_ids列追加済・バックフィル待ち）、イベント140件（85 reviewed, レビュー率61%）、トレード3件（#1 +10%利確、#2 スクラッチ、#3 SL決済-4.4%）
+- sensei.duckdb: レジーム9件、予測3件（解決1/未解決2、Brier 0.2025）、知見25件（18 tested, 6 hypothesis, 1 validated、tldr/related_knowledge_ids列追加済・バックフィル待ち）、イベント140件（126 reviewed, レビュー率90%）、トレード3件（#1 +10%利確、#2 スクラッチ、#3 SL決済-4.4%）
 - GitHub Public repo設定: `ksyunnnn/Master-Sensei`（origin）。.gitignore強化 + permissions.deny + noreply email設定済み
 - エントリーシグナル研究: @data/research/WIP-progress.md
 - MCP DuckDB接続: `.mcp.json`（相対パス、read-only）でsensei.duckdbに接続
@@ -32,10 +32,19 @@ Last updated: 2026-04-06 (session 14)
 - **IRGC声明: 地域インフラ全体を報復対象に拡大**(4/6): 標的範囲拡大（イスラエル→地域経済全体）→ negative
 - **プレマーケット先物-0.6%**(4/6): 穏やかなgap down。ultimatum撤回がギャップダウン回避に寄与
 
-### 市場環境メモ更新
-- **Trump ultimatum撤回**: K-009パターンが再び完結。5日後に同じ期限が来る構造
-- **F-15E WSO救出済み**: エスカレーション発火点消失（session 13で更新済み）
-- **プレマーケット先物-0.6%**: NFP +178K vs ultimatum不確実性が相殺。穏やか
+### update-regime: neutral維持(-0.29)、記録スキップ
+- Brent $109.05→$110.75（+$1.70）のみ変化、crisis帯内で判定影響なし
+- VIX/VIX3M/HY/YC/USD全て前回同一。月曜引け後に再判定
+
+### review-events: 41件検証、**21件修正(51%)**
+- **K-024パターン確認**: 10件がnegative→neutral（ミサイル/空爆/IRGC声明）
+- **K-017最強事例**: 4/2プレマ-1.84%→引け+0.11%（4.3σ反転）。Trade #3 SLヒットの原因
+- **#122データ修正**: 4/2引けを-0.88%と誤記録→実際は+0.11%。中間値の誤認
+- **系統的ネガティブバイアス発見**: scan-market登録時にnegative判定が過剰。K-024/K-009対象は初期impactをneutralにすべき
+
+### /sensei-journal 新設 + Episode 1
+- `docs/journal/2026-04-06.md`: 創刊号「脅迫と撤回のワルツ」
+- 新聞連載風の市場ナラティブスキル。Scene構造・次回予告フォーマット
 
 ### 前セッション（session 13, 4/5 JST）
 
