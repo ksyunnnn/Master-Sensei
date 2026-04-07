@@ -11,7 +11,8 @@ Last updated: 2026-04-06 (session 13)
 - sensei.duckdb: レジーム7件、予測3件（解決1/未解決2、Brier 0.2025）、知見23件、イベント105件、**トレード2件（#1 SOXL +10%利確済、#2 SOXL -0.04%スクラッチ決済）**
 - エントリーシグナル研究: @data/research/WIP-progress.md
 - MCP DuckDB接続: `.mcp.json`（相対パス、read-only）でsensei.duckdbに接続
-- Skills: `/verify-knowledge`, `/update-regime`, `/scan-market`, `/review-events`, `/entry-analysis`
+- Skills: `/verify-knowledge`, `/update-regime`, `/scan-market`, `/review-events`, `/entry-analysis`, `/signal-check`
+- シグナル監視: src/signals/（1シグナル1ファイル、自動レジストリ）。confirmed: H-18-03のみ
 - trades テーブル: ADR-015実装済み（add_trade, close_trade, review_trade）
 - GDR-001 Phase 1: source_prediction_id, root_cause_category, Brier 3成分分解, Baseline Score, Kolbサイクル率
 - **PR #1**: https://github.com/ksyunnnn/Master-Sensei/pull/1

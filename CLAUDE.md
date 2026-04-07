@@ -74,6 +74,7 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - `/review-events` — イベント事後検証・lesson記録
 - `/verify-knowledge` — stale知見の検証・検証日更新
 - `/entry-analysis` — MAP分析→シナリオ別注文設定→trade記録（ADR-018）
+- `/signal-check` — 確認済みシグナルの発火チェック。発火時は`[ACTION]`通知→`/entry-analysis`提案
 
 ### セッション終了前（Stop Hook）
 - condition.mdの最終更新日が今日でなければ更新する
