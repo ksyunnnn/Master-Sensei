@@ -1,6 +1,6 @@
 # Condition
 
-Last updated: 2026-04-06 (session 14)
+Last updated: 2026-04-07 (session 15)
 
 ## Current Condition
 
@@ -8,7 +8,7 @@ Last updated: 2026-04-06 (session 14)
 - Charter v0.1.0（習熟度 Lv.1 見習い）
 - 独立gitリポジトリ。ADR 20本、GDR 1本（Phase 1実装済み）、166テスト全パス
 - データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
-- sensei.duckdb: レジーム9件、予測3件（解決1/未解決2、Brier 0.2025）、知見25件（18 tested, 6 hypothesis, 1 validated、tldr/related_knowledge_ids列追加済・バックフィル待ち）、イベント140件（126 reviewed, レビュー率90%）、トレード3件（#1 +10%利確、#2 スクラッチ、#3 SL決済-4.4%）
+- sensei.duckdb: レジーム10件、予測5件（解決1/未解決4、Brier 0.2025）、知見25件（18 tested, 5 hypothesis, 2 validated、tldr/related_knowledge_ids列追加済・バックフィル待ち）、イベント148件、トレード3件（#1 +10%利確、#2 スクラッチ、#3 SL決済-4.4%）
 - GitHub Public repo設定: `ksyunnnn/Master-Sensei`（origin）。.gitignore強化 + permissions.deny + noreply email設定済み
 - エントリーシグナル研究: @data/research/WIP-progress.md
 - MCP DuckDB接続: `.mcp.json`（相対パス、read-only）でsensei.duckdbに接続
@@ -18,14 +18,42 @@ Last updated: 2026-04-06 (session 14)
 
 ## Next Session Priority
 
-1. **4/6月曜エントリー評価** — プレマ先物-0.6%穏やか＋Trump ultimatum撤回で gap down回避。NFP+178K・OPEC+合意消化後の寄付・開場1hで判断。銘柄選定も再検討（SPXL/TQQQ含む）
-2. **update-regime** — 月曜市場データ更新後にregime再判定（現在neutral -0.29、4/3判定で凍結中）
-3. **Trade #3振り返りの知見化** — 「織り込み済みネガティブでのベアエントリー」リスクをK-XXXへ
-4. **予測モニタリング** — #2 SOXL $40割れ(55%, 4/11): $52で遠い。#3 SOXS +10%超(75%, 4/11): 9.8%で惜しくも未達
-5. **既存knowledge 25件のtldrバックフィル**（ADR-020）
-6. **予測の追加記録** — 現在3件。Lv.2到達の最大ボトルネック
+1. **火曜Hormuz期限結果の確認（最優先）** — 4/7 20:00 ET（4/8 9:00 JST）の結果を確認→シナリオ判定→エントリー判断更新。シナリオA(停戦進展30%)ならTQQQ long検討、C(実行動30%)ならリバウンド待ちor SQQQ
+2. **scan-market** — 月曜引け後の市場反応（IRGC長官殺害+Hormuz期限）、VIX/VIX3M推移を確認
+3. **update-regime** — 月曜引けデータでregime再判定。VIX/VIX3M>1.0になったかが重要な観測ポイント
+4. **予測モニタリング** — #2 SOXL $40割れ(55%, 4/11): $52で遠い。#3 SOXS +10%超(75%, 4/11): 未達。#4 TQQQ TP$46(35%, 4/11)。#5 SOXL TP$55.70(25%, 4/11)
+5. **Trade #3振り返りの知見化** — 「織り込み済みネガティブでのベアエントリー」リスクをK-XXXへ
+6. **既存knowledge 25件のtldrバックフィル**（ADR-020）
 
-## 今セッションの成果（session 14, 4/6 朝 JST）
+## 今セッションの成果（session 15, 4/6 午後〜4/7 JST）
+
+### scan-market 3回実行: 計9件登録
+- **15:50**: Trump火曜20:00ET Hormuz期限(K-009 3巡目)、WTI-Brent歴史的逆転($111>$107)、月曜先物回復(-0.6%→+0.06%)
+- **19:10**: **IRGC情報長官Khademi殺害**(negative, K-024例外の質的変化)、イランHaifa報復ミサイル(2名死亡)、45日停戦枠組み(Pak/Egypt/Turkey提示、イラン未回答)
+
+### entry-analysis: 全銘柄スクリーニング + バイアス監査
+- **初回分析**: TQQQ long推奨（R:R 1.1、VIX低下根拠）
+- **バイアス監査実施**: Premortem + Kahneman 12質問 → **⚠️7+❌2=9件 → 判断保留**
+  - K-009軍事適用を検証: 延長率~80%（関税~95%より低い、60日期限は実行された前例あり）
+  - 「エントリーしない」を正式評価 → 水曜エントリーが期待値+リスク両面で優位
+  - VIX低下はGood Friday前ヘッジ解消の可能性排除不可
+  - 非戦争リスク具体化: AI fatigue(MSFT -20%YTD)、HY complacency(3.17 vs 20yr avg 4.9%)
+  - ギャップリスク定量化: SOXLの最大ギャップ-12.18%はSL(-12.7%)にほぼ到達
+- **最終判断**: **ノートレード（火曜Hormuz期限後にエントリー判断）**
+- シナリオ確率修正: A 55→30%, B 30→40%, C 15→30%
+
+### 予測記録: 2件追加（#4, #5）
+- **#4**: TQQQ 4/7-11 TP$46到達 (35%, バイアス監査後に45→35%下方修正)
+- **#5**: SOXL 4/7-11 TP$55.70到達 (25%, 35→25%下方修正)
+
+### update-regime: neutral(-0.29)、VIX変化のため記録（10件目）
+- VIX **23.87→24.70**(+0.83): VIX低下トレンド否定。GF前ヘッジ解消の疑い強化
+- VIX/VIX3M **0.966→0.999**: バックワーデーション境界。月曜に1.0超えるか要注視
+
+### verify-knowledge: K-025 hypothesis→validated
+- TP/SL非対称バイアス: 今回のentry-analysisでは60日全体+σベースで設計し、自然に適用されていた
+
+### 前セッション（session 14, 4/6 朝 JST）
 
 ### scan-market（月曜開場前、4/6 09:14 JST）: 3件登録
 - **Trump 48h ultimatum撤回+5日新停止期限**(4/6): K-009パターン完結（脅迫→IRGC反撃宣言→撤回→交渉延長）→ **positive**
@@ -186,19 +214,17 @@ Last updated: 2026-04-06 (session 14)
 ### 前々セッション（session 2, 3/31）の成果
 - エントリーシグナル研究: バイアス対策設計（ADR-013追記、K-020/021）
 
-## マクロ環境メモ（4/6 09:14 JST時点）
+## マクロ環境メモ（4/6 19:10 JST時点）
 
-- レジーム: **neutral（スコア-0.29）** — 4/3判定のまま。月曜市場データ後に再判定
-  - VIX 23.87 elevated、VIX/VIX3M 0.966 flat、HY 3.16 normal、Brent $109.1 crisis、USD 120.9 normal
-- 先週: S&P +3.4%, Nasdaq +4.4%（戦争開始以来初の週間プラス）
-- **NFP +178K**（コンセンサス+57Kの3倍超）。4/6月曜に市場初反応
-- **Trump 48h ultimatum撤回**(4/6): K-009完結。5日間新停止期限に移行。ギャップダウン回避
-- **IRGC**: 米がイラン発電所攻撃なら地域全体のインフラ報復。標的範囲拡大
-- **関税三重苦**: 鉄鋼50%(4/6発効) + 医薬品100%(120日後) + 原油高
-- **OPEC+ 206k bpd May hike**: 原則合意(4/5)、Hormuz封鎖下でsymbolic
-- **プレマーケット先物**: S&P/Nasdaq/Dow -0.6%（穏やか）
-- 保有ポジション: **なし**。開場後の寄付・1h動向でエントリー判断
-- **銘柄選定見直し中**: SPXL/TQQQも検討対象（半導体感度は間接的）
+- レジーム: **neutral（スコア-0.29）** — 4/6再判定済み。VIX上昇を記録
+  - VIX **24.70** elevated、VIX/VIX3M **0.999** flat(backwardation境界)、HY 3.17 normal、Brent $108.6 crisis、USD 120.9 normal
+- **VIXトレンド反転**: 31→24の低下がGF前ヘッジ解消の可能性。24.70に反転上昇
+- **IRGC情報長官Khademi殺害**(4/6): K-024例外の「質的変化」。報復サイクル激化
+- **45日停戦枠組み**: Pak/Egypt/Turkey提示。イラン未回答、一時停戦は既に拒否
+- **Trump火曜Hormuz期限**(5回目): 4/7 20:00 ET。K-009パターンだが政治的延長圧力蓄積
+- **WTI>Brent逆転**: 歴史的構造変化。Hormuz封鎖でWTIが「安全バレル」化
+- 保有ポジション: **なし**。火曜期限後にエントリー判断（バイアス監査結論）
+- **銘柄選定**: TQQQ long候補1位（sigma-0.46, R:R 1.1）。SOXL落選（ギャップリスク+R:R劣後）
 
 ## フィードバックループの進捗
 
