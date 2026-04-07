@@ -9,7 +9,7 @@ Last updated: 2026-04-07 (session 14)
 - 独立gitリポジトリ。ADR 21本、GDR 1本（Phase 1実装済み）、574テスト全パス
 - データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
 - sensei.duckdb: レジーム7件、予測3件（解決1/未解決2、Brier 0.2025）、知見23件、イベント105件、**トレード2件（#1 SOXL +10%利確済、#2 SOXL -0.04%スクラッチ決済）**
-- エントリーシグナル研究: @data/research/WIP-progress.md
+- エントリーシグナル研究: @data/research/README.md
 - MCP DuckDB接続: `.mcp.json`（相対パス、read-only）でsensei.duckdbに接続
 - Skills: `/verify-knowledge`, `/update-regime`, `/scan-market`, `/review-events`, `/entry-analysis`, `/signal-check`
 - シグナル監視: src/signals/（1シグナル1ファイル、自動レジストリ）。confirmed: H-18-03のみ
@@ -35,7 +35,7 @@ Last updated: 2026-04-07 (session 14)
 - TECL: 勝率64.2%, 摩擦後+1.50%/回, 年+32.7%
 - R2-TD-01は摩擦後マイナスで不採用
 - H-12-03-Sはコンタンゴ+2.5%のみで保留
-- 詳細: data/research/final_evaluation.md, data/research/stage3_evaluation.md
+- 詳細: data/research/findings/2026Q2-signal-exploration.md（MOC）
 
 ## 今セッションの成果（session 13, 4/5-4/6）
 

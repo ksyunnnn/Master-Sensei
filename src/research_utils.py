@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_INTRADAY_DIR = Path(__file__).resolve().parent.parent / ".." / "master_sensei" / "data" / "research" / "polygon_intraday"
 DEFAULT_DAILY_DIR = Path(__file__).resolve().parent.parent / ".." / "master_sensei" / "data" / "parquet" / "daily"
-DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parent.parent / "data" / "research" / "signal_ideas.csv"
+DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parent.parent / "data" / "research" / "executions_new.csv"
 
 REGULAR_SESSION_START = "09:30"
 REGULAR_SESSION_END = "15:55"

@@ -73,7 +73,7 @@ CROSS_SECTOR_PAIR_MAP: dict[str, str] = {
 DEFAULT_DAILY_DIR = Path(__file__).resolve().parent.parent / ".." / "master_sensei" / "data" / "parquet" / "daily"
 DEFAULT_INTRADAY_DIR = Path(__file__).resolve().parent.parent / ".." / "master_sensei" / "data" / "research" / "polygon_intraday"
 DEFAULT_MACRO_DIR = Path(__file__).resolve().parent.parent / ".." / "master_sensei" / "data" / "parquet" / "macro"
-DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parent.parent / "data" / "research" / "signal_ideas.csv"
+DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parent.parent / "data" / "research" / "executions_new.csv"
 
 # ADR-013 L136-146: bias_test_typeごとの反証テスト判定マッピング
 # 全テストを全仮説に対して「実行」するが、「判定に使う」のはこのマッピングに従う
