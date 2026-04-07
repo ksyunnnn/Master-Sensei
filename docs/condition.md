@@ -1,6 +1,6 @@
 # Condition
 
-Last updated: 2026-04-07 (session 14)
+Last updated: 2026-04-07 (session 14 final)
 
 ## Current Condition
 
