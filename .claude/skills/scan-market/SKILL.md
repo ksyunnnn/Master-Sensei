@@ -110,6 +110,17 @@ PYEOF
 
 ### 3. イベント登録
 
+#### 3a. impact判定前のlesson照合（K-027）
+
+各イベントのimpactを決める**前に**、手順1で取得したlessonを照合する。
+
+- negativeを付与しようとするイベントについて、同カテゴリの過去lesson（neg→neu修正）がないか確認する
+- 修正パターンが存在する場合、そのlessonの理由が今回にも当てはまるか判断する
+- 当てはまる場合はneutralに変更し、impact_reasoningに「lesson照合: [lesson要約]」を含める
+- 当てはまらない場合はnegativeを維持し、impact_reasoningに「lesson照合済み: [なぜ今回は異なるか]」を明記する
+
+#### 3b. 登録
+
 調査結果から、対象シンボル（TQQQ/SOXL/TECL/SPXL等）の価格に影響しうるイベントを登録する。
 
 ADR-003 Write基準:
