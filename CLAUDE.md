@@ -16,8 +16,8 @@
 | docs/charter.md | Master Senseiの原則・自己評価 |
 | docs/adr/ | ソフトウェア構造の判断記録 |
 | docs/gdr/ | 成長メカニズムの判断記録 |
-| docs/code-review-checklist.md | 統計・金融コードのレビュー基準（ADR-020） |
-| docs/testing-guidelines.md | 統計・金融コードのテスト設計原則（ADR-020） |
+| docs/code-review-checklist.md | 統計・金融コードのレビュー基準（ADR-022） |
+| docs/testing-guidelines.md | 統計・金融コードのテスト設計原則（ADR-022） |
 
 ## Data Architecture (ADR-001)
 
