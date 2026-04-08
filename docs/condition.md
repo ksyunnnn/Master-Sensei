@@ -1,6 +1,6 @@
 # Condition
 
-Last updated: 2026-04-07 (session 16)
+Last updated: 2026-04-08 (session 17)
 
 ## Current Condition
 
@@ -8,24 +8,57 @@ Last updated: 2026-04-07 (session 16)
 - Charter v0.1.0（習熟度 Lv.1 見習い）
 - 独立gitリポジトリ。ADR 20本、GDR 1本（Phase 1実装済み）、166テスト全パス
 - データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
-- sensei.duckdb: レジーム11件、予測5件（解決1/未解決4、Brier 0.2025）、知見27件（18 tested, 5 hypothesis, 2 validated、K-027追加、tldr/related_knowledge_ids列追加済・バックフィル待ち）、イベント152件、トレード3件（#1 +10%利確、#2 スクラッチ、#3 SL決済-4.4%）
+- sensei.duckdb: レジーム12件、予測5件（解決1/未解決4、Brier 0.2025）、知見27件、イベント162件、トレード4件（#1 +10%利確、#2 スクラッチ、#3 SL決済-4.4%、#4 SOXS long建て中→停戦で含み損-5.2%、SL$33.00危機）
 - GitHub Public repo設定: `ksyunnnn/Master-Sensei`（origin）。.gitignore強化 + permissions.deny + noreply email設定済み
 - エントリーシグナル研究: @data/research/WIP-progress.md
 - MCP DuckDB接続: `.mcp.json`（相対パス、read-only）でsensei.duckdbに接続
-- Skills: `/verify-knowledge`, `/update-regime`, `/scan-market`, **`/scan-market-quick`（NEW）**, `/review-events`, `/entry-analysis`
+- Skills: `/verify-knowledge`, `/update-regime`, `/scan-market`, `/scan-market-quick`, `/review-events`, `/entry-analysis`, `/sensei-journal`
 - trades テーブル: ADR-015実装済み（add_trade, close_trade, review_trade）
 - GDR-001 Phase 1: source_prediction_id, root_cause_category, Brier 3成分分解, Baseline Score, Kolbサイクル率
 
 ## Next Session Priority
 
-1. **水曜Hormuz期限結果の確認（最優先）** — Trump期限4/7 20:00 ET（4/8 9:00 JST）の結果を確認→シナリオ判定→エントリー判断更新。イラン停戦拒否+IRGC「Hormuz不可逆」声明が出ている中でのdeadline。シナリオA(停戦進展)ならTQQQ long検討、C(実行動)ならリバウンド待ちor SQQQ
-2. **scan-market** — 火曜引け後の市場反応（Hormuz期限到達）を確認
-3. **update-regime** — 火曜引けデータでregime再判定。VIX/VIX3M term structure変化が焦点
-4. **予測モニタリング** — #2 SOXL $40割れ(55%, 4/11): $54.81で遠い。#3 SOXS +10%超(75%, 4/11): 未達。#4 TQQQ TP$46(35%, 4/11): $44.10。#5 SOXL TP$55.70(25%, 4/11): $54.81
-5. **Trade #3振り返りの知見化** — 「織り込み済みネガティブでのベアエントリー」リスクをK-XXXへ
-6. **既存knowledge 27件のtldrバックフィル**（ADR-020）
+1. **★Trade #4 SOXS決済判断（22:00 JST、最優先）** — 停戦合意でScenario C実現。SOXS引け$33.43、SL$33.00まで$0.43。先物Nasdaq+3%→SOXS gap down -9%($30.4)想定。判断マトリックス:
+   - SOXSプレマ≧$33 & Hormuz未開放 → SL取消+ホールド検討
+   - SOXSプレマ≧$33 & Hormuz順調 → 開場直後に手動決済
+   - SOXSプレマ<$33 → SLに任せる（gap down約定）
+   - 即時価格確認: `python /tmp/check_soxs.py`
+2. **scan-market** — Hormuz実装状況（船舶通行開始？）、停戦条件の齟齬、先物動向
+3. **update-regime** — 4/7引けデータでregime再判定。Brent $95(-14%)でcrisis→high移行か。VIX 25.78、バックワーデーション1.008
+4. **停戦の評価** — 2週間限定停戦。4/10イスラマバード和平交渉（Vance副大統領）。K-009完全成就の記録
+5. **予測モニタリング** — #2 SOXL $40割れ(55%, 4/11): $56.55で大幅乖離。#3 SOXS +10%超(75%, 4/11): 引け-3.2%で困難化。#4 TQQQ TP$46(35%, 4/11): $44.15。#5 SOXL TP$55.70(25%, 4/11): $56.55で到達済み？要確認
 
-## 今セッションの成果（session 16, 4/7 朝 JST）
+## 今セッションの成果（session 17, 4/7 夜 JST）
+
+### scan-market 7回実行: 計11件登録
+- **1回目(20:23)**: Trump「taken out」記者会見(neutral/K-009)、Iran 10項目対案(neutral)、S&P先物-0.4%(neutral)
+- **2回目(22:44)**: **Kharg Island攻撃**(negative, WTI+3%→$116)、イラン全土インフラ攻撃(neutral/K-024)、IRGC多年油遮断脅迫(neutral/K-009)
+- **3回目(00:19)**: Fed Williams「コアインフレほぼ変わらず」(neutral)
+- **4回目(01:03)**: **Iran USバックチャネル切断**(negative、市場-0.9%に反応)
+- **5回目(11:07)**: **★Trump-Iran 2週間停戦合意**(positive)、Brent-13%→$95(positive)、市場-1.2%→+0.08%全戻し(positive)
+- **6回目(11:55)**: 停戦後先物 S&P+2.5%/Nasdaq+3%/WTI-19%(positive)
+
+### update-regime: **neutral→risk_off転換**（12件目）
+- VIX **24.17→26.18**(+2.01): 25超えでhigh判定
+- VIX/VIX3M **0.976→1.010**: コンタンゴ→バックワーデーション転換
+- HYスプレッド 3.13→3.05: 改善（信用市場はまだパニックしていない）
+- Brent $110.1→$110.1: 危機水準維持
+
+### entry-analysis: SOXS long 15株 @$35.265（Trade #4）
+- **プロセス**: SQQQ/TQQQ/SOXL 3銘柄MAP比較分析→SQQQ longが最もレジーム整合→サクソバンクでSQQQ ETF現物取扱なし判明→CFD口座は証拠金5,167%で不可→SOXS ETF現物(T:外国株式口座)に代替
+- **バイアスチェック**: substitution error（SQQQ→SOXSは別の賭け）、アクションバイアス、半導体逆張りリスクを自己指摘→ユーザー判断で探りサイズで実行
+- **シナリオ**: 「4/11までに停戦合意なし」(75%)にベット。TP $38.50(+9.2%) / SL $33.00(-6.4%) / R:R 1.4:1
+- **約定**: 23:26 JST、成行15株 @$35.265、$529
+
+### sensei-journal: Episode 2「Kharg島の閃光」
+- 4 Scene構成: 将軍の首(Khademi殺害)→二つの言語(表の脅迫/裏の外交)→Khargの閃光(期限前攻撃)→信号が変わった(regime転換)
+
+### サクソバンク銘柄調査
+- SQQQ: CFDのみ、ETF現物取扱なし（ETFフィルター検索で確認済み）
+- SOXS/SOXL: ETF現物+CFD両方取扱あり
+- CFD口座(I:株価指数CFD)は既存建玉で証拠金圧迫、現金0円
+
+## 前セッションの成果（session 16, 4/7 朝 JST）
 
 ### scan-market: 4件登録
 - **South Pars石化施設攻撃**(4/6): イラン石化能力85%オフライン。供給実被害→negative
