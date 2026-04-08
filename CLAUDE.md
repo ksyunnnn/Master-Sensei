@@ -69,7 +69,8 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - regime_assessmentsには必ず入力値スナップショット（6指標の生値）を含める（ADR-009）
 
 ### ユーザー起点（Skill）
-- `/scan-market` — ニュース調査・イベントDB登録
+- `/scan-market` — ニュース調査・イベントDB登録（網羅的、6カテゴリ個別検索）
+- `/scan-market-quick` — 簡易スキャン（2検索で広く浅く、深掘りフラグ付き）
 - `/update-regime` — 最新データ取得・レジーム再判定
 - `/review-events` — イベント事後検証・lesson記録
 - `/verify-knowledge` — stale知見の検証・検証日更新
@@ -93,8 +94,9 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - 設計判断や分析の提案前に十分な調査と根拠を提示する。直感で提案しない
 - 質問・確認は1つずつ。複数の判断を一度に求めない
 - 調査・アイデア生成タスクでは「収穫逓減」を理由に途中で止めない。手法自体の調査も行い、網羅的に試してからユーザーに判断を委ねる
-- 統計検定・金融データ処理・並行処理のコードを書く/レビューする際は `docs/code-review-checklist.md` を参照する (ADR-020)
+- 統計検定・金融データ処理・並行処理のコードを書く/レビューする際は `docs/code-review-checklist.md` を参照する (ADR-022)
 - 研究の方向性変更・目標変更・打ち止め判断の前に `docs/bias-audit-checklist.md` を実施する（Premortem + Kahneman 12問）
+- リモートリポジトリ（GitHub Public）あり。セッション中にコミットした場合、pushを提案してよい
 
 ## Memory運用ルール
 

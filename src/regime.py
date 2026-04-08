@@ -31,6 +31,27 @@ class IndicatorAssessment:
     note: str
 
 
+# indicator.name → save_regime() のキーワード引数名
+_INDICATOR_TO_DB_REGIME = {
+    "VIX": "vix_regime",
+    "VIX_TERM": "vix_term_structure",
+    "HY_SPREAD": "credit_regime",
+    "YIELD_CURVE": "yield_curve_regime",
+    "OIL": "oil_regime",
+    "USD": "dollar_regime",
+}
+
+# CacheManager のシリーズ名 → save_regime() の入力値キーワード引数名
+_VALUE_KEY_TO_DB = {
+    "VIX": "vix_value",
+    "VIX3M": "vix3m_value",
+    "HY_SPREAD": "hy_spread_value",
+    "YIELD_CURVE": "yield_curve_value",
+    "BRENT": "oil_value",
+    "USD_INDEX": "usd_value",
+}
+
+
 @dataclass
 class RegimeAssessment:
     """統合レジーム判定結果"""
@@ -38,6 +59,26 @@ class RegimeAssessment:
     overall_score: float  # -2.0 to +2.0 の加重平均
     indicators: list[IndicatorAssessment]
     reasoning: str
+
+    def to_save_kwargs(self, values: dict) -> dict:
+        """save_regime() にそのまま **kwargs 展開できる dict を返す。
+
+        Args:
+            values: CacheManager から取得した {"VIX": 26.37, ...} 形式の dict
+        """
+        kwargs: dict = {"overall": self.overall, "reasoning": self.reasoning}
+        # 全regime列をNoneで初期化（部分データ対応）
+        for db_key in _INDICATOR_TO_DB_REGIME.values():
+            kwargs[db_key] = None
+        # 判定済み指標のregimeを埋める
+        for ind in self.indicators:
+            db_key = _INDICATOR_TO_DB_REGIME.get(ind.name)
+            if db_key:
+                kwargs[db_key] = ind.regime
+        # 入力値スナップショット
+        for series_name, db_key in _VALUE_KEY_TO_DB.items():
+            kwargs[db_key] = values.get(series_name)
+        return kwargs
 
 
 def assess_vix(value: float) -> IndicatorAssessment:

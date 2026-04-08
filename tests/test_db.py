@@ -166,6 +166,86 @@ class TestKnowledge:
         assert len(stale) == 1
 
 
+class TestKnowledgeLinking:
+    """ADR-020: knowledge linking + tldr"""
+
+    def test_knowledge_has_tldr_column(self, db):
+        cols = db.conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'knowledge' AND table_schema = 'main'"
+        ).fetchall()
+        assert "tldr" in {c[0] for c in cols}
+
+    def test_knowledge_has_related_ids_column(self, db):
+        cols = db.conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'knowledge' AND table_schema = 'main'"
+        ).fetchall()
+        assert "related_knowledge_ids" in {c[0] for c in cols}
+
+    def test_add_knowledge_with_tldr(self, db):
+        db.add_knowledge(
+            "K-001", "market_pattern", "Long content here", "Evidence",
+            tldr="Short summary"
+        )
+        row = db.conn.execute(
+            "SELECT tldr FROM knowledge WHERE id = 'K-001'"
+        ).fetchone()
+        assert row[0] == "Short summary"
+
+    def test_add_knowledge_with_related_ids(self, db):
+        db.add_knowledge("K-001", "meta", "base", "ev")
+        db.add_knowledge("K-002", "meta", "base2", "ev")
+        db.add_knowledge(
+            "K-003", "meta", "derived", "ev",
+            related_knowledge_ids=["K-001", "K-002"]
+        )
+        row = db.conn.execute(
+            "SELECT related_knowledge_ids FROM knowledge WHERE id = 'K-003'"
+        ).fetchone()
+        assert list(row[0]) == ["K-001", "K-002"]
+
+    def test_add_knowledge_upsert_preserves_related_ids_if_none(self, db):
+        db.add_knowledge(
+            "K-001", "meta", "v1", "ev",
+            related_knowledge_ids=["K-009"]
+        )
+        db.add_knowledge("K-001", "meta", "v2", "ev")
+        row = db.conn.execute(
+            "SELECT related_knowledge_ids FROM knowledge WHERE id = 'K-001'"
+        ).fetchone()
+        assert list(row[0]) == ["K-009"]
+
+    def test_add_knowledge_upsert_updates_related_ids_when_given(self, db):
+        db.add_knowledge(
+            "K-001", "meta", "v1", "ev",
+            related_knowledge_ids=["K-009"]
+        )
+        db.add_knowledge(
+            "K-001", "meta", "v2", "ev",
+            related_knowledge_ids=["K-017", "K-024"]
+        )
+        row = db.conn.execute(
+            "SELECT related_knowledge_ids FROM knowledge WHERE id = 'K-001'"
+        ).fetchone()
+        assert list(row[0]) == ["K-017", "K-024"]
+
+    def test_get_backlinks_returns_knowledge_referencing_target(self, db):
+        db.add_knowledge("K-009", "meta", "base pattern", "ev")
+        db.add_knowledge("K-020", "meta", "derivative", "ev",
+                         related_knowledge_ids=["K-009"])
+        db.add_knowledge("K-024", "meta", "another", "ev",
+                         related_knowledge_ids=["K-009", "K-020"])
+        db.add_knowledge("K-100", "meta", "unrelated", "ev")
+        backlinks = db.get_backlinks("K-009")
+        ids = {k["id"] for k in backlinks}
+        assert ids == {"K-020", "K-024"}
+
+    def test_get_backlinks_empty_when_no_references(self, db):
+        db.add_knowledge("K-001", "meta", "lonely", "ev")
+        assert db.get_backlinks("K-001") == []
+
+
 class TestRegime:
     def test_save_and_get_regime(self, db):
         db.save_regime(
@@ -285,6 +365,33 @@ class TestEventReviews:
         db.add_event_review(eid, date(2026, 3, 27), "negative", "neutral", "Market ignored it", "Sector-limited impact")
         event = db.conn.execute("SELECT status FROM events WHERE id = ?", [eid]).fetchone()
         assert event[0] == "reviewed"
+
+
+class TestImpactLessons:
+    def test_get_impact_lessons_returns_corrections(self, db):
+        """impact修正があったレビューをlessonとして取得できる"""
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        eid = db.add_event(ts, "tariff", "Tariff announcement")
+        db.add_event_review(eid, date(2026, 3, 28), "negative", "neutral", "Market ignored", "Overestimated impact")
+        lessons = db.get_impact_lessons(limit=5)
+        assert len(lessons) == 1
+        assert lessons[0]["category"] == "tariff"
+        assert lessons[0]["original_impact"] == "negative"
+        assert lessons[0]["revised_impact"] == "neutral"
+        assert lessons[0]["lesson"] == "Overestimated impact"
+
+    def test_get_impact_lessons_excludes_unchanged(self, db):
+        """impact変更なしのレビューは返さない"""
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        eid = db.add_event(ts, "fed", "FOMC meeting")
+        db.add_event_review(eid, date(2026, 3, 28), "negative", "negative", "As expected", "No lesson")
+        lessons = db.get_impact_lessons(limit=5)
+        assert len(lessons) == 0
+
+    def test_get_impact_lessons_empty(self, db):
+        """レビューがない場合は空リスト"""
+        lessons = db.get_impact_lessons(limit=5)
+        assert lessons == []
 
 
 class TestGDR001Phase1:
