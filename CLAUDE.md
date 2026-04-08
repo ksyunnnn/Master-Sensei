@@ -4,7 +4,7 @@
 
 ## Charter
 
-自身の原則・指針・自己評価メカニズム: @docs/charter.md
+自身の原則・指針・自己評価メカニズム: `docs/charter.md`
 
 ## Structure
 
@@ -16,6 +16,8 @@
 | docs/charter.md | Master Senseiの原則・自己評価 |
 | docs/adr/ | ソフトウェア構造の判断記録 |
 | docs/gdr/ | 成長メカニズムの判断記録 |
+| docs/code-review-checklist.md | 統計・金融コードのレビュー基準（ADR-022） |
+| docs/testing-guidelines.md | 統計・金融コードのテスト設計原則（ADR-022） |
 
 ## Data Architecture (ADR-001)
 
@@ -40,7 +42,7 @@
 
 永続化しない: Brier score集計値、サマリーレポート、探索的分析（都度計算 or 会話で保持）
 
-詳細: @docs/adr/003-data-governance.md
+詳細: `docs/adr/003-data-governance.md`
 
 ## トリガールール (ADR-007, 008)
 
@@ -73,6 +75,7 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - `/review-events` — イベント事後検証・lesson記録
 - `/verify-knowledge` — stale知見の検証・検証日更新
 - `/entry-analysis` — MAP分析→シナリオ別注文設定→trade記録（ADR-018）
+- `/signal-check` — 確認済みシグナルの発火チェック。発火時は`[ACTION]`通知→`/entry-analysis`提案
 
 ### セッション終了前（Stop Hook）
 - condition.mdの最終更新日が今日でなければ更新する
@@ -91,6 +94,8 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - 設計判断や分析の提案前に十分な調査と根拠を提示する。直感で提案しない
 - 質問・確認は1つずつ。複数の判断を一度に求めない
 - 調査・アイデア生成タスクでは「収穫逓減」を理由に途中で止めない。手法自体の調査も行い、網羅的に試してからユーザーに判断を委ねる
+- 統計検定・金融データ処理・並行処理のコードを書く/レビューする際は `docs/code-review-checklist.md` を参照する (ADR-022)
+- 研究の方向性変更・目標変更・打ち止め判断の前に `docs/bias-audit-checklist.md` を実施する（Premortem + Kahneman 12問）
 - リモートリポジトリ（GitHub Public）あり。セッション中にコミットした場合、pushを提案してよい
 
 ## Memory運用ルール

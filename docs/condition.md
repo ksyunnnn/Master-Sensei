@@ -6,13 +6,14 @@ Last updated: 2026-04-08 (session 17)
 
 - Phase 3（運用サイクル確立）
 - Charter v0.1.0（習熟度 Lv.1 見習い）
-- 独立gitリポジトリ。ADR 20本、GDR 1本（Phase 1実装済み）、166テスト全パス
+- 独立gitリポジトリ。ADR 22本、GDR 1本（Phase 1実装済み）、596テスト全パス
 - データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
 - sensei.duckdb: レジーム12件、予測5件（解決1/未解決4、Brier 0.2025）、知見27件、イベント162件、トレード4件（#1 +10%利確、#2 スクラッチ、#3 SL決済-4.4%、#4 SOXS long建て中→停戦で含み損-5.2%、SL$33.00危機）
 - GitHub Public repo設定: `ksyunnnn/Master-Sensei`（origin）。.gitignore強化 + permissions.deny + noreply email設定済み
-- エントリーシグナル研究: @data/research/WIP-progress.md
+- エントリーシグナル研究: @data/research/README.md
+- シグナル監視: src/signals/（1シグナル1ファイル、自動レジストリ）。confirmed: H-18-03のみ
 - MCP DuckDB接続: `.mcp.json`（相対パス、read-only）でsensei.duckdbに接続
-- Skills: `/verify-knowledge`, `/update-regime`, `/scan-market`, `/scan-market-quick`, `/review-events`, `/entry-analysis`, `/sensei-journal`
+- Skills: `/verify-knowledge`, `/update-regime`, `/scan-market`, `/scan-market-quick`, `/review-events`, `/entry-analysis`, `/sensei-journal`, `/signal-check`
 - trades テーブル: ADR-015実装済み（add_trade, close_trade, review_trade）
 - GDR-001 Phase 1: source_prediction_id, root_cause_category, Brier 3成分分解, Baseline Score, Kolbサイクル率
 
@@ -27,6 +28,19 @@ Last updated: 2026-04-08 (session 17)
 3. **update-regime** — 4/7引けデータでregime再判定。Brent $95(-14%)でcrisis→high移行か。VIX 25.78、バックワーデーション1.008
 4. **停戦の評価** — 2週間限定停戦。4/10イスラマバード和平交渉（Vance副大統領）。K-009完全成就の記録
 5. **予測モニタリング** — #2 SOXL $40割れ(55%, 4/11): $56.55で大幅乖離。#3 SOXS +10%超(75%, 4/11): 引け-3.2%で困難化。#4 TQQQ TP$46(35%, 4/11): $44.15。#5 SOXL TP$55.70(25%, 4/11): $56.55で到達済み？要確認
+
+## 未決の検討事項（シグナル研究）
+
+1. **探索をやり直すか**: 1000仮説→実弾1本（H-18-03）。目標10本に対して1/10。再探索するか1本で運用開始するかの判断が必要
+2. **シグナル監視アーキテクチャ**: レイヤードアーキテクチャ / Hexagonal / Pipe and Filter の選定。../app/（Next.js）との統合方針。ECA（Event-Condition-Action）ルールの適用
+3. **H-18-03のパラメータ展開**: 2日/4日連続は独立仮説か同一仮説のバリエーションか。実弾として追加採用するかの判断
+
+## エントリーシグナル研究: 最終結果
+
+**実弾確定: H-18-03（3日連続下落→ロング）のみ。** 詳細: [data/research/findings/2026Q2-signal-exploration.md](../data/research/findings/2026Q2-signal-exploration.md)
+- TQQQ: 勝率64.8%, 摩擦後+1.42%/回, 年+30.6%
+- TECL: 勝率64.2%, 摩擦後+1.50%/回, 年+32.7%
+- CSCV 70通り: OOS正リターン率100%
 
 ## 今セッションの成果（session 17, 4/7 夜 JST）
 

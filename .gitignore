@@ -14,6 +14,8 @@ data/*.duckdb.wal
 # Python
 __pycache__/
 .pytest_cache/
+*.parquet.bak
+data/research/signal_ideas.csv.bak
 
 # Claude Code (personal/local)
 .claude/settings.local.json
