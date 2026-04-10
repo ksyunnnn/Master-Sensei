@@ -1,6 +1,6 @@
 # Condition
 
-Last updated: 2026-04-10 (session 19)
+Last updated: 2026-04-10 (session 20)
 
 ## Current Condition
 
@@ -8,7 +8,7 @@ Last updated: 2026-04-10 (session 19)
 - Charter v0.1.0（習熟度 Lv.1 見習い）
 - 独立gitリポジトリ。ADR 22本、GDR 1本（Phase 1実装済み）、596テスト全パス
 - データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
-- sensei.duckdb: レジーム10件、予測5件（解決1/未解決4、Brier 0.2025）、知見32件（K-030外交フェーズ割引, K-031差金決済, K-032順応バイアス追加、K-026修正）、イベント169件（reviewed146/unreviewed22）、トレード5件（#5 SOXL計画外long +3.6%利確）
+- sensei.duckdb: レジーム11件（4/10 **risk_on** 追加）、予測5件（解決3/未解決2、Brier 0.3958）、知見33件（K-033 regime transition underconfidence追加）、イベント169件、トレード5件
 - GitHub Public repo設定: `ksyunnnn/Master-Sensei`（origin）。.gitignore強化 + permissions.deny + noreply email設定済み
 - エントリーシグナル研究: @data/research/README.md
 - シグナル監視: src/signals/（1シグナル1ファイル、自動レジストリ）。confirmed: H-18-03のみ
@@ -19,18 +19,17 @@ Last updated: 2026-04-10 (session 19)
 
 ## Next Session Priority
 
-1. **★SOXL pullback long 発注（4/10受渡完了後）** — 昨夜SOXL売却後の同日再エントリーが差金決済(K-031)で不可。受渡完了後に指値発注:
-   - 指値 $63.50 10株 / TP $71 / SL $58 / 期限 4/10(金)引け
-   - **前提**: 4/11イスラマバード交渉成功（完全or部分、推定45%）
-   - **リスク**: 週末ギャップで土曜の交渉結果→月曜4/14に反映。SLが効かない可能性
-2. **★4/10の交渉前ヘッドライン監視** — 代表団到着報道、会談開催/延期、イラン/米のトーン。毎日scan-market実行
-3. **予測レビュー** — 4/11期限の未解決予測4件が全て状況変化（停戦合意後）:
-   - #2 SOXL $40割れ(55%): 4/8 $67.50で大幅乖離。failed確定予定
-   - #3 SOXS +10%超(75%): 4/8 -19.4%で失敗
-   - #4 TQQQ TP$46(35%): $48到達済み
-   - #5 SOXL TP$55.70(25%): $67で大幅越え
-4. **update-regime** — 4/10データ反映後、VIX<20に下がればrisk_on転換視野
-5. **trade #5事後レビュー** — 計画外エントリー+3.6%利確。setup_type='unplanned'。K-029との比較学習
+1. **★予測#2, #3 の形式resolve（4/12早朝 JST）** — 4/11米国引け後にTiingo更新 → `update_data.py` → 両者FALSEで resolve:
+   - #2 SOXL<$40 (55%): 現在$71.98、物理的に到達不能。FALSE確定
+   - #3 SOXS日次+10%超 (75%): 窓内最大 -0.91%、残2営業日でrisk_on継続中。FALSE確定
+   - 両方FALSEならBrier進行: confidence 55%/75%の逆張りが大外れ → K-033と同系の「regime固着」パターンの再確認
+2. **SOXL エントリー判断の保留・再開** — session 20中断: K-033(transition追随) vs K-029(急騰後平均回帰)の拮抗で「様子見」が合理的と判断。再開条件は以下のいずれか:
+   - SOXL が SMA20から±1σ内に収束してエントリー点が明確化
+   - pullback イベント発生（-5%以上の調整で平均回帰確認）
+   - 新たな触媒イベント（scan-market）で方向感付与
+3. **trade #5事後レビュー（持ち越し）** — 計画外エントリー+3.6%利確。setup_type='unplanned'。K-029との比較学習
+4. **K-033の検証機会監視** — 次に regime transition を検知した際、TP到達予測で意図的に+15-20pt嵩上げした確信度を記録し、calibration改善が再現するか検証する
+5. **未検証イベント22件の処理** — `/review-events` で impact判定の事後検証を進める
 
 ## 未決の検討事項（シグナル研究）
 
@@ -44,6 +43,27 @@ Last updated: 2026-04-10 (session 19)
 - TQQQ: 勝率64.8%, 摩擦後+1.42%/回, 年+30.6%
 - TECL: 勝率64.2%, 摩擦後+1.50%/回, 年+32.7%
 - CSCV 70通り: OOS正リターン率100%
+
+## 今セッションの成果（session 20, 4/10 午後 JST）
+
+### 日次ワークフロー実行（データ更新→レジーム→予測resolve→知見記録）
+
+- **update_data.py**: マクロ9系列・日足10銘柄・5分足8銘柄を 4/09 まで最新化
+- **update-regime**: **neutral → risk_on**（score +0.64, 11件目）
+  - VIX 21.5→19.49、HY 3.12→2.94、Brent $98.4→$96.77、VIX/VIX3M 0.946→0.894（コンタンゴ深化）
+  - 3日で risk_off → neutral → risk_on の連続改善。停戦維持ラリーが数値として確定
+- **予測 #4, #5 を早期resolve（両方TRUE）**: 窓内でTP到達が物理的に確定したため4/11を待たず処理
+  - #4 TQQQ TP$46 (conf 35%): 4/8 Close $48.00で突破 → Brier 0.4225
+  - #5 SOXL TP$55.70 (conf 25%): 4/7 Close $56.55でエントリー当日突破 → Brier 0.5625
+  - 原因カテゴリ: 両者とも `regime_shift_missed`
+  - 全体Brier: 0.203 → 0.3958（悪化だが underconfident TRUE 起因＝calibrationシグナル）
+- **新知見 K-033（meta, confidence=medium）**: regime transition直後のTP到達予測は直前regimeの前提を引きずり確信度を過小評価。transition進行中なら+15-20pt嵩上げが必要。source_prediction_id=5, related=[K-023, K-030]
+- **エントリー分析 SOXL（中断）**: 方向決定前にMAP入力の認知整理で「K-033(transition追随)とK-029(3日+25%超後の平均回帰, 翌日勝率32%)が拮抗」と判明。様子見を結論として Next Session に持ち越し
+
+### 注目すべきメタ観察
+
+- 「低確信度ほど当たる」構造: #4(35%), #5(25%)が両方TRUE、#3(75%)は大外れ予定。停戦報道という外生ショックを織り込めなかった情報非対称性が原因で、モデル固有の癖ではない
+- K-033 は K-022 のバイアス監査知見群（underconfidence vs overconfidence）に対する具体的な calibration 補正ルールとなる可能性。実運用での検証待ち
 
 ## 今セッションの成果（session 19, 4/9 夜 JST）
 
