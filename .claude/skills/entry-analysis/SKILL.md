@@ -134,7 +134,9 @@ conn.close()
 PYEOF
 ```
 
-#### 補足情報: 関連知見・既存予測
+#### 補足情報: 関連知見・注文制約・既存予測
+
+**重要**: instrument カテゴリ知見（取引所・ブローカー制約）は注文設計に直結するため、常に全件表示する。市場分析系知見（market/meta/signal 等）は上位8件に絞る。
 
 ```bash
 python << 'PYEOF'
@@ -143,14 +145,24 @@ from src.db import SenseiDB
 conn = duckdb.connect('data/sensei.duckdb')
 db = SenseiDB(conn)
 
-# 関連知見（active）
 knowledge = db.get_active_knowledge()
-print(f"=== 関連知見 ({len(knowledge)}件) ===")
-for k in knowledge[:8]:
-    kid = k.get("id")
-    cat = k.get("category", "")
-    content = k.get("content", "")[:70]
-    print(f"  K-{kid:03d} [{cat}]: {content}")
+
+# instrument カテゴリ（注文制約）は全件表示 — 同日反転可否等、注文設計に直結
+instrument_k = [k for k in knowledge if k.get('category') == 'instrument']
+print(f"=== 注文制約知見 ({len(instrument_k)}件) ===")
+for k in instrument_k:
+    kid = k.get('id')
+    tldr = k.get('tldr') or (k.get('content', '')[:100])
+    print(f"  {kid}: {tldr}")
+
+# その他カテゴリは上位8件
+other_k = [k for k in knowledge if k.get('category') != 'instrument']
+print(f"\n=== 関連知見 ({len(other_k)}件中 上位8件) ===")
+for k in other_k[:8]:
+    kid = k.get('id')
+    cat = k.get('category', '')
+    tldr = k.get('tldr') or (k.get('content', '')[:70])
+    print(f"  {kid} [{cat}]: {tldr}")
 
 # 対象銘柄の未解決予測
 predictions = db.get_pending_predictions()
@@ -207,6 +219,13 @@ PYEOF
 **重要: シナリオはテンプレート固定しない。** イベント・レジーム・フローから動的に構築する。
 地政学危機時は「エスカレ/膠着/沈静化」、通常市場時は「上昇継続/レンジ/調整」など、
 状況に応じた2-3シナリオを構築すること。
+
+**注文制約の反映（instrument知見）**: 手順2の「注文制約知見」セクションで取得した
+instrument カテゴリ知見を注文設計に必ず反映する。特に以下を確認:
+- 同日反転ポジション（同一銘柄long→short等）を計画するシナリオは、Saxoのwash trading
+  防止規制（K-031）に抵触するため不可。回避策は (a)別銘柄で代替 (b)翌営業日 (c)事前原資確保
+- 反転を要するシナリオが存在する場合、シナリオ名にそれを明示し、注文設計段階で代替手段
+  を選択する（例: 「SOXL TP到達→SOXS買い」ではなく「SOXL TP到達→部分利確+翌日SOXS」）
 
 ```
 === /entry-analysis {銘柄} {方向} ===

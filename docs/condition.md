@@ -1,14 +1,278 @@
 # Condition
 
-Last updated: 2026-04-10 (session 20)
+Last updated: 2026-04-15 10:10 JST (session 23 再開、4/14 catalyst 全消化後のクリーンアップ). **catalyst resolved: JPM beat-and-retreat, 4/14 close SOXL +5.9% risk-on 加速, K-034 confirmed n=2**
+
+---
+
+## ⚡ Session 23 Handoff (2026-04-14 18:00 JST、ユーザー離席で一時停止)
+
+次セッション開始時にこのセクションだけ読めば full context 復元可能。情報 source of truth は DB/ファイルなので、この section が汚れても DB から再構築できる。
+
+### 今日これまでの確定事項 (全て DB または file に永続化済み)
+
+#### レジーム転換: **neutral → risk_on (+0.71) 確定**
+- `regime_assessments` 4/14 保存済み (入力値 snapshot 付き)
+- 内訳: VIX 18.70 normal / VIX/VIX3M 0.876 contango / HY 2.94 normal / YC 0.52 normal / Brent $98.19 high / USD 118.86 weak
+- 5 正 + 1 負 (Brent のみ逆風)
+- **transition trajectory**: 4/7 risk_off → 4/9 neutral → 4/10 risk_on → 4/11 neutral → 4/13 neutral → **4/14 risk_on**。jagged 2回目の risk_on 確認、K-033 適用対象
+
+#### scan-market 実行 2回 (朝 3件 + 夕 4件登録)
+- **4/14 03:00 JST [geo/pos]**: Iran-US stop交渉 revival signal (Trump "Iran wants to talk" + Bloomberg)
+- **4/14 05:00 JST [mkt/pos]**: 4/13 US close S&P 6,886.24 戦前高値回復 (+1.02%), Goldman Solomon ソフト選 overstated発言
+- **4/14 23:59 JST [tariff/neu]**: Section 232 半導体交渉報告期限 (4/14 中、時刻未定)
+- **4/13 20:00 JST [mkt/neu]**: 🔴 **Goldman Sachs Q1 2026 RESULT: EPS $17.55 (予想 $16.49 +6.56% beat), Rev $17.23B beat (+1.65%), ROE 19.8%, GB&M +19% YoY** — **ただし pre-market -3.06% = classic sell the news**
+- **4/14 21:00 JST [mkt/neu]**: Citigroup Q1 press release (approx 8:00 AM ET)
+- **4/14 21:30 JST [mkt/neu]** 🔴: **JPM Dimon earnings call 定刻 (8:30 AM ET 厳密) — Iran outlook + $105B noninterest expense 本命タイミング**
+- **4/14 23:00 JST [mkt/neu]**: Wells Fargo earnings call 定刻 (10:00 AM ET 厳密)
+
+#### 重要な 4/14 timing 修正
+- **JPM press release**: ~20:00 JST "**approximately** 7:00 AM ET" (±15 分の幅、厳密ではない)
+- **JPM Dimon call**: **21:30 JST 定刻** (8:30 AM ET、厳密)。← Iran outlook の本命
+- **Citi press release**: ~21:00 JST (approximately 8:00 AM ET)
+- **Wells Fargo press release**: ~20:00 JST、call は **23:00 JST 定刻**
+- **Section 232 報告**: 4/14 中 TBD、USTR/Commerce → Trump、具体時刻未公表
+
+#### review-events 25件完了、5件 impact 修正
+- **#152 neutral→positive** (Iran 10項目 counter-proposal は行動として評価)
+- **#154 negative→neutral** (Kharg Island 軍事攻撃 oil spike は 12h で reverse)
+- **#157 neutral→positive** (Williams 「core 横ばい」発言は BLS で裏付け)
+- **#158 negative→neutral** (Iran backchannel cut 一報は 7h 後 deal 成立で reverse)
+- **#164 negative→neutral** (停戦違反「主張」段階は price 影響ゼロ)
+
+#### 🚨 **CPI データ記録誤り検出 (#170)**
+- DB 記録: 総合 +0.3% m/m, 2.8% y/y, コア +0.4% m/m, 3.1% y/y
+- **BLS 公式**: 総合 **+0.9% m/m, 3.3% y/y**, コア **+0.2% m/m, 2.6% y/y**
+- 二次情報記憶からの数値取り違え (+0.3 は 2月値)。impact=positive 判定自体は core cool で正しいが引用数値が全面的に誤り
+- **lesson 記録済み**: CPI 数値は必ず BLS 公式 (bls.gov/news.release/cpi.nr0.htm) から取得、headline/core 分離、bifurcated 時は core で判断
+
+#### verify-knowledge 3件処理
+- **K-031 [instrument]**: **本文差し替え** (T+1 差金決済誤帰属 → wash trading 防止規制) + validated。回避策 5件、entry-analysis 自動 surface 対応済
+- **K-032 [meta]**: validated (順応バイアス、session 22-23 で防御発動確認済)
+- **K-033 [meta]**: validated (regime transition 直後の TP 過小評価、予測#4#5 Brier 0.42/0.56 で裏付け確認)
+
+#### 会話・Skill 改修 (CLAUDE.md Rules + scan-market SKILL.md + entry-analysis SKILL.md)
+- **時間軸 2 点ルール追加**: 推奨には必ず「現在 HH:MM JST 時点」+「次の再評価は実在カタリスト」を添える
+- 「今日」「今夜」等の幅表現のみの推奨禁止、寄付・引けルーチン時刻の単独列挙禁止
+- カタリスト数に応じて段階数調整 (機械的に 3 段階に揃えない)
+- feedback memory: `feedback_time_axis_recommendation.md` 追加、MEMORY.md index 更新
+
+### intraday dual-long 分析の保留状態 (SOXL + SOXS long)
+
+Session 23 内でユーザーが intraday dual-long を検討。以下まで進んで保留:
+
+- **SOXL long intraday 設計**: entry 指値 $78.50 (-2.5%)、TP $85.00 (+8.3%)、SL $74.50 (-5.1%)、hard exit 05:00 JST。confidence: A 30% / B 45% / C 55%
+- **SOXS long intraday 設計**: entry 指値 $22.10 (-1.4%)、TP $24.20 (+9.5%)、SL $20.90 (-5.4%)、hard exit 05:00 JST。confidence: A 15% / B 25% / C 35%
+- **非対称 dual-long EV**: +0.67% (概ね break-even、commission/spread 負け)
+- **構造的結論**: 対称 dual-long 3x 逆 ETF は intraday でも net≈0、非対称版は EV 薄い
+
+### 市場状態 snapshot (4/14 18:00 JST 時点)
+
+- SOXL $80.56 (4/13 close、**+2.39σ 極値**、3日+19.35%、6日+47%)
+- SOXS $22.42 (4/13 close、**-2.01σ**)
+- VIX **18.70** (4/14 intraday live)、Brent **$98.19** (4/14 intraday live)
+- S&P 6,886.24 (4/13 close、戦前高値回復)
+- K-029 trigger: 3日+25% 閾値に +19.35% で接近中
+- K-033 transition boost: 適用対象 (SOXL long は +15-20pt 嵩上げ可)
+
+### 未解決予測: **0件**
+
+### 次セッション開始時の優先順位
+
+1. **まず `docs/playbook/jpm_2026_q1.md` を読む** — セクション 0.5 Quick Reference + **session 23 addendum** (GS sell-the-news 追加済)
+2. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` で現在時刻確認
+3. JPM/Citi/WFC 決算結果の事後確認: `/scan-market-quick` または手動 WebSearch
+4. 結果と playbook Scenario A/B/C を突合、未執行の trade 判断
+5. Section 232 報告結果の確認 (4/14 中発表予定)
+6. **4/14 USセッション close (4/15 05:00 JST)** 後であれば、update_data.py → update-regime で 4/14 close 値基盤の再判定
+
+### session 23 で Trade 記録は未実行
+
+- add_trade() は **実行していません**。SOXL/SOXS 関連の position 検討はあったが user が離席前に「何も発注せず、何も記録せず、20:00 check-in 以降に判断継続」を選択
+- 未解決予測: 0 件、未決済 trade: session 22 から変化なし
+- 次セッションは clean state で開始可能
+
+---
+
+## ✅ 4/14 Catalyst Resolved Summary (2026-04-15 10:10 JST 追記)
+
+**全 catalyst 消化済み、session 23 で提案した「何もしない」が結果的に正解**。以下は事実記録:
+
+### JPM Q1 2026 RESULT (beat and retreat の典型例)
+- **EPS $5.94** (予想 $5.46、**+8.80% blowout beat**)
+- **Revenue $49.84B** (予想 $49.56B、+0.57% beat)
+- Net income $16.5B (+13% YoY)、Trading revenue $11.6B (+20% YoY)
+- **しかし early trading -3%**
+- **Trigger**: NII 2026 full-year guidance 下方修正 **$104.5B → $103B**
+- GS (4/13 -3.06%) に続く **n=2 sell-the-news confirmation** → **K-034 新設 (medium confidence)**
+
+### 4/14 US close (risk-on 加速)
+| symbol | 4/13 close | 4/14 close | 変化 |
+|---|---|---|---|
+| **SOXL** | $80.56 | **$85.31** | **+5.90%** |
+| TQQQ | $50.66 | $53.41 | +5.43% |
+| TECL | $112.67 | $117.94 | +4.68% |
+| SPXL | $215.91 | $223.67 | +3.59% |
+| SOXS | $22.42 | $21.05 | -6.11% |
+| VIX | 19.12 | **18.36** | -3.98% |
+| Brent | $96.94 | **$94.26** | -2.76% |
+
+### SOXL 4/14 intraday 分析
+- Open: **$83.28** (gap up +3.4% from prev close)
+- 初動 30 分: $83.28 → $81.23 (-2.5% intraday pullback)
+- Low: **$80.68** (前日 close $80.56 直上で支持、深押し限度 $74 は未到達)
+- High: $85.60
+- Close: $85.38 (ほぼ高値引け)
+- Intraday range: 5.9%, Open-Close: +2.5%
+
+### session 23 深押し限度 $74 指値発注は「しなくて正解」
+- 未 fill scenario でも正解 (何もコストかからず、機会損失も限定的)
+- K-029 mean reversion 仮説は **failed this round**: 3日+18.52% → +18.52% (上方維持のまま trajectory 拡大)、σ+2.39 → +2.29 (わずかに乖離縮小)
+- **K-033 transition boost が実証された day**: regime transition 直後の TP 到達確率嵩上げが正しかった
+
+### Section 232 半導体報告の結果 (推定)
+- Web 検索で 4/14 outcome の詳細報道は未 index (深掘り必要)
+- **状況証拠**: SOXL +5.9%, 半導体セクター全面 rally = Phase 2 発動 否定的 = framework 維持 or postpone が最有力
+- 次セッションで詳細確認推奨: `/scan-market-quick` か specific WebSearch
+
+### regime_assessment 4/14 更新 (close 値ベース)
+- **overall: risk_on (+0.71)** 維持、ただし snapshot 値更新:
+  - VIX: 18.70 (intraday) → **18.36 (close)**
+  - Brent: $98.19 (intraday) → **$94.26 (close)**
+  - VIX3M: 21.34 → 20.82
+  - YC: 0.52 → 0.50
+- 判定は同じだが、より正確な close 値 snapshot に差し替え済み
+
+### session 23 予測保存は skip した
+- 事前予測を作る予定だったが、時間経過で deadline が全て past に → 仮想的な backdate 予測は bias 源
+- 代わりに 4/14 **実績** を event として永続化 (JPM result, 4/14 close)
+- K-034 (時間非依存の知見) のみ記録
+
+---
+
+## 🎯 20:00 JST Check-in Framework (session 23 継続用、本日限定) [RESOLVED 2026-04-15 10:10 JST]
+
+**ユーザーが 20:00 JST 前後に戻ってきた時、このセクションだけ読めば即決可能**。全選択肢（GO/WAIT/SKIP）が開かれた状態で判断を継続する。
+
+### Pre-check (30 秒)
+
+```
+1. TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'  # 現在時刻確認
+2. VIX + Brent のライブ値確認 (update_data.py --macro-only 任意)
+3. SOXL 4/13 close $80.56 が基準。futures / 海外市場は参考程度
+```
+
+### JPM press release 確認（**~20:00 ±15 分**、approximately）
+
+JPM プレスリリース（approximately 7:00 AM ET）で以下を確認:
+- EPS（予想コンセンサス: $5.46-5.49）
+- Revenue（予想: $48.56-48.77B）
+- 非金利費用ガイダンス（overhang: $105B）
+- Iran war / geopolitical 関連コメント
+
+### 4 つの選択肢（20:00 JST 時点で選べる行動）
+
+| 選択肢 | 条件 | 内容 | SoT |
+|---|---|---|---|
+| **GO** (限定条件) | JPM の数字を確認し、**自分が納得した**場合のみ | SOXL long IFD-OCO $74 (-8.1%) を Saxo アプリで発注。詳細スペックは下記 | 本セクション |
+| **WAIT for Dimon** | JPM 数字が mixed / 判断保留 | 21:30 JST Dimon call まで待機、call 内容で再判断 | playbook v0.5 |
+| **SKIP** (case 1) | JPM blowout beat で SOXL gap up 強い想定 → $74 指値 dead | 何もしない、SOXS も手を出さない | 本セクション |
+| **SKIP** (case 2、推奨寄り) | 判断に迷う / catalyst 同時進行で noise 多い | 何もしない、Section 232 発表 or 次 US close まで完全待機 | session 23 原則 |
+
+**判断に迷う場合は SKIP が default**。session 23 で確認した通り、EV は marginal at best で「取らない」が単独最良選択肢。
+
+### GO 選択時の注文スペック（事前確定、Saxo アプリで設定）
+
+```
+銘柄: SOXL
+方向: long (Buy)
+注文タイプ: IFD-OCO (Entry + OCO bracket)
+エントリー (IF):   指値 $74.00 (Buy Limit)
+TP  (OCO 1):      指値 $80.00 (Sell Limit, +8.1%)
+SL  (OCO 2):      逆指値 $69.50 (Sell Stop, -6.1%)
+数量: 10 株 ($740 exposure、最大 loss $45)
+Duration: Day Order (US session 4/14)
+Session: Regular Trading Hours only (extended hours 除外)
+
+⚠️ 注意:
+- Duration は必ず "Day"（GTC デフォルトを変更）
+- Extended hours は無効化（流動性低 + spread 広）
+- Day Order は entry 指値の期限のみ、約定後の position は強制 close しない
+- fill された場合: 04:30 JST (4/15, US close -30分) までに手動成行 close 必須
+```
+
+### GO 選択時の add_trade() 記録（発注と同時に session 開始して実行）
+
+発注後、次セッションで即 add_trade() を実行する。entry_reasoning は session 23 で準備済み (下記をコピー):
+
+```python
+db.add_trade(
+    instrument="SOXL",
+    direction="long",
+    entry_date=today_jst(),
+    entry_price=74.00,
+    quantity=10,
+    regime_at_entry="risk_on",
+    vix_at_entry=<20:00時点値>,
+    brent_at_entry=<20:00時点値>,
+    confidence_at_entry=0.25,  # 3択: A 0.30 / B 0.25 (推奨) / C 0.20
+    setup_type="deep_pullback_limit_session23",
+    entry_reasoning=(
+        "[環境] risk_on (+0.71) 2026-04-14 確定、transition trajectory "
+        "4/7 risk_off → 4/14 risk_on (2回目). "
+        "[フロー] SOXL bullish +0.60 (3日+19.35%, σ+2.39 極値). "
+        "[イベント] 20:00 JPM press, 21:30 Dimon call, Section 232 4/14 中 TBD, "
+        "GS sell-the-news 先例 (4/13 EPS +6.56% beat でも株価 -3.06%). "
+        "[シナリオ] 深押し mean reversion buy: Scenario C/JPM miss + S232 Phase 2 時 fill 想定. "
+        "K-029 警告 active (3日+19.35%, 閾値 25% の 77%), 平均回帰リスク高で $74 = +2σ support 直下. "
+        "[K-033] transition boost は $74 深押し entry には限定適用. "
+        "[注文] IFD-OCO entry=$74 TP=$80 SL=$69.50, Day Order RTH only, 10 株 ($740)."
+    ),
+)
+```
+
+### WAIT 選択時（21:30 Dimon call 待機）
+
+- 20:00 で決めず、**21:30 JST Dimon call を待って再判定**
+- Dimon が Iran 方向について明確に hawkish / dovish 発言したら方向確定
+- hawkish → SOXL 下方リスク高 → $74 指値発注を進める（時刻に余裕あれば）
+- dovish → SOXL 上昇 → $74 未達予測、発注見送り推奨
+- Dimon が Iran 言及しない / 曖昧 → SKIP に stepdown
+
+### SKIP 選択時
+
+- 発注なし、記録なし
+- 次セッションで全カタリスト消化後の clean な再分析
+- 機会損失は marginal（session 23 で EV 計算済、差 ±1%）
+
+### 各カタリストの catch-up チェックリスト
+
+戻ってきた時刻によって読む深さを調整:
+
+- **20:00-21:30 JST に戻った**: JPM press → 上記 4 択で判断
+- **21:30-22:30 JST に戻った**: JPM press + Dimon call 初動 → 4 択 + WAIT を飛ばして判断
+- **22:30-05:00 JST に戻った**: US open 後の実反応 → 既に市場動いた後、K-018 に従い初動30分は判断しない、$74 深押しが既にトリガーされた/逃したの事後判断
+- **4/15 以降に戻った**: 全 catalyst 消化済、clean state で `/scan-market` → `/update-regime` → 新規分析
+
+### Section 232 報告への対応（時刻未定、通知検知が理想）
+
+- Saxo アプリで **"semiconductor tariff" "Section 232" キーワード通知設定**推奨（session 23 最後に設定）
+- Phase 2 発動報道を検知したら即 SOXL ライブ価格確認
+- $74 接近中なら指値が発動する可能性高、放置 OK
+- $74 到達後 gap through で約定済みなら、アプリで SL 状態確認、必要なら手動で SL 引き下げ
+
+---
 
 ## Current Condition
 
 - Phase 3（運用サイクル確立）
 - Charter v0.1.0（習熟度 Lv.1 見習い）
 - 独立gitリポジトリ。ADR 22本、GDR 1本（Phase 1実装済み）、596テスト全パス
-- データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）
-- sensei.duckdb: レジーム11件（4/10 **risk_on** 追加）、予測5件（解決3/未解決2、Brier 0.3958）、知見33件（K-033 regime transition underconfidence追加）、イベント169件、トレード5件
+- データ: Tiingo 10シンボル + FRED 9シリーズ + yfinance 3シリーズ（ProviderChain統合済み）。4/10引け+4/12 Brent反映済み
+- sensei.duckdb: レジーム13件、予測5件（全件解決）、知見33件、イベント178件、トレード5件
+- **市場直近**: SOXL $76.39 (4/10引け、3日+35%、σ=+2.56 overbought)、SOXS $23.69、VIX **20.93** (4/13引け、elevated)、VIX/VIX3M **0.957 flat**、Brent **$101.64**（危機水準維持）
+- **4/13 22:30 JST cash open 観測**: SOXL +0.73% (gap UP), SOXS -0.63% (gap DOWN) → **半導体セクター +0.22% GREEN open** under risk-off headlines = K-009 market fully priced
+- **レジーム**: neutral (score -0.29)、risk_off閾値 -0.5 に近接するが未転換。4/13 22:45 JST 入力値snapshot付き再記録済み
+- **イベント進行**: 4/12 US-Iran talks collapse / 4/13 23:00 JST CENTCOM Hormuz blockade enforcement 開始 / semi sector事前に K-009 fully priced → Scenario B (宣言のみ・実害なし) が現実化中
 - GitHub Public repo設定: `ksyunnnn/Master-Sensei`（origin）。.gitignore強化 + permissions.deny + noreply email設定済み
 - エントリーシグナル研究: @data/research/README.md
 - シグナル監視: src/signals/（1シグナル1ファイル、自動レジストリ）。confirmed: H-18-03のみ
@@ -17,13 +281,60 @@ Last updated: 2026-04-10 (session 20)
 - trades テーブル: ADR-015実装済み（add_trade, close_trade, review_trade）
 - GDR-001 Phase 1: source_prediction_id, root_cause_category, Brier 3成分分解, Baseline Score, Kolbサイクル率
 
-## Next Session Priority
+## Next Session Priority (次catalyst: JPM Q1 2026 earnings, 2026-04-14 20:00 JST)
 
-1. **★予測#2, #3 の形式resolve（4/12早朝 JST）** — 4/11米国引け後にTiingo更新 → `update_data.py` → 両者FALSEで resolve:
-   - #2 SOXL<$40 (55%): 現在$71.98、物理的に到達不能。FALSE確定
-   - #3 SOXS日次+10%超 (75%): 窓内最大 -0.91%、残2営業日でrisk_on継続中。FALSE確定
-   - 両方FALSEならBrier進行: confidence 55%/75%の逆張りが大外れ → K-033と同系の「regime固着」パターンの再確認
-2. **SOXL エントリー判断の保留・再開** — session 20中断: K-033(transition追随) vs K-029(急騰後平均回帰)の拮抗で「様子見」が合理的と判断。再開条件は以下のいずれか:
+### ★最優先: JPM playbook execution
+
+**playbook**: `docs/playbook/jpm_2026_q1.md` (v0.3 FINAL, session 22で作成)
+
+このplaybookは session を跨いで interrupt耐性を持つ独立ファイル。condition.md と疎結合にすることで、別の作業が入っても playbook が破綻しない **新パターン** (session 22 導入)。
+
+```
+□ 4/14 16:00 JST playbook 再読 (docs/playbook/jpm_2026_q1.md セクション 0.5 Quick Reference)
+□ 4/14 16:00-18:00 JST: Nikkei/USD-JPY確認 + /scan-market-quick でovernight Iran/Fed
+□ 4/14 18:00-20:00 JST: update_data.py --macro-only → /update-regime → analyst notes読解
+□ 4/14 20:00 JST: JPM release（**取引しない、読む**）→ シナリオ A/B/C 暫定判定
+□ 4/14 21:30-22:30 JST: Dimon conference call、判定確定、Saxo 注文準備
+□ 4/14 22:30 JST: cash open 指値執行 (Scenario判定通り、playbook セクション8参照)
+□ 4/14 22:30-23:00 JST: WATCH ONLY (K-018ルール)
+□ 4/15 05:00 JST (Scenario C時間stop) or 4/15 22:30 JST (Scenario A時間stop): 完全手仕舞い
+□ 4/15以降: post-mortem (add_trade記録、scenario確率calibration、知見候補検証)
+```
+
+### Session 22 の成果
+
+- ✅ update_data.py (全系列 + SOXS/SOXL個別intraday)
+- ✅ regime_assessment 更新 (stale VIX 19.2 → fresh 20.93反映)
+- ✅ scan-market (5時間gap、0件登録、K-009/K-024 lesson-filtered)
+- ✅ entry-analysis SOXS long → **撤退決定** (semi green open で寄り買いthesis崩壊、trade記録なし)
+- ✅ JPM Q1 2026 earnings playbook作成 (初版 8四半期historical, Dimon letter aftermath検証) → **自律再探索で 20Q拡張、null-test で self-correction**
+- ✅ 新パターン導入: `docs/playbook/` catalyst-specific 独立ファイル (interrupt耐性)
+- ✅ playbook v0.4 self-correction: 8Q → 20Q null test で "JPM day = random day" 判明、sample bias artifact 修正
+
+### 新知見候補 (post-event validation必要)
+
+- ⚠️ **K-034候補 UPDATED**: ~~JPM earnings SOXL pos rate 75%~~ → **20Q null-test で p=0.78 not significant、8Q は recency bias artifact**
+- **K-035候補**: CEO事前letter公表後の earnings call commentary = info value ≒ 0 (Dimon 4/6→4/10 SOXL +39% empirical)
+- **K-036候補**: 封鎖前夜の半導体セクター relative strength (4/13 green open) — TSMC Q1+35% + AI structural demand が地政学リスクに勝る構造
+- **K-037候補**: Earnings day **VIX regime conditioning** — High VIX (>20, n=6) では d+1 pos 83%, d+5 drift UP (+7.12%); Low VIX では d+5 drift DOWN (-2.29%, sell the news)。interaction効果強い
+- **K-038候補** (process learning): Historical analysis の **sample size bias** — 初期 8Q 選定で "recent 4+4" 直感的選択 → 2024-25 bull market 偏重。今後は minimum 20 samples + multi-regime period を default に
+- **K-039候補**: **D+1 overnight edge (weak but consistent)** — 4 leverage ETF 全てで pos rate 65-75% (TECL 75%, marginal sig p=0.076)。earnings day そのものより翌日にedgeが集中
+
+### session 22 撤退判定の論理 (post-mortem用)
+
+**撤退根拠**:
+1. Gap観測: SOXS -0.63% gap DOWN @22:30 JST (gap up想定に反す)
+2. Cross-check: SOXL +0.73% gap UP (semi +0.22% green implied)
+3. EV再計算: Option2 scalp +2.1% → +0.65% (市場signalで下方修正)
+4. Option2のedge 消滅 → Option1撤退が唯一合理的
+5. 資金温存 → JPM Q1 catalyst優先
+
+### 副次優先
+
+2. **CPI数字の矛盾検証（イベント#171）** — 前回scan-market登録の「2.8% y/y, core 3.1%」vs 後続「3.3% y/y, core 2.6%」。BLS公式fetchで正誤確定
+3. **K-029 検証日 = 本日4/13月曜**: SOXL 3日+35%の翌日。統計的に翌日勝率32%、平均-2.53%。寄り以降の SOXL 値動きで知見頑健性確認
+4. **未検証イベント処理** — `/review-events` で直近3日以上経過イベントのimpact事後検証
+5. **SOXL エントリー判断の保留・再開** — session 20中断: K-033(transition追随) vs K-029(急騰後平均回帰)の拮抗で「様子見」が合理的と判断。再開条件は以下のいずれか:
    - SOXL が SMA20から±1σ内に収束してエントリー点が明確化
    - pullback イベント発生（-5%以上の調整で平均回帰確認）
    - 新たな触媒イベント（scan-market）で方向感付与
@@ -43,6 +354,94 @@ Last updated: 2026-04-10 (session 20)
 - TQQQ: 勝率64.8%, 摩擦後+1.42%/回, 年+30.6%
 - TECL: 勝率64.2%, 摩擦後+1.50%/回, 年+32.7%
 - CSCV 70通り: OOS正リターン率100%
+
+## 今セッションの成果（session 22, 4/13 13:05-17:25 JST 追加分）
+
+### 日次ワークフロー2周目 + thesis検証パス
+
+- **update_data.py フル再実行** (13:05): マクロ9系列・日足・5分足すべて最新化。Brent $102.18確定、VIX 19.23維持（4/10引け）
+- **scan-market #1** (13:09): 会談決裂を捕捉。3件登録:
+  - 4/12 22:00 US-Iran talks collapse (Islamabad 21hrs、核問題で決裂) — negative, regime change
+  - 4/13 08:00 CENTCOM公式封鎖宣言 (10am ET開始、イラン諸港限定) — negative
+  - 4/12 20:00 Brent $96→$102 (+6%) — negative, Parquet確認
+- **update-regime** (13:10): **neutral維持 (score 0.50)** だが内訳変化
+  - VIX: 20.2 (warning) → 19.2 (normal)
+  - Brent: 高水準 → **crisis** (-1 → -2)
+  - reasoning に注記: 「4/12決裂・封鎖宣言はBrent反映済だがVIXは4/10止まりラグあり。寄り後に risk_off 再判定される可能性高」
+- **scan-market #2** (17:21): Asia引け + Europe寄りでthesis検証。3件登録:
+  - 4/13 17:00 グローバルリスクオフ mild (Nikkei -0.72, DAX -0.95, ES -0.7, VIX 21.17 +10%) — neutral (方向一致 × magnitude小)
+  - 4/13 15:00 Hormuz商業船舶自主停止 — negative (脅迫→実害移行signal)
+  - 4/13 14:00 Iran「piracy」rhetoric + IRGC対応宣言 — neutral (K-009、軍事行動なし)
+
+### SOXS long thesis の評価変遷（重要）
+
+| 時点 | 判断 | 根拠 |
+|------|------|------|
+| 13:05（昼） | 「寄付き検討」方向 | 停戦崩壊 regime change |
+| 13:20 | **MAP未実施のまま肯定は危険** | Charter 3.3順守、賛否両論提示 |
+| 17:25 | **寄付き裸ロングは非推奨** | magnitude mild = gap chase リスク、easy moneyは既に抜かれた |
+
+**確信度**: SOXS long方向性 55% / 反対材料 45%。寄付き後30-60分の押し目待ちか、VIXY軽量か、現金待機を推奨。
+
+### メタ観察
+
+- **レジーム内訳シフト**: neutral維持だが「VIX改善 × Oil悪化」の構成に変化。overall score は同じでも**リスク源が入れ替わった**（市場沈静→原油ショック）ことを reasoning に明記する重要性を確認
+- **magnitude解釈フレーム**: ニュースの方向と市場反応の magnitude は別次元の情報。方向だけで順張りすると「織り込み済み gap chase」の罠に嵌まる。orderly repricing（mild）か panic（crisis水準 VIX 30+）かを区別する必要
+- **Charter 3.3の実践再び**: ユーザー「SOXS寄りでよさそう？」に対し、安易な肯定を避け MAP未実施を明示して分解評価を提示。ユーザーは納得して「待ちます」を選択 → 順応バイアス防御が機能
+
+## 今セッションの成果（session 22, 4/13 昼 JST 旧）
+
+### entry-analysis SOXS long の検討と「実行しない」判断
+
+- **データ更新**: 4/10引け確定値 + 4/12 Brent 反映
+  - SOXL: $71.98 → **$76.39** (+6.13%)、3日リターン **+35.08%**（前回+31.3%から拡大、K-029閾値+25%を大幅超過）
+  - SOXS: $25.20 → **$23.69** (-5.99%)、Flow **bearish (-1.00)** に強化
+  - VIX: 20.22 → **19.23**（金曜引けでelevated→normal復帰）
+  - Brent: $96.71 → **$102.28**（4/12土曜先物、危機水準入り、Saudi攻撃継続影響）
+- **regime再判定**: neutral (score **+0.50**, 前回+0.07から大幅改善) — VIX低下が主因。ただし Brent $100超は -1 維持
+- **SOXS long IFD-OCO の最終判断**: **金曜のB案（指値$22.20）は前提崩壊 → 実行しない**
+  - 理由1: Brent $102で oil 危機水準 → SOXS long追い風だが金曜想定外
+  - 理由2: 4/10引けで SOXL intraday $77.12→引け$76.39 = mean reversion予兆
+  - 理由3: K-029 検証日が今日 = 「押し待ち」していると反落イベントを逃す
+  - 理由4: 4/11 Islamabad会談結果未確認 = 最大の情報ギャップ
+- **新方針**: 2段階アプローチ
+  - Step 1: `/scan-market` で 4/11 会談結果を確認
+  - Step 2: 結果次第で SOXS 寄付エントリー（決裂時）/ 見送り（合意時）/ 軽量指値（曖昧時）
+- **trade記録なし**: エントリー実行しないため
+
+### 注目すべきメタ観察
+
+- **Charter 3.3 の実践**: ユーザーの「あなたの判断に任せます」に対し、安易に金曜計画を承認せず「事実更新→再構築」を選択。順応バイアス（K-032）の防御として機能した
+- **session 20→21→22 の連続性**: SOXL 拮抗（20）→ SOXS 拮抗（21）→ Brent急騰で再構築（22）。「拮抗」が3セッション続いている = 市場が transition の中間地点に滞留
+- **K-029 の検証フェーズ**: 今日4/13月曜が「3日+35%後の翌日」= K-029統計の最大の検証機会。寄付以降の SOXL 値動きで知見の頑健性確認可能
+- **Brent $102 vs VIX 19.23 divergence**: 半導体セクターの地政学inelasticity (TSMC beat裏付け) の継続を示唆。oilショックは tech に伝播していない
+
+## 今セッションの成果（session 21, 4/10 夜 〜 4/11 未明 JST）
+
+### 日次ワークフロー実行（データ更新→scan×2→regime→予測resolve）
+
+- **update_data.py フル実行**: マクロ9系列・日足10銘柄・5分足8銘柄を4/10まで更新。5分足でSOXL $76.96（金曜 13:35 ET、+6.9%）を捕捉
+- **scan-market 2回**: 前回4/9 23:40 → 4/10 21:12 → 4/11 02:40 の2パス。4件登録:
+  - **March CPI発表**（fed, positive）: 2.8% y/y vs 予想3.1-3.7%で正の驚き（後続検索で数字矛盾発見、要検証）
+  - **Saudi East-Westパイプライン+Manifa+Khurais攻撃**（oil, negative）: -600k bpd、パイプライン throughput -700k bpd、KIA 1名。停戦合意後の実被害
+  - **TSMC Q1 2026 revenue beat**（semiconductor, positive）: NT$1.13兆(+35% YoY)、"War fails to dent AI demand"（Bloomberg）。AI需要の構造的強さ確認
+  - **Israel-Lebanon直接会談予定**（geopolitical, positive）: 来週State Deptで初会合、停戦最大faultline解消方向
+- **update-regime**: **risk_on → neutral**（score 0.64→0.07、12件目）
+  - VIX 19.38→**20.22**（elevated閾値20超え）、Brent $95.89→$96.71、VIX/VIX3M 0.889→0.912
+  - CPI reliefとSaudi攻撃の綱引き + 4/11 Islamabad会談前の週末ギャップ警戒で event vol 残存
+  - SOXL 5分足は$76.96（+6.9%）で divergence — セクター強さとマクロ警戒の共存
+- **予測 #2, #3 を確定resolve（両方FALSE）**:
+  - #2 SOXL<$40 (conf 55%): 4/1-4/9終値最低$52.26、4/10 intraday $76.96、4/11土曜休場 → FALSE確定。root_cause=regime_transition_missed
+  - #3 SOXS日次+10%超 (conf 75%): 3/31-4/9日次+10%超0回、4/10 intraday -6.9%、4/11土曜 → FALSE確定。root_cause=regime_transition_missed
+  - 主因: 4/8 Trump-Iran 2週間停戦合意（パキスタン仲介）によるリスクオン急反転。war escalation前提が崩れた瞬間に予測無効化。K-009（脅迫→裏チャネル交渉）パターンの典型例
+  - 全予測が解決済み（5件中5件、未解決0）
+
+### 注目すべきメタ観察
+
+- **K-033の逆パターン観察**: session 20のK-033は「transition直後のTP到達予測は underconfidence」だった。今回の#2/#3は「transition逆行でも overconfidence」の逆パターン。risk_off前提の高確信度予測がregime transitionで最大被害を受けた。K-033とK-009（Trump脅迫のnoise化）の組み合わせが calibration key
+- **ソース矛盾の検出**: CPI数字が BLS直接引用(2.8%)と市場評論(3.3%/core 2.6%) で不一致。WebSearchの「記事混在」による取得誤りの可能性。今後はTier 1公式ソース優先＋市場反応との整合性チェックを徹底
+- **半導体の地政学inelasticity**: TSMC +35% YoY beat は「戦争・停戦・原油高で AI 需要は減速しない」という hard data。SOXL/TECLロングの構造的追い風
+- **divergence**: SOXL +6.9% ラリーとVIX 20超の elevated が同時発生。event vol（CPI＋Saudi＋Islamabad会談）が解消する月曜以降のVIX正常化を監視
 
 ## 今セッションの成果（session 20, 4/10 午後 JST）
 
