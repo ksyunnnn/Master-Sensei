@@ -9,6 +9,8 @@
 data/parquet/
 data/*.duckdb
 data/*.duckdb.wal
+learning/data/*.duckdb
+learning/data/*.duckdb.wal
 *.parquet.bak
 
 # Python

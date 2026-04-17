@@ -1,6 +1,88 @@
 # Condition
 
-Last updated: 2026-04-15 10:10 JST (session 23 再開、4/14 catalyst 全消化後のクリーンアップ). **catalyst resolved: JPM beat-and-retreat, 4/14 close SOXL +5.9% risk-on 加速, K-034 confirmed n=2**
+Last updated: 2026-04-17 (session 24 後半、学習ドリルシステム実装完了: ADR-023、drill.py、Stage 1 seed 10問、`/learn-status` Skill、632 tests). **未消化 catalyst: TSMC Q1 earnings (4/16 15:00 JST) の結果確認は次セッション**
+
+---
+
+## ⚡ Session 24 追記 (2026-04-17)
+
+### 学習ドリルシステム構築完了 (ADR-023)
+- 完全独立アプリ構成: `learning/` top-level + `drill.py` のみ root
+- DB: `learning/data/drill.duckdb` (sensei.duckdb と分離、`learning_*` テーブルは sensei.duckdb から drop 済)
+- 質問バンク: `learning/data/questions/stage_1/*.md` (10問)
+- エントリポイント: `python drill.py` (--stats / --reload / -n N)
+- Skill: `.claude/skills/learn-status/SKILL.md` (週 1 レビュー想定)
+- 設計根拠: ADR-023 (Leitner 5-box + Markdown loader + 独立 DuckDB)
+- curriculum: `docs/curriculum.md` (Stage 1-4 マップ、診断結果反映)
+- テスト: `learning/tests/test_learning.py` 22 件、全 632 件 pass
+
+### 用語診断 (2026-04-16 実施、17 用語)
+- A (完全理解): 2 (ADR, SL/TP+OCO)
+- B (部分理解): 5 (ETF, 平均回帰, 3x レバ, regime_assessments, Decay)
+- C (未知): 11 (VIX, MAP, EPS, コンタンゴ, σ/SMA, YC, NII, guidance, BE SL, K-XXX, Section 232)
+- **Dunning-Kruger バイアスなし** → self-grading による drill が機能する前提成立
+
+---
+
+## ⚡ Session 24 Handoff (2026-04-16 00:15 JST)
+
+### 今日のセッションで確定した事項
+
+#### scan-market 実行 3 回 (4/15 11:13 / 13:07 / 16:05 JST)
+- **4/14 21:15 JST [mkt/pos]**: Citigroup Q1 RESULT — 10年ぶり最高売上、"Project Bora Bora" 奏功、純利益+42%、株価20年ぶり高値
+- **4/14 22:30 JST [mkt/neg]**: Wells Fargo Q1 RESULT — NII $12.1B miss、株価 -6.6%
+- **4/15 19:45 JST [mkt/neu]**: BAC Q1 2026 earnings BMO (予定、pending result) — EPS予想 $1.01、Rev予想 $29.96B
+- **4/16 15:00 JST [semi/neu]**: 🔴 **TSMC Q1 2026 earnings conference (14:00 Taiwan Time) — SOXL/TECL direct catalyst 最大級**
+- **4/15 15:00 JST [mkt/pos]**: Nikkei 4/15 終値 +1% 58,400超、Advantest +4.7%、Lasertec +3.7%、SoftBank +5.5% = TSMC 4/16 pre-event rally
+
+#### update-regime 実行 (4/15 11:20 JST)
+- 結果: **risk_on (+0.71) 完全維持、前日と全 6 指標同一** → ADR-003 Write 基準により **記録 skip**
+- 4/14 記録 (2026-04-15 10:08 JST 保存済み) がそのまま有効
+
+#### SOXS 追加調査実施
+- 4/14 close $21.05、90日高値比 43.2%、30日平均出来高の 0.53x → bear 需要縮小
+- SOXS/SOXL 日次対称性良好 (sum ±0.27% 以内)、decay は短期で軽微
+- K-029 照合: 3日+18.52% = バケット 10-20% neutral、厳密 trigger 未発動
+- K-034 (beat and retreat) の TSMC 転用は **仮説ベース**、銀行 n=2 → TSMC n=0 で慎重
+- 過去 SOXS トレード 0/2 勝率、event_hedge_probe として機能せず
+
+#### 🚨 Trade #4 SOXS リコンシレ要対応
+- DB 上 **Trade #4 SOXS long @ $35.265 (4/7 entry) が exit_date=None のまま**
+- SL $33.00 は 4/8 gap-down ($27.70 open) で約定済みのはず → 実残高と DB の齟齬
+- **次セッション優先度高**: 実約定確認 → trades テーブル update
+
+#### 学習カリキュラム設計着手 (新規作業)
+- ユーザー申告: **体系的な金融/投資教育は一度もなし**
+- 教育理論リサーチ実施: Knowles Andragogy, Bloom Taxonomy, Retrieval Practice (Rowland g=0.50), Spaced Repetition, Expertise Reversal Effect (Kalyuga 2003)
+- 3層ハイブリッド設計提案: Layer 1 (静的 glossary) / Layer 2 (report-embedded) / Layer 3 (spaced retrieval)
+- 初学者前提で順序 **A → C → B** (Layer 1 から開始) に改訂
+- **診断セッション開始済**: 17 用語を A/B/C 形式で順番に確認中
+  - 完了: 1. ETF (B、→ "取引所取引" の概念欠落を診断、**先物・スワップの最小定義を渡した**)
+  - 次: 2. VIX から再開
+- 診断結果に基づいて glossary の深さ・順序を最終決定する段階で一時停止
+
+### 次セッション開始時の優先順位
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. **Trade #4 SOXS リコンシレ**: 実際の約定を確認して trades テーブル update
+3. **TSMC Q1 earnings (4/16 15:00 JST)** が最優先 catalyst — 開催済みなら scan-market-quick で結果取得、未開催なら pre-event positioning 判断
+4. **学習診断セッション再開**: 用語 2 (VIX) から続行
+5. update_data.py → update-regime (4/15 US close 反映)
+6. BAC Q1 result の事後確認 (4/15 19:45 JST BMO 発表分)
+
+### 未解決予測: **0 件**
+
+### 市場状態 snapshot (4/14 close ベース、4/15 Asia 時点)
+- SOXL **$85.31** (4/14 close、σ+2.29、3日 +18.52%、5日 +26.39%)
+- SOXS **$21.05** (4/14 close、σ-2.01)
+- VIX **18.36** (4/14 close、normal)
+- Brent **$94.40** (4/14 close、high)
+- S&P 500 **6,967.38** (4/14 close、+1.18%)
+- Nikkei **58,400+** (4/15 15:00 JST 終値、+1%、tech-led)
+- **regime: risk_on (+0.71) 継続**
+
+---
+
+## ⚡ Session 23 完了 (以下はアーカイブ)
 
 ---
 
