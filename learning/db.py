@@ -81,13 +81,15 @@ class LearningDB:
                 question_id VARCHAR NOT NULL,
                 attempted_at TIMESTAMPTZ NOT NULL,
                 user_answer TEXT,
-                self_rating VARCHAR NOT NULL,
+                self_rating VARCHAR,
                 outcome VARCHAR NOT NULL,
+                grading_method VARCHAR NOT NULL DEFAULT 'self',
                 time_spent_seconds INTEGER,
                 notes TEXT
             )
             """
         )
+        self._migrate_grading_method()
         self.conn.execute(
             "CREATE SEQUENCE IF NOT EXISTS learning_attempts_id_seq START 1"
         )
@@ -106,6 +108,20 @@ class LearningDB:
             )
             """
         )
+
+    def _migrate_grading_method(self) -> None:
+        cols = [
+            row[0]
+            for row in self.conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'learning_attempts'"
+            ).fetchall()
+        ]
+        if "grading_method" not in cols:
+            self.conn.execute(
+                "ALTER TABLE learning_attempts "
+                "ADD COLUMN grading_method VARCHAR DEFAULT 'self'"
+            )
 
     # -------- Questions CRUD --------
 
@@ -258,25 +274,29 @@ class LearningDB:
         self,
         question_id: str,
         user_answer: Optional[str],
-        self_rating: str,  # A | B | C
         outcome: str,  # correct | partial | wrong
+        grading_method: str = "self",  # self | mcq_auto | llm
+        self_rating: Optional[str] = None,  # A | B | C (only for grading_method='self')
         time_spent_seconds: Optional[int] = None,
         notes: Optional[str] = None,
         attempted_at: Optional[datetime] = None,
     ) -> int:
         at = attempted_at or now_jst()
         _require_aware(at, "attempted_at")
-        if self_rating not in {"A", "B", "C"}:
-            raise ValueError(f"self_rating must be A/B/C, got {self_rating}")
+        if self_rating is not None and self_rating not in {"A", "B", "C"}:
+            raise ValueError(f"self_rating must be A/B/C or None, got {self_rating}")
         if outcome not in {"correct", "partial", "wrong"}:
             raise ValueError(f"outcome invalid: {outcome}")
+        if grading_method not in {"self", "mcq_auto", "llm"}:
+            raise ValueError(f"grading_method invalid: {grading_method}")
         attempt_id = self.conn.execute(
             "SELECT nextval('learning_attempts_id_seq')"
         ).fetchone()[0]
         self.conn.execute(
             "INSERT INTO learning_attempts "
             "(attempt_id, question_id, attempted_at, user_answer, self_rating, "
-            " outcome, time_spent_seconds, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " outcome, grading_method, time_spent_seconds, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 attempt_id,
                 question_id,
@@ -284,6 +304,7 @@ class LearningDB:
                 user_answer,
                 self_rating,
                 outcome,
+                grading_method,
                 time_spent_seconds,
                 notes,
             ],

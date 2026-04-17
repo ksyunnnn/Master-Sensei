@@ -31,38 +31,8 @@ def _header(title: str) -> str:
 # ---------- Core workflow ----------
 
 
-def _ask_recall(q: Question) -> tuple[str, str]:
-    """Return (user_answer, self_rating)."""
-    print(_header(f"[{q.id}] Term: {q.term}  (Stage {q.stage}, difficulty {q.difficulty})"))
-    print(f"\n{q.prompt}\n")
-    print("入力完了したら空行で Enter を押してください。(q で中断)")
-    print(_line())
-    lines: list[str] = []
-    while True:
-        try:
-            line = input("> ")
-        except EOFError:
-            break
-        if line.strip().lower() == "q":
-            raise KeyboardInterrupt
-        if line == "" and lines:
-            break
-        if line == "" and not lines:
-            continue
-        lines.append(line)
-    user_answer = "\n".join(lines).strip()
-
-    print(f"\n{_line()}\n【模範解答のキーワード (Rubric)】")
-    for item in q.rubric:
-        print(f"  - {item}")
-    print(f"\n【解説】\n{q.explanation}\n{_line()}")
-
-    rating = _prompt_self_rating()
-    return user_answer, rating
-
-
 def _ask_mcq(q: Question) -> tuple[str, str]:
-    """Return (user_choice, self_rating)."""
+    """Return (user_choice, outcome)."""
     print(_header(f"[{q.id}] Term: {q.term}  (Stage {q.stage}, difficulty {q.difficulty})"))
     print(f"\n{q.prompt}\n")
     for choice in q.mcq_choices or []:
@@ -79,42 +49,23 @@ def _ask_mcq(q: Question) -> tuple[str, str]:
 
     correct = (q.correct_choice or "").strip().upper()
     is_correct = user_choice == correct
+    outcome = "correct" if is_correct else "wrong"
     verdict = "✓ 正解" if is_correct else f"✗ 不正解 (正解: {correct})"
     print(f"\n{verdict}\n\n【解説】\n{q.explanation}\n{_line()}")
 
-    # Pre-fill outcome based on MCQ correctness, user still rates own confidence
-    rating = _prompt_self_rating(default_hint=("A" if is_correct else "C"))
-    return user_choice, rating
-
-
-def _prompt_self_rating(default_hint: str | None = None) -> str:
-    hint = f" (ヒント: {default_hint})" if default_hint else ""
-    while True:
-        print("\n自己評価してください:")
-        print("  A = 完全に理解 / 正解")
-        print("  B = 部分的 / 曖昧")
-        print("  C = 分からなかった / 誤り")
-        ans = input(f"> A / B / C{hint}: ").strip().upper()
-        if ans in {"A", "B", "C"}:
-            return ans
-
-
-def _rating_to_outcome(rating: str) -> str:
-    return {"A": "correct", "B": "partial", "C": "wrong"}[rating]
+    return user_choice, outcome
 
 
 def _apply_result(
     db: LearningDB,
     q: Question,
     user_answer: str,
-    rating: str,
+    outcome: str,
     time_spent: int,
 ) -> None:
-    outcome = _rating_to_outcome(rating)
     today = today_jst()
     now = now_jst()
 
-    # Ensure mastery row exists
     m = db.get_mastery(q.id) or db.init_mastery(q.id)
 
     decision = LeitnerScheduler.schedule_next(
@@ -127,8 +78,8 @@ def _apply_result(
     db.record_attempt(
         question_id=q.id,
         user_answer=user_answer or None,
-        self_rating=rating,
         outcome=outcome,
+        grading_method="mcq_auto",
         time_spent_seconds=time_spent,
         attempted_at=now,
     )
@@ -172,15 +123,12 @@ def cmd_practice(db: LearningDB, max_count: int, stage_hint: int | None) -> None
         print(f"\n## {idx}/{len(queue)}")
         started = time.monotonic()
         try:
-            if q.question_type == "mcq":
-                user_answer, rating = _ask_mcq(q)
-            else:
-                user_answer, rating = _ask_recall(q)
+            user_answer, outcome = _ask_mcq(q)
         except KeyboardInterrupt:
             print("\n中断しました。ここまでの結果は保存済みです。")
             return
         elapsed = int(time.monotonic() - started)
-        _apply_result(db, q, user_answer, rating, elapsed)
+        _apply_result(db, q, user_answer, outcome, elapsed)
 
     print(_header("セッション完了"))
     cmd_stats(db)

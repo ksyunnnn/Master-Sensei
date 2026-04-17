@@ -1,10 +1,84 @@
 # Condition
 
-Last updated: 2026-04-17 09:43 JST (session 25、scan-market x3 + 7 events + K-034 5銘柄確認 + 学習アプリ Phase 2 完了 + Issue #3 作成). **次の catalyst: 4/17 22:30 JST Abbott/Amex Q1 + 4/22 早朝 JST Iran 停戦期限**
+Last updated: 2026-04-17 17:48 JST (session 26、学習ドリル v0.2 基盤実装 + Issue #3 進捗更新). **次の catalyst: 4/17 22:30 JST Abbott/Amex Q1 + 4/22 早朝 JST Iran 停戦期限**
 
 ---
 
-## ⚡ Session 25 Handoff (2026-04-17 08:50 JST)
+## ⚡ Session 26 Handoff (2026-04-17 17:48 JST)
+
+### 今日のセッションで確定した事項
+
+#### 学習ドリル v0.2: 採点方式変更 + 基盤実装 (Issue #3)
+
+**判断経緯 (網羅的記録)**:
+
+1. **ユーザーフィードバック起点** (v0.1 試用後): 「自由入力だとあなたが採点してくれないので自己判断が不安」「日本語入力がIMEと競合して打ちづらい」
+
+2. **Issue #3 で5案を比較検討**:
+   - A. 現状維持 (self-rating) — 心理的障壁が残る
+   - B. 完全MCQ化 — 客観採点、Stage 1-2 で十分
+   - C. LLM grading — 最高精度だがネットワーク依存・コスト・セッション独立性喪失
+   - D. Keyword matching — 日本語表記揺れに脆弱
+   - E. ハイブリッド (recall→MCQ) — UX複雑化、50問未満で過剰
+   - 追加検討: 構造化self-rating (rubricチェックリスト化) — recall維持+採点構造化だが、self-grading不安自体は残る
+
+3. **日本語入力問題の分離**: ユーザー判断で「入力UXは技術で解決する層（Web UI等）なので、採点方式の設計判断とは切り離す」と決定。MCQ推奨根拠からUX利点を除外し、純粋に学習効果で判断
+
+4. **研究エビデンス**:
+   - PMC 2024: MCQ vs free recall で知識定着に有意差なし (F=3.23, p=0.08、ただし marginally significant で recall 側に傾き)
+   - Springer 2020: 転移学習（応用力）では free recall が優位 → Stage 3-4 で再検討の根拠
+   - PMC 2023: Anki (self-rating) の医学教育での有効性実証 (6.2-12.9%向上)
+   - CBE 2018: 自己採点は成績上位者で正確、下位者で過大評価傾向
+
+5. **バイアス監査実施** (Premortem + Kahneman 12問):
+   - ⚠️ 3件: Claude の実装容易性バイアス / 反対意見不足 / データ不足 (attempt 0 での判断)
+   - 合計3件 → 「実行可」判定
+   - 補強策: distractor 品質監視、Stage 3-4 再評価トリガー、LLM grading 検討を ADR に組込み
+
+6. **実装・DB設計の評価**: ユーザーから「想定運用に柔軟な設計か」を問われ、`grading_method` 列の追加を決定。MCQ/self/LLM 混在運用に対応するデータ設計
+
+7. **質問ファイル形式の変更**: ユーザーから「より構造化する手段を検討して」→ 純YAML化 (.md→.yml)。「人が編集」の観点は不要（エンジニアなので見れれば十分）との判断で、JSON/TOML も検討した上で YAML を選択 (Git diff 可読性 + ブロックスカラー)
+
+**決定: B. 完全MCQ化 (ADR-005、ADR-003 を supersede)**
+
+**実装完了**:
+- 10問 .md → .yml 変換 + MCQ化 + 正解位置分散 (B=4, C=3, D=3)
+- loader.py YAML対応、db.py grading_method列、cli.py MCQ自動採点
+- テスト 26件パス
+
+**未完了 (次session必須)**:
+- **MCQ問題文の全面改訂**: recall用promptをそのまま載せており MCQ に不適合。以下の問題を検出済み:
+  - 「自分の言葉で説明してください」= recall 指示が4択と矛盾
+  - 正解だけが長い/詳しい → 消去法で解ける
+  - 1問に複数概念を詰め込んでいる (MCQ は1問1概念が原則)
+  - distractor が粗い (混同しえない選択肢がある)
+- **評価軸** (Issue #3 コメントに記録済み): 1問1概念 / prompt形式 / 選択肢長さ均等 / distractor plausibility / 消去法耐性
+- ADR-005 status: proposed → accepted (改訂完了後)
+- UX改善を別タスクに切り出し
+
+**再評価トリガー (ADR-005)**:
+- Stage 1 mastery 50% → 正答率と理解度乖離を検証
+- 全問正答率 >90% → distractor 改修
+- Stage 3-4 到達時 → recall + LLM grading 検討
+
+### session 25 からの引き継ぎ (未着手)
+
+1. **Trade #4 SOXS リコンシレ** — 実約定情報待ち
+2. `update_data.py` 実行 → Parquet 4/16 US close 取得
+3. `/update-regime` — 4/16 反映レジーム再判定
+4. 半導体 divergence 定量確認 (SOXL/TSM vs SPX/QQQ)
+5. `/signal-check` — SOXS entry シグナル発火確認
+
+### 次セッション開始時の優先順位
+
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. **MCQ 問題文全面改訂** (評価軸は Issue #3 コメント参照)
+3. Trade #4 SOXS リコンシレ (実約定情報確認)
+4. `update_data.py` → `/update-regime` → `/signal-check`
+
+---
+
+## ⚡ Session 25 完了 (以下はアーカイブ)
 
 ### 今日のセッションで確定した事項
 

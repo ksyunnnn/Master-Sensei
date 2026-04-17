@@ -1,4 +1,4 @@
-"""Tests for the learning drill system (ADR-023)."""
+"""Tests for the learning drill system (ADR-023, ADR-005)."""
 
 from __future__ import annotations
 
@@ -115,10 +115,12 @@ def _sample_question(qid="Q-TEST-01", stage=1, term="テスト用語") -> Questi
         stage=stage,
         category="basic",
         term=term,
-        question_type="recall",
+        question_type="mcq",
         prompt="テスト質問",
         rubric=["keyword1", "keyword2"],
         explanation="テスト解説",
+        mcq_choices=["A. 正解", "B. 不正解1", "C. 不正解2", "D. 不正解3"],
+        correct_choice="A",
         difficulty=1,
     )
 
@@ -149,15 +151,54 @@ def test_db_init_mastery_creates_box_1(db):
     assert m.total_correct == 0
 
 
+def test_db_record_attempt_mcq_auto(db):
+    db.upsert_question(_sample_question())
+    db.init_mastery("Q-TEST-01")
+    now = datetime.now(tz=JST)
+    aid = db.record_attempt(
+        "Q-TEST-01", "A", "correct",
+        grading_method="mcq_auto",
+        attempted_at=now,
+    )
+    row = db.conn.execute(
+        "SELECT self_rating, grading_method, outcome "
+        "FROM learning_attempts WHERE attempt_id = ?",
+        [aid],
+    ).fetchone()
+    assert row[0] is None
+    assert row[1] == "mcq_auto"
+    assert row[2] == "correct"
+
+
+def test_db_record_attempt_self_rating(db):
+    db.upsert_question(_sample_question())
+    db.init_mastery("Q-TEST-01")
+    now = datetime.now(tz=JST)
+    aid = db.record_attempt(
+        "Q-TEST-01", "answer text", "correct",
+        grading_method="self",
+        self_rating="A",
+        attempted_at=now,
+    )
+    row = db.conn.execute(
+        "SELECT self_rating, grading_method FROM learning_attempts WHERE attempt_id = ?",
+        [aid],
+    ).fetchone()
+    assert row[0] == "A"
+    assert row[1] == "self"
+
+
 def test_db_record_attempt_returns_sequential_ids(db):
     db.upsert_question(_sample_question())
     db.init_mastery("Q-TEST-01")
     now = datetime.now(tz=JST)
     id1 = db.record_attempt(
-        "Q-TEST-01", "ans", "A", "correct", attempted_at=now
+        "Q-TEST-01", "A", "correct",
+        grading_method="mcq_auto", attempted_at=now,
     )
     id2 = db.record_attempt(
-        "Q-TEST-01", "ans2", "B", "partial", attempted_at=now
+        "Q-TEST-01", "B", "wrong",
+        grading_method="mcq_auto", attempted_at=now,
     )
     assert id2 == id1 + 1
 
@@ -167,7 +208,19 @@ def test_db_record_attempt_rejects_invalid_rating(db):
     db.init_mastery("Q-TEST-01")
     with pytest.raises(ValueError, match="self_rating"):
         db.record_attempt(
-            "Q-TEST-01", "ans", "Z", "correct",
+            "Q-TEST-01", "ans", "correct",
+            grading_method="self", self_rating="Z",
+            attempted_at=datetime.now(tz=JST),
+        )
+
+
+def test_db_record_attempt_rejects_invalid_grading_method(db):
+    db.upsert_question(_sample_question())
+    db.init_mastery("Q-TEST-01")
+    with pytest.raises(ValueError, match="grading_method"):
+        db.record_attempt(
+            "Q-TEST-01", "ans", "correct",
+            grading_method="invalid",
             attempted_at=datetime.now(tz=JST),
         )
 
@@ -197,7 +250,6 @@ def test_db_due_questions_returns_only_due(db):
     db.upsert_question(_sample_question(qid="Q-B", term="B"))
     db.init_mastery("Q-A")
     db.init_mastery("Q-B")
-    # Push Q-B to future
     now = datetime.now(tz=JST)
     db.update_mastery(
         qid="Q-B",
@@ -233,153 +285,123 @@ def test_db_mastery_summary_shape(db):
     assert 1 in s["box_distribution"]
 
 
-# ========== Loader ==========
+# ========== Loader (YAML, ADR-005) ==========
 
 
-def test_loader_parses_recall_question(tmp_path: Path):
-    f = tmp_path / "q_001.md"
+def test_loader_parses_mcq_question(tmp_path: Path):
+    f = tmp_path / "q_001.yml"
     f.write_text(
-        """---
-id: Q-001
-stage: 1
-category: basic
-term: テスト
-type: recall
-difficulty: 1
-prereqs: []
----
-
-## Prompt
-
-テスト質問です。
-
-## Rubric
-
-- keyword1
-- keyword2
-
-## Explanation
-
-テスト解説内容。
-""",
+        "id: Q-001\n"
+        "stage: 1\n"
+        "category: basic\n"
+        "term: テスト\n"
+        "type: mcq\n"
+        "difficulty: 1\n"
+        "prereqs: []\n"
+        "prompt: |\n"
+        "  テスト質問です。\n"
+        "rubric:\n"
+        "  - keyword1\n"
+        "  - keyword2\n"
+        "choices:\n"
+        '  A: "正解"\n'
+        '  B: "不正解1"\n'
+        '  C: "不正解2"\n'
+        '  D: "不正解3"\n'
+        "correct: A\n"
+        "explanation: |\n"
+        "  テスト解説内容。\n",
         encoding="utf-8",
     )
     q = parse_question_file(f)
     assert q.id == "Q-001"
     assert q.term == "テスト"
-    assert q.question_type == "recall"
+    assert q.question_type == "mcq"
     assert q.rubric == ["keyword1", "keyword2"]
+    assert q.mcq_choices is not None
+    assert len(q.mcq_choices) == 4
+    assert q.correct_choice == "A"
     assert "テスト解説" in q.explanation
 
 
-def test_loader_parses_mcq_question(tmp_path: Path):
-    f = tmp_path / "q_mcq.md"
+def test_loader_rejects_missing_keys(tmp_path: Path):
+    f = tmp_path / "bad.yml"
     f.write_text(
-        """---
-id: Q-002
-stage: 1
-category: basic
-term: mcqテスト
-type: mcq
-difficulty: 2
-prereqs: []
----
-
-## Prompt
-
-4択問題です。
-
-## Choices
-
-A. 選択肢1
-B. 選択肢2
-C. 選択肢3
-D. 選択肢4
-
-## Correct
-
-C
-
-## Explanation
-
-C が正解の理由。
-""",
+        "id: Q-X\n"
+        "stage: 1\n",
         encoding="utf-8",
     )
-    q = parse_question_file(f)
-    assert q.question_type == "mcq"
-    assert q.mcq_choices is not None
-    assert len(q.mcq_choices) == 4
-    assert q.correct_choice == "C"
-
-
-def test_loader_rejects_missing_front_matter(tmp_path: Path):
-    f = tmp_path / "bad.md"
-    f.write_text("no front matter here", encoding="utf-8")
-    with pytest.raises(ValueError, match="front matter"):
+    with pytest.raises(ValueError, match="missing keys"):
         parse_question_file(f)
 
 
-def test_loader_rejects_missing_sections(tmp_path: Path):
-    f = tmp_path / "bad2.md"
+def test_loader_rejects_empty_prompt(tmp_path: Path):
+    f = tmp_path / "bad2.yml"
     f.write_text(
-        """---
-id: Q-X
-stage: 1
-category: basic
-term: t
-type: recall
-difficulty: 1
----
-
-## Prompt
-
-prompt only
-
-## Rubric
-
-- k
-""",
+        "id: Q-X\n"
+        "stage: 1\n"
+        "category: basic\n"
+        "term: t\n"
+        "type: mcq\n"
+        "difficulty: 1\n"
+        'prompt: ""\n'
+        "choices:\n"
+        '  A: "a"\n'
+        '  B: "b"\n'
+        "correct: A\n"
+        "explanation: |\n"
+        "  some text\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="Explanation"):
+    with pytest.raises(ValueError, match="prompt is empty"):
+        parse_question_file(f)
+
+
+def test_loader_rejects_mcq_without_choices(tmp_path: Path):
+    f = tmp_path / "bad3.yml"
+    f.write_text(
+        "id: Q-X\n"
+        "stage: 1\n"
+        "category: basic\n"
+        "term: t\n"
+        "type: mcq\n"
+        "difficulty: 1\n"
+        "prompt: question\n"
+        "correct: A\n"
+        "explanation: explain\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="mcq missing keys"):
         parse_question_file(f)
 
 
 def test_loader_allows_mcq_without_rubric(tmp_path: Path):
-    f = tmp_path / "mcq_no_rubric.md"
+    f = tmp_path / "mcq_no_rubric.yml"
     f.write_text(
-        """---
-id: Q-Y
-stage: 1
-category: basic
-term: t
-type: mcq
-difficulty: 1
----
-
-## Prompt
-
-q?
-
-## Choices
-
-A. a
-B. b
-
-## Correct
-
-A
-
-## Explanation
-
-because a.
-""",
+        "id: Q-Y\n"
+        "stage: 1\n"
+        "category: basic\n"
+        "term: t\n"
+        "type: mcq\n"
+        "difficulty: 1\n"
+        "prompt: question\n"
+        "choices:\n"
+        '  A: "a"\n'
+        '  B: "b"\n'
+        "correct: A\n"
+        "explanation: because a.\n",
         encoding="utf-8",
     )
     q = parse_question_file(f)
     assert q.rubric == []
     assert q.correct_choice == "A"
+
+
+def test_loader_rejects_invalid_yaml(tmp_path: Path):
+    f = tmp_path / "bad4.yml"
+    f.write_text("not: [valid: yaml: {{", encoding="utf-8")
+    with pytest.raises(Exception):
+        parse_question_file(f)
 
 
 def test_loader_handles_seed_questions():
@@ -391,9 +413,7 @@ def test_loader_handles_seed_questions():
     assert len(questions) >= 5
     assert all(q.stage == 1 for q in questions)
     assert all(q.prompt and q.explanation for q in questions)
-    # Recall questions must have rubric; MCQ may not
     for q in questions:
-        if q.question_type == "recall":
-            assert q.rubric, f"{q.id}: recall requires rubric"
-        elif q.question_type == "mcq":
-            assert q.correct_choice, f"{q.id}: mcq requires correct_choice"
+        assert q.question_type == "mcq", f"{q.id}: expected mcq"
+        assert q.correct_choice, f"{q.id}: mcq requires correct_choice"
+        assert q.mcq_choices, f"{q.id}: mcq requires choices"

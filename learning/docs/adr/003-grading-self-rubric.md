@@ -1,6 +1,6 @@
 # ADR-003: Grading — Self-rating with rubric reveal
 
-- Status: accepted
+- Status: superseded by [ADR-005](005-grading-mcq.md)
 - Date: 2026-04-16
 
 ## Context and Problem Statement

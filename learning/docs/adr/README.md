@@ -10,6 +10,7 @@ MADR 形式 (Markdown Architectural Decision Records)。1 ADR = 1 判断、事�
 | [002](002-question-bank-markdown.md) | Question bank: Markdown + loader | Accepted | 2026-04-16 |
 | [003](003-grading-self-rubric.md) | Grading: Self-rating + rubric reveal | Accepted | 2026-04-16 |
 | [004](004-db-independence.md) | DB independence from sensei.duckdb | Accepted | 2026-04-17 |
+| [005](005-grading-mcq.md) | Grading: Full MCQ with objective scoring | Proposed | 2026-04-17 |
 
 ## Process
 

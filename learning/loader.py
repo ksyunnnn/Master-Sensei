@@ -1,156 +1,107 @@
-"""Markdown question loader (ADR-023).
+"""YAML question loader (ADR-005).
 
-Parses a Markdown file with YAML front matter + canonical sections.
+Parses pure YAML question files (.yml).
 
 Expected format:
 
-    ---
     id: Q-001
     stage: 1
     category: basic
     term: ETF
-    type: recall | mcq | application
+    type: mcq
     difficulty: 1
     prereqs: []
-    ---
-
-    ## Prompt
-    ...
-
-    ## Rubric
-    - item1
-    - item2
-
-    ## Choices          (only for type=mcq)
-    A. ...
-    B. ...
-
-    ## Correct          (only for type=mcq)
-    A
-
-    ## Explanation
-    ...
+    prompt: |
+      Question text here.
+    rubric:
+      - keyword1
+      - keyword2
+    choices:
+      A: "choice text"
+      B: "choice text"
+      C: "choice text"
+      D: "choice text"
+    correct: A
+    explanation: |
+      Explanation text here.
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
+
+import yaml
 
 from learning.db import Question
 
-_FRONT_MATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
-_SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
-
-
-def _parse_yaml_simple(text: str) -> dict:
-    """Minimal YAML parser for flat key: value + lists like prereqs: [a, b]."""
-    out: dict = {}
-    for line in text.strip().splitlines():
-        if not line.strip() or line.startswith("#"):
-            continue
-        key, _, value = line.partition(":")
-        key = key.strip()
-        value = value.strip()
-        if value.startswith("[") and value.endswith("]"):
-            inner = value[1:-1].strip()
-            items = [s.strip() for s in inner.split(",") if s.strip()] if inner else []
-            out[key] = items
-        elif value.isdigit():
-            out[key] = int(value)
-        else:
-            out[key] = value.strip('"').strip("'")
-    return out
-
-
-def _split_sections(body: str) -> dict[str, str]:
-    """Split body by `## Section` headings. Returns lowercase-keyed dict."""
-    sections: dict[str, str] = {}
-    positions = [(m.start(), m.end(), m.group(1).strip()) for m in _SECTION_RE.finditer(body)]
-    if not positions:
-        return sections
-    for i, (_, end, name) in enumerate(positions):
-        next_start = positions[i + 1][0] if i + 1 < len(positions) else len(body)
-        content = body[end:next_start].strip()
-        sections[name.lower()] = content
-    return sections
-
-
-def _parse_list_block(text: str) -> list[str]:
-    """Extract `- item` lines into a list of strings."""
-    items = []
-    for line in text.splitlines():
-        s = line.strip()
-        if s.startswith("-"):
-            items.append(s.lstrip("-").strip())
-    return items
-
-
-def _parse_mcq_choices(text: str) -> list[str]:
-    """Parse `A. foo\nB. bar` style choices into list preserving order."""
-    items = []
-    for line in text.splitlines():
-        s = line.strip()
-        if re.match(r"^[A-Z][\.\)]\s+", s):
-            items.append(s)
-    return items
+_REQUIRED_KEYS = {"id", "stage", "category", "term", "type", "difficulty", "prompt", "explanation"}
+_MCQ_REQUIRED_KEYS = {"choices", "correct"}
 
 
 def parse_question_file(path: Path) -> Question:
     raw = path.read_text(encoding="utf-8")
-    m = _FRONT_MATTER_RE.match(raw)
-    if not m:
-        raise ValueError(f"no front matter in {path}")
-    fm_text, body = m.group(1), m.group(2)
-    fm = _parse_yaml_simple(fm_text)
+    data = yaml.safe_load(raw)
 
-    required = {"id", "stage", "category", "term", "type", "difficulty"}
-    missing = required - fm.keys()
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: invalid YAML (expected mapping)")
+
+    missing = _REQUIRED_KEYS - data.keys()
     if missing:
-        raise ValueError(f"{path}: missing front matter keys: {missing}")
+        raise ValueError(f"{path}: missing keys: {missing}")
 
-    sections = _split_sections(body)
-    prompt = sections.get("prompt", "").strip()
-    rubric = _parse_list_block(sections.get("rubric", ""))
-    explanation = sections.get("explanation", "").strip()
+    prompt = str(data["prompt"]).strip()
+    explanation = str(data["explanation"]).strip()
 
     if not prompt:
-        raise ValueError(f"{path}: Prompt section empty")
+        raise ValueError(f"{path}: prompt is empty")
     if not explanation:
-        raise ValueError(f"{path}: Explanation section empty")
+        raise ValueError(f"{path}: explanation is empty")
 
-    qtype = fm["type"]
+    qtype = data["type"]
+
+    rubric = data.get("rubric") or []
+    if not isinstance(rubric, list):
+        raise ValueError(f"{path}: rubric must be a list")
+
     if qtype != "mcq" and not rubric:
-        # Rubric required for free recall; MCQ derives truth from Correct section
-        raise ValueError(f"{path}: Rubric section empty")
+        raise ValueError(f"{path}: non-mcq requires rubric")
+
     mcq_choices = None
     correct_choice = None
     if qtype == "mcq":
-        mcq_choices = _parse_mcq_choices(sections.get("choices", ""))
-        correct_choice = sections.get("correct", "").strip()
-        if not mcq_choices:
-            raise ValueError(f"{path}: mcq missing Choices section")
-        if not correct_choice:
-            raise ValueError(f"{path}: mcq missing Correct section")
+        mcq_missing = _MCQ_REQUIRED_KEYS - data.keys()
+        if mcq_missing:
+            raise ValueError(f"{path}: mcq missing keys: {mcq_missing}")
+
+        choices_raw = data["choices"]
+        if not isinstance(choices_raw, dict) or not choices_raw:
+            raise ValueError(f"{path}: choices must be a non-empty mapping")
+
+        mcq_choices = [f"{k}. {v}" for k, v in choices_raw.items()]
+        correct_choice = str(data["correct"]).strip().upper()
+
+    prereqs = data.get("prereqs") or None
+    if isinstance(prereqs, list) and not prereqs:
+        prereqs = None
 
     return Question(
-        id=fm["id"],
-        stage=int(fm["stage"]),
-        category=fm["category"],
-        term=fm["term"],
+        id=data["id"],
+        stage=int(data["stage"]),
+        category=data["category"],
+        term=data["term"],
         question_type=qtype,
         prompt=prompt,
         rubric=rubric,
         explanation=explanation,
         mcq_choices=mcq_choices,
         correct_choice=correct_choice,
-        prereqs=fm.get("prereqs") or None,
-        difficulty=int(fm["difficulty"]),
+        prereqs=prereqs,
+        difficulty=int(data["difficulty"]),
         source_file=str(path),
     )
 
 
 def load_all_questions(questions_dir: Path) -> list[Question]:
-    """Recursively load all .md files under questions_dir."""
-    files = sorted(questions_dir.rglob("*.md"))
+    """Recursively load all .yml files under questions_dir."""
+    files = sorted(questions_dir.rglob("*.yml"))
     return [parse_question_file(p) for p in files]
