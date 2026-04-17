@@ -96,12 +96,12 @@ PYEOF
 
 - **新規質問追加**: `learning/data/questions/stage_N/` に Markdown 追加 → 次回 drill.py 起動時に自動 load
 - **既存質問修正**: 該当 .md を edit → 次回 load で upsert される
-- **Stage 解放**: `docs/curriculum.md` を更新 + Stage N の質問を `learning/data/questions/stage_N/` に配置
+- **Stage 解放**: `learning/docs/curriculum.md` を更新 + Stage N の質問を `learning/data/questions/stage_N/` に配置
 
 ## 注意事項
 
 - **週 1 目安**の実行を想定。過剰な調整は ADR-023 の "desirable difficulty" 原則を害する
-- カリキュラム変更は `docs/curriculum.md` に反映
+- カリキュラム変更は `learning/docs/curriculum.md` に反映
 - 新規質問追加時は prereqs を必ず明示（Stage 1 を踏んでから Stage 2、のような依存を崩さない）
 - 質問修正は**解説の精緻化**中心。Prompt の根本変更は ID 採番し直して別問として追加する方が mastery データが clean
 - スキル実行後は `condition.md` に学習進捗メモを 1-2 行追加する
