@@ -1,6 +1,6 @@
 # Condition
 
-Last updated: 2026-04-17 08:50 JST (session 25、scan-market x3、7 events 登録、K-034 beat-and-retreat 5 銘柄で再現確認). **次の catalyst: 4/17 22:30 JST Abbott/Amex Q1 + 4/22 早朝 JST Iran 停戦期限**
+Last updated: 2026-04-17 09:43 JST (session 25、scan-market x3 + 7 events + K-034 5銘柄確認 + 学習アプリ Phase 2 完了 + Issue #3 作成). **次の catalyst: 4/17 22:30 JST Abbott/Amex Q1 + 4/22 早朝 JST Iran 停戦期限**
 
 ---
 
@@ -49,6 +49,15 @@ Nasdaq 12連騰 (= 2009年7月 QE 初期以来最長) で指数新 ATH だが、
 7. /signal-check — SOXS entry シグナル (σ 戻り等) の発火確認
 
 ### 未解決予測: **0 件**
+
+### 学習ドリル (並行トラック、commit `06b3cd1` + `3e31d5b`)
+
+- v0.1 凍結済: `learning/` 独立アプリ、Stage 1 seed 10問、`drill.py` エントリポイント
+- ADR 系列: `learning/docs/adr/001-004`、経緯は `learning/docs/history/2026-04-17-v0.1-mvp.md`
+- ユーザ実運用: attempts = 0 (未検証)。初回プレイは次 session 優先度 #6
+- **v0.2 議論: [Issue #3](https://github.com/ksyunnnn/Master-Sensei/issues/3)** — 採点方式 (MCQ / LLM / ハイブリッド) + UX 改善
+- 凍結ポリシー: 採点方式を新 ADR (learning/docs/adr/005-*) で決定してから UX 具体化、ADR-003 は accepted のまま
+- 診断結果 (17 用語 A=2/B=5/C=11) は `learning/docs/curriculum.md` に保存済
 
 ### 市場状態 snapshot (4/16 US close ベース、4/17 Asia 時点)
 - S&P 500 **7,041.28** (4/16 close、+0.26%、新 ATH)
