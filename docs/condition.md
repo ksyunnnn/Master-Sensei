@@ -1,10 +1,232 @@
 # Condition
 
-Last updated: 2026-04-17 17:48 JST (session 26、学習ドリル v0.2 基盤実装 + Issue #3 進捗更新). **次の catalyst: 4/17 22:30 JST Abbott/Amex Q1 + 4/22 早朝 JST Iran 停戦期限**
+Last updated: 2026-04-28 17:45 JST (session 29、update_data 2回 + scan-market 1回 + 6 events 登録). **次の catalyst: 4/30 03:00 JST FOMC announcement (Powell 最終会合、99.9% no-change 価格織り込み済み、language watch) → 4/30 AMC = 5/1 早朝 JST MSFT/META/GOOGL/QCOM 決算**
 
 ---
 
-## ⚡ Session 26 Handoff (2026-04-17 17:48 JST)
+## ⚡ Session 29 Handoff (2026-04-28 17:45 JST)
+
+### 今日のセッションで確定した事項
+
+#### update_data.py 2 回実行 (11:44 JST + 14:35 JST)
+
+11:44 JST 第1回 (前回4/21から1週間のキャッチアップ): マクロ9系列、日足10銘柄、5分足8銘柄。すべてのソース正常稼働。
+14:35 JST 第2回 (intraday 追加更新): BRENT 4/28 値 ($102.69) 追加取得、5分足は 4/27 まで.
+
+**鮮度確認**: マクロ 4/28 (BRENT)、日足 4/27、5分足 4/27 15:55 ET。
+
+#### scan-market 実行 (17:32-17:42 JST、6 events 登録)
+
+前回 4/21 17:46 JST 以降 168 時間を調査。**Iran 停戦延長 → SOX 史上最長 17 日連続 rally → Iran Hormuz reopen 提案**が主題。
+
+| 日時(JST) | カテゴリ | impact | サマリ | lesson 適用 |
+|-----------|---------|--------|--------|------------|
+| 4/22 04:00 | geopolitical | **positive** | Trump indefinite Iran 停戦延長 (4/21 ~15:00 ET 発表) | K-009/K-024 いずれも非該当 = 大統領 executive action |
+| 4/22 22:00 | geopolitical | neutral | IRGC 2-ship seizure post-extension (Hormuz 継続封鎖) | K-024 (進行中戦争繰り返し) 適用 |
+| 4/23 05:00 | market | neutral | Tesla Q1: EPS beat ($0.41/$0.37)、rev miss ($22.39B/$22.64B)、capex $25B (前回$20B) | mixed result = neutral |
+| 4/24 05:00 | semiconductor | **positive** | Intel Q1 blowout → AMD +13%/SOXL +13.8% (4/23→4/24)、PHLX SOX 10000突破 17日連続+41% (32年史上最長記録)、DA Davidson AMD 目標 $220→$375 | de novo positive catalyst (lesson照合外) |
+| 4/27 23:00 | geopolitical | **positive** | Iran Hormuz reopen Pakistan-mediated 提案 (核は後回し)、Trump-Rubio 協議中 → Brent $108.23→$102.69 -5.2% | counter-proposal lesson (具体terms提示) 適用 |
+| 4/30 03:00 | fed | neutral | FOMC 4/28-29 announcement (Powell 最終会合、Polymarket 99.9% no-change at 3.50-3.75%、March CPI 3.3%) | scheduled event surprise 余地ゼロ |
+
+#### Parquet vs WebSearch 交差検証 (検証 OK)
+
+- **BRENT 週次**: 4/21 $98.48 → 4/22 $101.91 → 4/23 $105.07 → 4/24 $105.33 → 4/27 $108.23 → 4/28 $102.69。WebSearch各日付値とParquet完全一致 (CNBC/PBS/Al Jazeera)
+- **VIX**: 19.50 (4/21) → 18.92 (4/22) → 19.31 (4/23) → 18.71 (4/24) → 18.02 (4/27)。週次 -7.6% (極端な圧縮ではないが calm 方向)
+- **SOXL 週次**: 4/21 $98.09 → 4/22 $105.64 (+7.7%) → 4/23 $112.77 (+6.7%) → 4/24 $128.32 (+13.8%) → 4/27 $123.39 (-3.8%)、週次 **+25.8% (4/24 ピーク +30.8%)**
+- **TQQQ 週次**: $57.40 → $62.64、+9.1%
+
+#### 観察: SOX 17 日連続 +41% は historical extreme
+
+PHLX Semiconductor Index が 4/23 に **10,000 ポイント突破** + **17 日連続上昇 (32 年史上最長)** + **累計 +41%**。Intel Q1 blowout (AMC 4/23) の AI CPU 需要 structural validation が catalyst だが、SOXL ロング保有者にとっては mean reversion / overbought リスクが急速に蓄積している局面。
+
+**含意**: 4/30 03:00 JST FOMC で Powell が hawkish surprise (e.g., "transitory" 削除 + dot plot 上方修正) を出した場合、SOX overbought + SPX/Nasdaq ATH の双方が mean reversion catalyst になり得る。SOXL ロングなら 4/30 announcement 直前に position size 軽量化検討。
+
+#### lesson 適用境界の再確認
+
+- **K-009 修辞 vs executive action**: Trump の「may not extend」(modal) は K-009 該当だが、実際の延長宣言 (decision) は K-009 非該当。動詞の時制・mode で区別すべき
+- **counter-proposal lesson**: Iran が Pakistan 経由で具体 terms 提示 (Hormuz 再開 ⇆ 米封鎖解除、核後回し) は「口先拒否」型ではなく「具体行動」型 → positive 寄り判定が妥当 (過去 K-? 同型: 4/13 Iran 10項目対案)
+
+### 市場環境 summary (4/28 17:45 JST 時点)
+
+- **regime**: risk_on 継続 (7日前 score 確認、再判定未実施)、VIX 18.02 で calm 方向ドリフト
+- **SPX/Nasdaq**: ATH 連続更新 (4/27 close: SPX 7,173.91 / Nasdaq 24,887.10)、4/22 から +3-5%
+- **SOXL**: 週次 +25.8%、ただし overbought 兆候 (17日連続+41%)
+- **BRENT**: $102.69 (4/28)、Iran offer reversal で Hormuz premium 一部解消、4/24 Goldman 予想 $80→$90 (late 2026)
+- **Iran**: 停戦無期限延長中 + Hormuz reopen offer 検討中 (Trump 諾否 next 24-48h)
+
+### 次セッション開始時の優先順位
+
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. **4/30 03:00 JST FOMC announcement の前後に再 update_data + sentiment check** (Powell language が SOX overbought reversal 引き金になり得るため最優先)
+3. **`/update-regime`** — 今回 update_data 完了したが regime 再判定未実施。VIX 18.02 / BRENT $102.69 / SOX rally で risk_on 維持確認
+4. **`/signal-check`** — SOX overbought (17日+41%) で SOXS entry signal 発火可能性、確認推奨
+5. **`/review-events`** — 4/22-24 系 (Trump ceasefire / Tesla / Intel) は 4/27-29 に検証可能、次セッションで実施
+6. **Trump の Iran Hormuz offer 諾否確認** (時刻未定、`/scan-market-quick` で監視)
+7. Trade #4 SOXS リコンシレ、Session 27 保留 K-035/036/037 + Session 28 K-038 候補登録判断、Issue #3 MCQ 改訂 (継続)
+
+### 未解決予測: **0 件**
+
+### 今日時点の推奨 (時間軸明示)
+
+**現在 2026-04-28 17:45 JST 時点**:
+- **新規 SOXL ロング保留推奨**。17 日連続 +41% で reward/risk 非対称、4/30 FOMC + 5/1 MSFT/META 決算超週前は片張り危険
+- 既存 SOXL/TQQQ ロング保有者: 4/30 03:00 JST FOMC 直前に position size 軽量化検討、Powell hawkish の場合 mean reversion catalyst
+- VIXY/SOXS hedge: SOX overbought 起点の reversal なら有効、ただし FOMC dovish + Iran Hormuz deal 進展なら即蒸発リスク
+
+**次の再評価タイミング (実在カタリスト)**:
+1. **4/30 03:00 JST FOMC announcement + 03:30 Powell press** (Powell 最終会合、language が overbought SOX reversal trigger 候補、最優先)
+2. **5/1 早朝 JST = 4/30 AMC ET MSFT/META/GOOGL/QCOM 決算** (Mag7 earnings superweek 開始、TQQQ/QQQ 直撃)
+3. Trump Iran Hormuz offer 諾否反応 (時刻未定、不規則イベントとして secondary 監視)
+
+---
+
+## ⚡ Session 28 Handoff (2026-04-21 17:50 JST) — アーカイブ
+
+### 今日のセッションで確定した事項
+
+#### update_data.py 実行 (2026-04-21 17:40 JST)
+
+マクロ 9系列、日足 10銘柄、5分足 8銘柄すべて最新化。ProviderChain 稼働正常 (yfinance: BRENT/VIX/VIX3M、FRED: 残り)。
+
+**macro 鮮度**: 4/21 (VIX/VIX3M/BRENT)、4/20 (US10Y等)、3/01 (FEDFUNDS 月次)
+**日足鮮度**: 4/20 (最新 close、10銘柄すべて)
+**5分足鮮度**: 4/20 15:55 ET (8銘柄すべて)
+
+#### scan-market 実行 (2026-04-21 17:42-17:48 JST、4 events 登録)
+
+前回 4/18 18:33 JST 以降 71 時間の調査。**Iran de-escalation の完全反転**が主題。
+
+| 日時(JST) | カテゴリ | impact | サマリ | lesson 適用 |
+|-----------|---------|--------|--------|------------|
+| 4/18 22:00 | geopolitical | neutral | Iran が Hormuz 再閉鎖、4/17「完全開放」宣言を撤回 (US 封鎖解除拒否への報復) | K-024 + ADR-003 実害基準未達 |
+| 4/20 02:00 | geopolitical | **negative** | US Navy が Iran 貨物船 Touska 拿捕 (Gulf of Oman、engineroom 物理損傷)、Iran が Islamabad 和平協議離脱 | K-024/K-009 いずれも非該当 (US proactive + 物理損傷 + 外交 fallout + Brent +5.6% 実証) |
+| 4/21 01:00 | market | neutral | Apple CEO Cook (65) → Ternus (SVP Hardware、25年勤続) 9/1 移行発表、Cook は executive chairman 残留 | orderly transition + 後任事前指名 |
+| 4/21 05:00 | market | neutral | 4/20 US close: SPX -0.24% (7,109.14)/Nasdaq -0.26%/VIX 18.87 (ATH -0.24%) | 小幅 pullback、VIX<20 |
+
+#### Parquet vs WebSearch 交差検証 (検証 OK)
+
+- **BRENT**: 4/17 $90.38 → 4/20 **$95.48** (+5.6%、Touska 反応) → 4/21 $89.85 (-5.9% retrace)。WebSearch $95.42 との乖離 0.06% で一致
+- **VIX**: 17.48 (4/17) → 18.87 (4/20) → 19.12 (4/21)、+9.4% の risk-off drift、ただしまだ 20 未満
+- **ETF 4/17 → 4/20**: SOXL +1.3% / TECL +0.5% / SPXL -0.59% / TQQQ -0.87% (semi > tech/index)
+
+#### 新発見: US proactive military action は lesson 適用外
+
+今回の Touska 拿捕評価で lesson 構造の境界が明確になった:
+
+- **K-024/K-009 lesson 対象**: Iran/Trump 側の (a) 修辞 (b) 迎撃成功 (c) 繰り返し攻撃 (d) 攻撃宣言不実行
+- **lesson 適用外 = negative 維持**: US 側の能動的軍事行動 (Touska 拿捕 = 物理損傷 + 外交 fallout + 価格実証)
+
+**含意**: escalation の方向性 (Iran → US vs US → Iran) で lesson 適用を区別すべき。今後の scan で同様の US proactive action (naval interdiction、空爆、金融制裁強化) は negative default で評価する。知見候補 (K-038?) として session 29 で判断。
+
+#### Iran diplomatic signal の反転速度
+
+前回 scan (4/18) の結果は `4/17 Hormuz 開放宣言 + Brent -10.5%` で positive direct evaluated。71時間後に **完全反転** (4/18 再閉鎖 → 4/19 Touska → 4/20 和平協議離脱)。
+
+**観察**: Iran FM の公式 SNS 発表であっても、48時間以内に反転する可能性が高い。knowledge 候補: 「Iran diplomatic signal は 48h 半減期」。Session 27 保留の K-035/036/037 と並行して判断。
+
+### 市場環境 summary (4/21 17:50 JST 時点)
+
+- **regime**: risk_on 継続 (session-start hook)、ただし VIX 19.12 で上限接近、**20 超過で neutral へ判定し直しの flag**
+- **SPX/Nasdaq**: 4/20 close ATH から 0.24% pullback、futures は 4/21 上昇
+- **SOXL/TECL**: 4/17 ATH 近辺を維持 (SOXL $95.94、TECL $134.18)
+- **BRENT**: $89.85 (4/21) まで retrace、だが 4/22 期限次第で再 spike リスク
+- **Iran ceasefire**: 4/22 (水、明日) 期限、Trump「延長しないかも」示唆 → 延長 or breakdown で方向性確定
+
+### 次セッション開始時の優先順位
+
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. **4/22 Iran 停戦期限の結果確認** (`/scan-market` — 延長発表 or breakdown、発表時刻未定のため即時確認必要)
+3. **`/update-regime`** — 今回セッションで update_data は実行したが regime 再判定未実施。VIX 19.12 で risk_on 上限接近、要判定
+4. **Session 27 保留 knowledge 3件 (K-035/036/037) 登録判断** + 今回の US proactive action lesson (K-038 候補) 判断
+5. **`/review-events`** — Session 27 以降 3日以上経過したイベント (4/17 系) の事後検証
+6. Trade #4 SOXS リコンシレ (session 25-26 引き継ぎ)、drill.py 起動、MCQ 問題文改訂 (Issue #3)
+
+### 未解決予測: **0 件**
+
+### 今日時点の推奨 (時間軸明示)
+
+**現在 2026-04-21 17:50 JST 時点**:
+- **新規ポジション保留推奨**。4/22 Iran 停戦期限が最重要直近カタリストで、延長 or breakdown で方向性確定するまで片張りは非対称リスク
+- 既存 SOXL/TQQQ/TECL ロング: 4/22 期限到達まではホールド可、期限アクション確認で再評価
+- VIXY/SOXS ヘッジは Touska 型 escalation 継続ケースのみ有効、停戦延長発表で即蒸発リスク
+
+**次の再評価タイミング (実在カタリスト)**:
+1. **4/22 05:00 JST 前後**: 4/21 (火) US AMC 決算 (UAL/DHR/GE Aero/NOC/UNH/RTX) → industrial/defensive tone
+2. **4/22 日中〜夜 JST (時刻未定)**: Iran 停戦期限アクション — 延長 or breakdown で regime 方向性確定
+3. **4/28-29 JST**: FOMC 結果発表 (oil shock 下での Powell tone)
+
+---
+
+## ⚡ Session 27 Handoff (2026-04-18 14:25 JST) — アーカイブ
+
+### 今日のセッションで確定した事項
+
+#### scan-market 実行 2 回 (2026-04-17 16:52 / 17:17 JST)
+
+**scan #1 (4/17 16:52 JST、3 events 登録)**:
+- **4/16 22:00 JST [semi/pos]**: AMD-仏政府 AI partnership LOI 署名 (Alice Recoque supercomputer、sovereign AI)。AMD +3.4% 当日反応
+- **4/17 15:00 JST [mkt/neu]**: Nikkei 225 -0.80% (4/16 record 59,518.34 から pullback、IMF BoJ 利上げ圧力 + 戦争 risk)
+- **4/17 23:30 JST [fed/neu]**: FOMC Daly (SF Fed) speech 予定 — Fed 2026 no-cut narrative下
+
+**scan #2 (4/17 17:17 JST、1 event 追加)**:
+- **4/17 06:00 JST [geo/pos]**: 🎯 **Israel-Lebanon 10日停戦発効** (4/16 17:00 ET)。Beirut 祝砲後 Lebanese 軍 immediate violation claim (K-024 pattern)、Trump "Iran deal very close" + Islamabad 再交渉 週末可能性
+
+#### update-regime (2026-04-17)
+
+**4/17 保存: overall=risk_on, score=0.71** (4/14 から継続、3日ドリフト履歴保存)
+
+- VIX 18.18 (vs 4/14 18.36, -0.18)
+- VIX3M 20.77 / VIX_TERM 0.875 (contango)
+- HY spread 2.85 (-0.10 tight化)
+- Yield curve 0.54 (+0.04 steepening)
+- **BRENT 92.53 (vs 4/14 94.26, -1.73 = Lebanon停戦整合)**
+- USD 118.86 (FRED ラグで同値)
+
+overall label 変化なしだが、前回scan指摘の BRENT Parquet anomaly ($98.09 → $92.53) が自然解消、de-escalation と全指標整合 — 個別指標はすべて risk_on 方向にドリフト。
+
+#### review-events 実行 (2026-04-17、9件検証)
+
+**impact 修正: 4件 neg → neutral (80%、歴史平均51%より高水準)**
+
+| ID | サマリ | original | revised | 修正理由 |
+|----|--------|----------|---------|---------|
+| #176 | Brent急騰 $102.18 | neg | **neu** | 5日で-9.4%反転、K-024 transient適用 |
+| #174 | US-Iran Islamabad talks collapse | neg | **neu** | 24h以内 revival signal、regime change framing過剰 |
+| #175 | CENTCOM blockade公式 | neg | **neu** | S&P ATH更新、スコープ限定×既制裁対象 |
+| #178 | Hormuz商業船自主停止 | neg | **neu** | 実害translateせず、自主停止≠供給途絶 |
+
+#### 新発見: K-024「transient negative」の適用範囲拡張
+
+当初 K-024 は「ミサイル交換・空爆・IRGC声明」中心だったが、今回の review で以下に拡張適用が妥当と判明:
+- **交渉決裂** (Islamabad talks collapse 型)
+- **公式軍事行動** (CENTCOM blockade のスコープ限定×既制裁対象ケース)
+- **供給 "自主停止"** (実害一歩手前、deal hopes と並走時)
+
+**共通構造**: deal hopes と並走する局面では negative の半減期が <12h。3件のknowledge候補 (K-035 K-024拡張 / K-036 軍事行動スコープ評価フレーム / K-037 供給自主停止≠実害) はユーザー判断待ち、未登録。
+
+### 市場環境 summary (4/18 午後時点)
+
+- **regime**: risk_on 継続 (3日目、score 0.71)
+- **S&P 500**: 4/16 close 7041.28 (ATH)、Nasdaq 12連騰 2009年以来
+- **SOXL**: 4/16 $88.37 (4/13 $80.56 から +9.7% 3日)
+- **BRENT**: $92.53 (Iran war premium 剥離)、VIX 18.18 圧縮
+- **Lebanon停戦**: 発効、10日間カウントダウン
+- **Iran-US**: 停戦 4/21 期限、週末 Islamabad 再交渉観測 (Trump "very close" 発言、ただし K-009 修辞)
+
+### 次セッション開始時の優先順位
+
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. **週末 Islamabad 再交渉の material check** (`/scan-market` — 4/18-19 実質的進展があれば登録)
+3. **knowledge 3件 (K-035/036/037) 登録判断** (`/verify-knowledge` or 直接登録)
+4. **Session 25-26 引き継ぎの未着手** — Trade #4 SOXS リコンシレ / 半導体 divergence 定量確認 / drill.py 起動 / `/signal-check`
+5. **MCQ 問題文全面改訂** (Issue #3、session 26 から継続)
+6. 週明け (4/20 月) US session 開始前に `update_data.py` → `/update-regime` で週末マクロ変化確認
+
+### 未解決予測: **0 件**
+
+---
+
+## ⚡ Session 26 Handoff (2026-04-17 17:48 JST) — アーカイブ
 
 ### 今日のセッションで確定した事項
 
