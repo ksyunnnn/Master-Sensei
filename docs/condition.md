@@ -1,6 +1,497 @@
 # Condition
 
-Last updated: 2026-04-28 17:45 JST (session 29、update_data 2回 + scan-market 1回 + 6 events 登録). **次の catalyst: 4/30 03:00 JST FOMC announcement (Powell 最終会合、99.9% no-change 価格織り込み済み、language watch) → 4/30 AMC = 5/1 早朝 JST MSFT/META/GOOGL/QCOM 決算**
+Last updated: 2026-05-24 14:45 JST (session 34、Memorial Day weekend Day1、米5/22引け値取得 + 予測ID6 FALSE resolve + Iran 60日休戦MOU draft 5/23合意 + Cleveland Fed nowcast PCE 4.18% + SOXLスィング多角分析). **次の catalyst: 5/24 (日) afternoon JST Trump+仲介団 Iran deal 公式発表予定 → 5/26 (火) 22:30 JST US Memorial Day明け寄付で weekend headlines 一括 pricing-in、SOXL gap riskレンジ +3-5% / -5-8% 想定**
+
+---
+
+## ⚡ Session 34 Handoff (2026-05-24 14:30-14:45 JST、Memorial Day weekend Day1)
+
+### 今日のセッションで確定した事項
+
+#### update_data.py 実行 (14:28 JST)
+
+5/22 close まで取得。**鮮度**: マクロ 5/22 (BRENT/VIX/VIX3M/HY_SPREAD/YIELD_CURVE/US10Y)、5/21 (VXN)、5/15 (USD_INDEX 横這い)、4/01 (FEDFUNDS)、日足 5/22、5分足 5/22 15:55 ET。
+
+#### /scan-market 実行 (14:36 JST、2 events 登録、4件スキップ)
+
+前回 5/22 19:13 → 5/24 14:32 JST (43h delta、米5/22 Friday session + 週末 5/23-24 Day1) を6カテゴリ調査。**米イラン60日休戦MOU draft 5/23 Sat合意 + Cleveland Fed nowcast PCE 4.18%** が主題。
+
+| 日時(JST) | カテゴリ | impact | サマリ | lesson 適用 |
+|-----------|---------|--------|--------|------------|
+| 5/23 18:00 | geopolitical | neutral | 米イラン60日休戦MOU draft合意 (Hormuz開放+sanctions waiver、5/24発表予定)、先行: Qatari Tehran 派遣5/22 | K-009/K-016: Trump 24h反転 + sell-the-news #32米中合意 SOXL 5日後-11.9% lesson 該当、neutral default、Trump公式発表 + 24-48h confirm 後 upgrade pattern |
+| 5/22 23:00 | fed | **negative** | Cleveland Fed nowcast PCE 4.18% (+38bps)、Powell hawkish tilt、利下げ期待 2026除去、Motley Fool「利上げ確率climbing」報道 | 5/29 4月PCE発表が verify catalyst、上振れ確認なら半導体重い |
+
+スキップ: 米5/22引け価格 (market data 非event)、Qatari Tehran (event1先行)、Rome 5/23 no breakthrough (event1並走)、Trump rally rhetoric (event1 reasoning内 merge)
+
+#### /update-regime 実行 (5/22 close 反映、score 0.50)
+
+5/21 risk_on (0.83推定) → 5/22 **neutral (0.50)** へ転換、DB保存済。
+
+| 項目 | 5/21 | 5/22 | 変化 |
+|------|------|------|------|
+| VIX | 17.44 | 17.03→**16.70** | 低下継続、normal範囲 |
+| VIX/VIX3M | 0.840 (急コンタンゴ score+2) | 0.852→**0.834** (境界変動、再急コンタンゴ判定) | 境界 |
+| HY_SPREAD | 2.86 | 2.80→**2.78** | 微改善 |
+| Brent | $105.40 | $105.11→**$100.21** | **-4.7% 大幅低下** (Iran MOU draft) |
+| YIELD_CURVE | 0.53 | 0.49→0.43 | 低下 |
+| **overall** | **risk_on (0.83推定)** | **neutral (0.50)** | VIX_TERM 1段格下げ起因 |
+
+#### 予測 ID 6 RESOLVED as FALSE (14:33 JST)
+
+- **target**: SOXL 5/22 05:00 JST 米引け < $173.20 (確信度 0.50)
+- **outcome**: **FALSE** — 5/22 米引け = $178.39 (5/22 ET Thursday close、Parquet daily 5/21日付ラベル)、$173.20 を **+3.00% 上回り反証条件「終値が $173.20 以上で確定」明確該当**
+- Brier score contribution: 0.50 (medium-high penalty)
+- root_cause: `pattern_extrapolation_premature`
+- 学習: (a) NVDA 4連続後下落パターン (n=4) を強くweight しすぎ、AI capex strength 過小評価、(b) 23:18 JST fade観測時点で「シナリオB確定」判断したが、引け方向 extrapolation には 90分前以降の確認必要、(c) Iran ceasefire 進展速度 (Qatari Tehran 5/22 → MOU draft 5/23 一晩) 読めず、外交 momentum を underestimate
+- 関連 knowledge: K-018 (3xレバ 30/60分予測力なし) と同じく 寄付45分時点の方向判断は close 予測に直結しない
+
+#### SOXLスィング多角分析 (Trade #6 状況確認)
+
+ユーザー要請で Trade #6 SOXL long (entry $176.11 × 3株、setup `swing_long_post_NVDA_fade_pullback`) を多角分析:
+
+**価格進行**:
+- entry: 5/22 00:17 JST @ $176.11 (寄付fade中)
+- 5/21 ET Thursday close (=5/22 05:00 JST): **$178.39 (+1.30%)**
+- 5/22 ET Friday close (=5/23 05:00 JST): **$190.56 (+8.21%)** ← TP1 $185 likely hit (5/22 high $191+想定)
+
+**テクニカル**:
+- SMA20 $152.80、SMA5 $163.88、SMA10 $172.97 (全部下方、上昇トレンド継続)
+- ATR14 $20.92 (11.7% of close、極ボラ)、年率σ 147.5%
+- σ位置 +1.01σ (entry時 +0.90σ、過熱気味)
+- 5/19底 $135 → 5/22 $190.56 で **3日 +41% rebound**
+- レジスタンス: $190.42 (5/11 ATH)、$200 心理節
+- サポート: $186.19 (5/14 close)、$168.23 (5/21 low)、$158 (SL)
+
+**マクロ・regime変化**:
+- VIX 17.40→16.70 (-4.0%)、HY 2.86→2.78、Brent $107.34→$100.21 (-6.7%) で全項目改善
+- regime risk_on → neutral 微下げ (VIX_TERM 一段下げのみ)
+
+**NVDA post-earn パターン (Web照合)**:
+- 1日 -1.5%平均 → 5/21 -0.9% **パターン通り**確認
+- 1週 -3.7%平均 → 5/22 Friday は逆に半導体rally (peace deal flow override)
+- 30日 +6.1%平均、勝率59% → 6/17 FOMC まで 25日 = recovery window 整合
+
+**knowledge照合**:
+- K-012 (半導体季節 + AI capex 構造支え): ◎
+- K-022 (regime×flow独立): ◎ neutral でも入れる
+- K-026 (軍事=外交シグナル): ○ 中期 bullish
+- **K-029 (急騰後mean reversion +25%閾値)**: 5/19→5/22 +25.5% で **閾値到達** = mean reversion 警戒
+- **K-016 (sell the news)**: ⚠ テールリスク Iran 突然合意発表 → 5日後 -11.9% risk (#32米中合意 case)
+- K-031 (サクソバンク同一銘柄同日売買禁止): partial exit 後の同日再買い不可制約
+
+**シナリオ (現在 $190.56 → 6/17まで)**:
+- ブル A 25%: $195-210 抜け (TP2 hit + 余白)
+- ベース B 40%: $180-$195 レンジ test、TP1 hit でも TP2 未到達のレンジ
+- ベアレンジ C 25%: $155-180 後退、SL $158 接触可能
+- テール D 10%: Iran 合意発表後 sell-the-news -15%超
+
+### 重要な観察 (バイアス点検)
+
+- **5/22 19:42 JST の私の見解では「全3株保持継続」推奨**したが、Friday session で +6.82% 大幅rally + TP1 $185 自動執行で **2株は exit 想定** (実約定確認次第)。残 1株 TP2 $195 まで +2.33%、見解は結果的に妥当
+- **Iran-US 60日 MOU draft 進展速度を読めず**: 5/22 18:40 JST 時点で「Trump 20年提案は5/15 周辺発言、5/22 不明確」と非採用 → 5/23 早朝 draft 合意で 24h以内に MOU 進展。外交 momentum を underestimate (予測 #6 root cause と整合)
+- **TP1 $185 設計の妥当性**: 5/22 high $191+ で hit 想定だが、$185-195 のスペースで pullback 待ちなら +6%余白を取り逃した可能性。entry時の TP1/TP2 分割 (2:1) 設計は機会的だがリスク的にも妥当
+- **regime neutral 転換は表面、実態 risk-on**: VIX_TERM 1段下げで neutral 判定だが、Brent -4.7%/SOXL +6.82% で実需 risk-on flow 強い
+
+### 未解決予測: **0 件** (ID 6 resolve済)
+
+### 次セッション開始時の優先順位
+
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. **5/24 (日) afternoon JST Iran deal 公式発表確認** — Trump+仲介団 announcement の有無 / 内容 / 崩壊の有無
+3. ユーザー Trade #6 SOXL TP1 $185 約定確認 — 5/22 high が $185 を抜けたか、partial exit 2株 / 残 1株状態確認
+4. `update_data.py` (5/26 US session 開始前、5/24-25 週末 macro 変化チェック)
+5. **5/26 (火) 22:30 JST US寄付 weekend headlines pricing-in 確認** — Iran deal 成功時 +3-5% gap up / 崩壊時 -5-8% gap down レンジ
+6. `/review-events` — Iran 5/23 MOU draft + Cleveland Fed nowcast の 5/26-5/29 反応事後検証
+7. **5/29 (木) 21:30 JST 4月 PCE 発表** — Cleveland Fed nowcast 4.18% verify、上振れなら半導体 bearish 圧力
+8. 6/17 FOMC + Warsh 初記者会見へ向けた hypothesis 1/2 検証準備
+
+### Brier score 更新 (予測 #6 resolve 反映)
+
+予測 #6 FALSE × confidence 0.50 = Brier 0.50 contribution。session-start hook で前回累積 Brier 0.411。次回 session-start で再計算後確認。
+
+---
+
+## ⚡ Session 32 Handoff (2026-05-21 07:56-08:30 JST)
+
+### 今日のセッションで確定した事項
+
+#### update_data.py 実行 (07:56 JST)
+
+3日ぶり更新。マクロ9系列、日足10銘柄、5分足8銘柄。**鮮度**: マクロ 5/20 (BRENT/VIX/VIX3M/US10Y/HY_SPREAD/YIELD_CURVE)、5/19 (VXN)、5/15 (USD_INDEX 横這い)、4/01 (FEDFUNDS)、日足 5/20、5分足 5/20 15:55 ET。
+
+#### /scan-market 実行 (08:02 JST、3 events 登録、4件スキップ)
+
+前回 5/19 10:42 以降 45h を6カテゴリ深掘り。**NVDA Q1 FY27 blowout + FOMC 4/29 minutes hawkish surprise + Trump Iran "final stages"** が主題。
+
+| 日時(JST) | カテゴリ | impact | サマリ | lesson 適用 |
+|-----------|---------|--------|--------|------------|
+| 5/21 05:20 | semiconductor | **positive** | NVDA Revenue $81.6B (+85% YoY)、EPS $1.87、Q2 guide $91B、$80B buyback、AH **-2.5%** sell-the-news | hypothesis 4 (blowout = continuation) **partial counter-evidence**、pre-NVDA SOXL +14% で whisper priced-in |
+| 5/21 03:00 | fed | neutral | FOMC 4/29 minutes hawkish surprise: 3 hawkish dissent (Hammack/Kashkari/Logan) easing bias削除主張、Kashkari「rate hike risks」、Iran inflation懸念 | hypothesis 1 (dissent secondary catalyst) **validated 反対方向**、Iran rhetoric が同日上書きで SPX +1.08% |
+| 5/21 00:00 | geopolitical | neutral | Trump 5/20 "final stages"、1-page 14-point MOU (Witkoff/Kushner)、30-day交渉枠組み。Iran側「still under review」、deadlock 継続 | K-009 + #216/#220/#228 重畳: positive rhetoric + structural change未確定 = neutral、24-48h Trump 非反転確認後 upgrade |
+
+#### 市場環境 (5/20 close、5/21 08:30 JST 時点)
+
+- **regime**: risk_on (session 31 score 0.57 から structural pressure 累積)、VIX 17.44 へ低下も FOMC hawkish + Iran deadlock 継続で 5/21 寄付試練
+- **SPX/Nasdaq**: 5/20 +1.08%/+1.54% で 3日連敗止め、SPX 7,432.97 / Nasdaq 26,270.36 (record領域)
+- **SOXL**: 5/20 close **$173.20 (+14.1%)**、5/19 intraday low $135 から +28% rally、ただし NVDA AH -2.5% で 5/21 寄付 gap-down -3 to -7% 想定
+- **TECL**: 5/20 close $196.99、NVDA fade 同様適用
+- **BRENT**: 5/20 close **$105.40 (-4.9% from 5/16 $110.83)**、Trump "final stages" rhetoric driven、WTI -5.29% to $97.60
+- **VIX/VIX3M**: 17.44/20.76 で 0.840 通常コンタンゴ (低位安定)
+- **NVDA**: close $224.22 → AH $217.91 (-2.5%)、Q2 guide $91B vs whisper $90B が控えめ評価
+
+#### Session 31 「SOXL 様子見」推奨の評価
+
+5/19 close $151.89 → 5/20 close $173.20 で **+14.1% miss** は確定機会喪失だが、NVDA AH -2.5% で 5/21 寄付 gap-down 想定 → +14% の半分前後 erase 候補。
+
+- **結果評価**: 機会喪失 (確定)
+- **過程評価**: Iran NSC + NVDA AMC の double-catalyst 回避は risk management 正当。盲点は「**pre-NVDA 期待先行買い**」の pricing-in メカニズムを モデル化していなかった点
+- **真の評価確定**: 5/21 22:30 JST US寄付 + 引け後
+
+### 重要 hypothesis 更新 (n=1→n=2 候補)
+
+1. **FOMC dissent secondary catalyst** (#219 + 今回 minutes): n=2 で **validated**。ただし発火方向は双方向 (dovish/hawkish いずれも) で sentiment shift 起動。6/16-17 Warsh 初会合は dovish chair vs 3 hawkish dissent 対峙構造 = 二段階 catalyst
+2. **NFP AHE leverage amplification** (#226): 次回 6/6 5月NFP で再観察
+3. **High-profile event sell-the-news + leverage tilt** (#228 Trump-Xi + 今回 NVDA pre-rally): n=2 で structural化候補、ただし方向が異なる (Trump-Xi 期待先行→sell-off、NVDA 期待先行→blowout後 sell-the-news AH)
+4. **Blowout earnings + structural partnership = overbought continuation** (#223 AMD + 今回 NVDA): n=2 で **partial counter-evidence**。AMD は寄付 continuation だったが NVDA は AH -2.5% sell-the-news。refinement 案: 「**pre-earnings n%-run-up が whisper > consensus 差以上なら continuation 失効**」
+
+### 次セッション開始時の優先順位
+
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. `update_data.py` (5/21 US寄付・引け反応の取得)
+3. **5/21 22:30 JST US寄付 NVDA gap-down 確認** — SOXL 寄付反応 + 日中 reversal 観察、hypothesis 4 refinement 確定
+4. `/review-events` — NVDA + FOMC minutes + Iran "final stages" の 5/21 post-event 3日後検証
+5. Iran 公式 response (Pakistani仲介経由) 確認 — deadlock 継続なら 5/20 oil/equity 反応 partial unwind 候補
+6. 5/30 PCE デフレーター、6/6 NFP、6/16-17 Warsh 初会合 へ向けた hypothesis 1/2 検証準備
+
+### 未解決予測: **1 件**
+
+- **ID 6** (deadline 5/22、確信度 0.50): SOXL 5/22 05:00 JST (米引け) 終値が $173.20 を下回る (寄付高値→上値伸び悩み (fade) シナリオB確定)
+
+### Session 32 延長 (2026-05-21 19:00-20:30 JST)
+
+#### /scan-market 追加実行 (20:05 JST、2 events 登録)
+
+| 日時(JST) | カテゴリ | impact | サマリ |
+|-----------|---------|--------|--------|
+| 5/21 19:00 | semiconductor | neutral | NVDA 米プレマーケット 上値伸び悩み (fade) + 4連続決算後下落 (fourth-straight post-earnings slide) パターン確定、米先物 SPX -0.42% / Nasdaq -0.56% リスクオフ転換、アナリスト電話会議終了後トーン反転 |
+| 5/21 18:00 | geopolitical | neutral | Iran-US 交渉 進展: Tehran「ギャップは一部縮小」、ただし米提案一部「強く拒否」継続。Pakistan 軍仲介加速で MoU 正式受諾段階目指す、Trump「nasty if no agreement」発言 |
+
+#### SOXL ディープダイブ で得た主要数値 (Parquet + WebSearch + DuckDB 活用)
+
+- **SOXL +5%超 寄付ギャップアップ 過去パターン (n=12, 3ヶ月)**: 寄付→引け 平均 +2.49%、陽線率 75%、上値伸び悩み (fade) 確定率 17%。**n=12 で structural化判定保留** (期間 bias + fade 条件分析未完で knowledge 登録見送り、hypothesis level に留める)
+- **NVDA 直近4回決算後 1日反応 平均 -1.5%、1週 -3.7%** (Benzinga + Fortune 集計、n=4)。これは hypothesis 4 (圧倒的好決算+構造的提携=続伸) への **counter-evidence**、ただし n=4 で knowledge 登録基準未達。5/22 NVDA 一日反応で n=5 になってから再判断
+- **SOXL ボラ拡大度 2.4倍** (直近5日 ATR $23.13 vs 全期間 $9.63)、年率ボラ 126.1% = 通常 (90-110%) 上回る
+- **SOXL-VIX rolling 10日 相関**: 2026-02-17 -0.720 → 2026-05-19 **+0.091** = 緩衝バネ (compression spring) 深化期に伝統的逆相関消失
+- **SOXL-US10Y rolling 10日 相関 -0.801** (5/19 時点) = 金利上昇が直近最大マクロ逆風
+- **5/20 +14% rally の出来高 percentile 12** (全期間中下位) = 後追い買い限定、薄い rally
+- **NVDA オプション**: Implied move 5.17% (5/22)、IV rank 62.53 = SOXL 換算で ±15-16% 想定
+- **Polymarket US-Iran 核合意 by May 31 確率 <10%** = deal成立期待は既に低水準で織込み済み
+
+#### シナリオ確率 Bayesian update
+
+- Prior (5/21 朝): A 40% / B 35% / C 25%
+- 6エビデンス反映後 Posterior: **A 約30% / B 約55% / C 約15%** (B 優位、ただし A も無視できない)
+- 対立構造: SOXL 過去 +5%超 gap-up 75%継続 (Aを支持) vs NVDA 直近4回 -1.5%平均 (Bを支持)
+
+### 今日時点の推奨 (時間軸明示)
+
+**現在 2026-05-21 20:30 JST 時点 (米寄付まで 2時間)**:
+
+**再評価タイミング (実在カタリスト)**:
+1. **5/21 21:30 JST 米失業保険申請 + Philadelphia Fed 製造業調査** — 結果次第で寄付前最終ノイズ。Initial Claims consensus 213K、Philly Fed consensus 15.0 (上振れ報道 26.7 要確認)
+2. **5/21 22:30 JST 米寄付** — SOXL ギャップアップ実値確定 (想定 $178-183)、寄付30分の方向確定でシナリオA/B/C 振分
+3. **5/22 05:00 JST 米引け** — NVDA 一日反応 (4連続後 sliding 継続 or 反発) + 予測 ID 6 解決、hypothesis 4 refinement 確定機会
+4. **5/30 21:30 JST 4月 PCE デフレーター** — FOMC 議事録 hawkish 受けて high stake
+
+**ポジション推奨**: 既存 0 ポジションなら **寄付前成行は避ける**。22:30 寄付ギャップアップ確認後、23:00 (寄付30分後) 以降に指値で待つ運用が無難。寄付高値追いはシナリオA (確率30%) 想定外時の急反落リスクが大きい。
+
+### 自己バイアス点検 (今回判断時)
+
+- サンクコスト (ディープダイブ時間) で何か登録したくなる傾向 → 知見化見送りで対処
+- 発見バイアス (統計分析を過大評価) → n=12, n=4 で structural化基準未達と判定
+- 過信バイアス (Brier 0.411 で歴史的に過信) → 予測確信度を 0.70 → 0.50 に補正
+
+---
+
+## ⚡ Session 33 Handoff (2026-05-22 00:10 JST、米寄付後2時間)
+
+### 今日のセッションで確定した事項
+
+#### /scan-market 追加実行 (22:19 JST + 22:54 JST + 23:18 JST、計3件登録)
+
+| 日時(JST) | カテゴリ | impact | サマリ |
+|-----------|---------|--------|--------|
+| 5/21 21:30 | geopolitical | **negative** | Iran 最高指導者 Khamenei が濃縮ウラン国内保持 directive を発出 (Reuters: Mojtaba Khamenei、Iran 上級当局者2名取材)。米要求「440kg ウラン引渡し + 核10年停止」に対する公式拒否確定 |
+| 5/21 19:00 | semiconductor | neutral | NVDA 米プレマーケット 上値伸び悩み (fade) + 4連続決算後下落 (fourth-straight post-earnings slide) パターン確定 |
+| 5/21 18:00 | geopolitical | neutral | Iran-US 交渉 5/21 進展: Tehran「ギャップ縮小」評価、ただし米提案一部「強く拒否」継続、Pakistan 軍仲介加速 |
+
+#### 5/21 米市場反応 (5/22 00:10 JST 時点)
+
+- **SOXL**: 寄付 $171.26 (-1.1% ギャップダウン) → 23:00 高値 $178.29 (+4.1% from open) → 23:20 押し戻し $169.31 (-2.25% from prev close) → 安定推移
+- **NVDA**: 寄付 $223.18 → 高値 $226.94 → 安値 $216.25 → -1.4% で推移 (4連続後下落確定)
+- **SPX -0.45%、Nasdaq -0.50 to -0.70%、Dow -0.48%**: Treasury yields rebound + NVIDIA 失望 + Iran tensions
+- **Brent $107.34 (Iran 反応 partial unwind、+3% → +1.5% へ縮小)、VIX 17.40 (やや低下)**
+
+#### ユーザー SOXL ロング entry (trade #6 記録済み)
+
+- **3株 @ $176.1090** (entry 確定値、サクソバンク 外国株式(特定))
+- 現在価格 $171.49 で含み損 -2,799 JPY (約 -2.6% from entry)
+- **OCO 注文済**: TP1 $185 (2株) + SL $158 / TP2 $195 (1株) + SL $158 共通
+- setup_type: `swing_long_post_NVDA_fade_pullback`、confidence 0.55、prediction_id 6 リンク
+- 全資産比は未確認、Kelly 5% 以下が安全
+
+#### NVDA アナリスト見解 (5/21 引き上げ多数)
+
+| 機関 | 旧 → 新目標 |
+|------|----------|
+| Wedbush | $300 → **$330** |
+| Goldman Sachs | $250 → **$285** |
+| Morgan Stanley | $285 → **$288** |
+| RBC Capital | $250 → **$270** |
+| HSBC | **$325** (5/19) |
+| コンセンサス | **$285.5** (34 アナリスト、現値 $220 から +30%) |
+
+= ファンダメンタル評価強気、株価下落と乖離継続
+
+#### PCE 5/30 見通し (重要な認識修正)
+
+- **March PCE (4/30 release) は 3.5% YoY、core 3.2%** (Feb から急加速、energy 起因)
+- April PCE (5/30 release) も elevated 継続予想、Wall Street「higher for longer」
+- Fed rate cut 2026 全体: 25bp 1回 55-65%、cut なし 30-40%
+- = PCE 上振れリスク 私の前回計算 (25%) から **40-50% に上方修正**必要
+
+#### 保有期間別期待値 (PCE 上振れリスク反映後)
+
+| 保有期間 | 旧 | 修正後 |
+|---------|---|------|
+| 5/27-30 引け | -0.70% | -0.70% |
+| 5/30 PCE 通過後 | +0.50% | **-1.65%** |
+| 6/6 NFP まで | +3.25% | +1.50% |
+| **6/17 FOMC まで** | +4.35% | **+2.50%** |
+
+PCE 通過後 +5日勝率 78% (n=9 歴史データ) は依然有効 = PCE で売られても通過後 reversion で反発するパターン強い。
+
+#### ADR-024 起草 (Status: proposed)
+
+`docs/adr/024-regime-historical-persistence.md`: `regime_history` テーブル分離による同日複数スナップショット許容設計 (Option B 採用)。実装は次セッション (5/22 米引け後)、予測 ID 6 解決後に実施推奨。
+
+### 未解決予測: **1 件 (5/23 05:00 JST 米引け後 resolve 待ち)**
+
+- **ID 6** (deadline 2026-05-23 [DB date型、subject に「5/22 05:00 JST 米引け」明示、米引け JST 暦日に合わせて 5/22→5/23 表記修正]、確信度 0.50): SOXL 5/22 引け <$173.20。**現状 $171.49 で予測方向に進行中**、確定は 5/23 05:00 JST 米引け値
+
+### 次セッション開始時の優先順位
+
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. `update_data.py` (5/22 米引け値取得)
+3. **予測 ID 6 resolve** — 5/22 米引け値が $173.20 を下回るか確定、Brier score 更新
+4. ユーザー SOXL ロング状況確認 (TP/SL 機能、含み損益)
+5. `/review-events` 候補: Iran directive (impact: negative 評価の事後検証)、NVDA 4連続後下落パターン
+6. ADR-024 実装: `regime_history` テーブル追加 + マイグレーション + テスト
+7. 5/30 PCE / 6/6 NFP / 6/17 FOMC へ向けた hypothesis 1/2 検証準備
+
+### 重要な観察 (バイアス点検)
+
+- **私の即時損切推奨は不適切だった**: 過去 n=52 (寄付高値→引け前日比マイナス) で +10日勝率 61.5%、中央値 +5.55% を考慮していなかった → 撤回、スイング保持で SL $158 + 段階的 TP $185/$195 が正しい設計
+- **PCE 上振れ確率の認識不足**: March PCE 3.5% YoY を直前まで認識せず、PCE 上振れリスク 25% → 40-50% に修正
+- **Iran directive 反応の過大評価**: 当初 negative 評価したが Brent +3% → +1.5% partial unwind で K-024 一過性パターン consistent、5/23 review-events で再判定対象
+
+### レジーム遷移検知 (20:30 JST、DB 未保存)
+
+5/21 の追加 macro データ取得後、再判定で **risk_on (0.71) → neutral (0.50)** へ転換:
+
+| 項目 | 朝 (5/20 close) | 20:30 (5/21 リアルタイム) | 変化 |
+|------|----------------|--------------------------|------|
+| VIX | 17.44 | 17.84 | +0.40 (normal 維持、境界寄り) |
+| VIX/VIX3M | 0.840 (急勾配コンタンゴ、score +2) | 0.859 (通常コンタンゴ、score +1) | 1段階解消 |
+| Brent | $105.40 | $107.09 | +1.6% (crisis 継続、Iran rhetoric 部分巻き戻し) |
+| **overall** | **risk_on (0.71)** | **neutral (0.50)** | レジーム転換 |
+
+**DB 保存はスキップ** (現状の `save_regime()` upsert で朝のスナップショットが消えるため)。ADR-024 (regime_history テーブル分離) を起草、次セッションで実装予定。
+
+主因: 米寄付前リスクオフ転換、NVDA pre-market 上値伸び悩み (fade) + Iran 「strongly rejected」報道並走で VIX_TERM の急勾配コンタンゴが解消、Brent も Iran rhetoric 巻き戻しで $105→$107 へ反発。
+
+---
+
+## ⚡ Session 31 Handoff (2026-05-19 00:42-01:10 JST)
+
+### 今日のセッションで確定した事項
+
+#### update_data.py 実行 (00:39 JST)
+
+16日ぶり更新。マクロ9系列、日足10銘柄、5分足8銘柄。**鮮度**: マクロ 5/18 (BRENT/VIX/VIX3M/VXN)、5/15 (HY_SPREAD/US10Y/YIELD_CURVE)、5/08 (USD_INDEX 横這い)、日足 5/15、5分足 5/18 11:35 ET。
+
+#### /scan-market 実行 (00:42-01:00 JST、8 events 登録)
+
+前回 5/03 10:29 以降 ~16日間を6カテゴリ各深掘りで調査。**AMD blowout + Project Freedom + 5/7 Hormuz fire exchange + NFP dovish wage + Trump-Xi summit + Trump 5/19 NSC会合**が主題。
+
+| 日時(JST) | カテゴリ | impact | サマリ | lesson 適用 |
+|-----------|---------|--------|--------|------------|
+| 5/5 05:00 | semiconductor | **positive** | AMD Q1 $10.3B (+38%)、Q2 guide +46%、Meta 6GW Instinct + 6th-gen EPYC lead customer | de novo positive、構造partnership |
+| 5/5 14:00 | geopolitical | neutral | US Project Freedom launch + <48h Trump pause | K-024 transient |
+| 5/7 22:00 | geopolitical | neutral | US-Iran 3 destroyers交戦 + 3港counterstrike、引き分け帰投 | K-024 + K-038拡張、死者0 |
+| 5/8 21:30 | fed | **positive** | April NFP +115K beat、AHE 3.6% YoY miss (dovish wage)、失業率 4.3% | dovish wage dominant |
+| 5/11 04:00 | geopolitical | neutral | Trump拒否 14-point「totally unacceptable」「life support」発言 | K-009 modal threat |
+| 5/15 14:00 | market | neutral | Trump-Xi Beijing summit: $17B/yr 大豆 + Boeing 200 + 希土類、tariff cut発表なし | sell-the-news |
+| 5/16 05:00 | fed | neutral | Powell chair任期終了 + Warsh Senate Banking 党派ライン通過 | 完全pricing-in |
+| 5/18 13:00 | geopolitical | neutral | Trump 5/17「nothing left」+ Axios「5/19 NSC会合 military action傾倒」 | K-009 modal threat |
+
+#### /update-regime 実行 (00:55 JST、risk_on 維持だがスコア低下)
+
+5/3 (16日前) との比較:
+- VIX: 16.99 → **18.77** (上昇、ただし normal範囲)
+- VIX/VIX3M: 0.834 → **0.882** (コンタンゴ緩和)
+- HY_SPREAD: 2.83 → **2.80** (微低下、normal)
+- YIELD_CURVE: 0.51 → **0.50** (横ばい、normal)
+- BRENT: $108.17 → **$110.83** (悪化、crisis継続)
+- USD: 118.73 → 118.04 (微低下、weak)
+
+overall: risk_on (score **0.57**、前回 0.79から低下)。**Brent crisis $110 累積 + VIX 18.8で compression spring 解凍開始、Trump-Xi sell-the-news (5/15 SPXL -3.7%/SOXL -11.8%) で短期 mean reversion 入り**。
+
+#### /review-events 実行 (01:05 JST、13件検証、impact修正 2件)
+
+| ID | サマリ | original | revised | 重要 lesson |
+|----|--------|----------|---------|------------|
+| #216 | Iran Hormuz reopen 4/27 | positive | **neutral** | Iran proposal-led positive は Trump反応24h以内のreversal常時警戒、neutral default + Trump non-reaction後 upgrade |
+| #219 | FOMC 8-4 dissent 4/29 | neutral | **positive** | **FOMC dissent構成は pricing済み rate decisionの secondary catalyst**、Miran-type continuous dovish dissent存在 = risk_on側重み |
+| #217 | FOMC announcement | neutral | neutral | event単独はsurprise余地ゼロ、result event側で測る |
+| #218 | UAE OPEC exit 4/28 | neutral | neutral | 構造政策change は immediate price ≠ floor/ceiling shift で評価 |
+| #220 | Trump blockade 4/30 | neutral | neutral | K-024適用範囲確認: executive action + de-escalation pivot並走 = neutral 妥当 |
+| #221 | Mag7 mixed 4/30 | neutral | neutral | Wells Fargo Q1 lesson n=複数で structural pattern化 |
+| #222 | AAPL beat 5/1 | positive | positive | AH modest +3% でも 1週後 TECL +26.5%、China surprise成分でstructural化 |
+| #223 | AMD Q1 5/5 | positive | positive | **Blowout earnings + structural partnership (Meta 6GW) は overbought環境でも continuation triggered、SOXL週次+49%** |
+| #224 | Project Freedom 5/5 | neutral | neutral | K-024 transient: announcement + <48h pause → 3日以内 80%超 retracement完了 confirmed (n=複数) |
+| #225 | 5/7 fire exchange | neutral | neutral | US proactive military action + 死者0 + 引き分け = K-038 fire-exchange拡張、negative化 trigger は 米軍KIA/Iran supply実被害/Trump no-pivot のみ |
+| #226 | April NFP 5/8 | positive | positive | **NFP の AHE miss (dovish wage) は job数 beat と同等以上の利下げ期待 catalyst、SOXL +16.3% reaction の dominant flow trigger** |
+| #227 | Trump rejection 5/11 | neutral | neutral | K-009 modal threat: VIX +1pt未満、BRENT +1.4%、equity weakness は他要因 dominate |
+| #228 | Trump-Xi summit 5/15 | neutral | neutral | **High-profile summit + structural change無し = sell-the-news、leverage ETF (SOXL -11.8%) で reversion加速** |
+
+#### /verify-knowledge 実行 (01:08 JST、K-034 validated)
+
+K-034 (銀行Q1 beat-and-retreat pattern): 検証期間内に銀行 Q1 earnings event なし、Q2 earnings season (7-8月) で再検証機会。validated 維持。
+
+### 重要 hypothesis (n=1、knowledge化保留)
+
+n=2 確認待ちで condition.md に hypothesis として記録、structural化要観察:
+
+1. **FOMC dissent構成 secondary catalyst** (#219 review): rate decision pricing済み環境でも dissent候補構成 (cut派 vs 据置派) で post-event 12h reaction決定。6/16-17 Warsh初会合 で再観察予定
+2. **NFP AHE leverage amplification** (#226 review): AHE miss + 失業率横ばい = SOXL/TECL leverage ratio 通り反応。次回 5月NFP (6/6 release予定) で再観察
+3. **High-profile summit sell-the-news + leverage tilt** (#228 review): 期待先行 + structural change無し で SPXL -3.7%/SOXL -11.8%。次回類似 (Trump-Xi follow-up、6/16-17 FOMC高期待型 events) で再観察
+4. **Blowout earnings + structural partnership = overbought continuation** (#223 review): AMD + Meta 6GW で SOXL週次 +49%。NVDA 5/20 AMC で同型 (NVDA Blackwell + 同様 announcement) かは要観察
+
+### 市場環境 summary (5/19 01:10 JST 時点)
+
+- **regime**: risk_on (score 0.57、前回0.79から低下)、VIX 18.77 で compression spring 解凍開始
+- **SPX/Nasdaq**: 5/15 -1.24%/-1.54% で Trump-Xi sell-the-news mean reversion 入り、SPX 7,408、Nasdaq 26,225
+- **SOXL/TQQQ**: 5/15 close SOXL 164.18 / TQQQ 75.34、5/11 ピーク 190.42/76.96 から大幅 reversion (-13.8%/-2.1%、SOXL leverage効果増幅)
+- **TECL**: 5/15 195.05、5/11 peak 200.70 から -2.8% reversion
+- **BRENT**: $110.83 (5/18)、$118→$126→$100 軌跡で Trump blockade大半 retracement、5/7 fire exchange後 $100→$110 再上昇 = floor持続上昇
+- **Iran**: Trump 5/17「nothing left」 + 5/19 (今日) NSC military action会合、結果次第で K-024 lesson無効化候補
+- **AMD/Meta**: 6GW Instinct deployment + 6th-gen EPYC lead customer 構造的 AI capex positive narrative continuation
+
+### 次セッション開始時の優先順位
+
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. `update_data.py` (5/19 後の更新有無)
+3. **5/19 (今日) Trump NSC会合 Iran military action 結果 review** — military action実宣言+supply実被害 → K-024無効化 + negative reclassify候補
+4. **5/20 (水) AMC NVDA Q1 FY27 earnings** — consensus $78.8B/EPS $1.77、Blackwell focus、SOXL/TECL最大direct catalyst。SOX RSI再確認。AMD pattern (n=1) との比較で hypothesis 4 検証機会
+5. `/review-events` — NVDA earnings + Trump NSC結果 post-event 3日後 再検証
+6. 6/16-17 FOMC Warsh議長初会合 までに hypothesis 1 (FOMC dissent secondary catalyst) 検証準備
+
+### 未解決予測: **0 件**
+
+### 今日時点の推奨 (時間軸明示)
+
+**現在 2026-05-19 01:10 JST 時点 (週末・米国休場)**:
+- **市場アクション保留推奨**。週末で米市場休場、5/19 Trump NSC会合 + 5/20 NVDA AMC の 2大 catalyst 通過前の position 構築は double-risk
+- 既存ポジションなし、SOXL 5/15 -11.8% reversion 後の bottom hunting も NVDA 通過待ち
+- VIX 18.77 上昇 + Brent $110 crisis 累積 + Trump escalation rhetoric で risk_on score 0.57 まで低下、shock時の反応係数拡大に注意
+
+**次の再評価タイミング (実在カタリスト)**:
+1. **5/19 (今日) Trump NSC会合 (時刻未公表、Axios報道、結果次第で同日中夜)** — Iran military action決定有無で oil/SOX 大幅振れ、結果即時 review必要
+2. **5/20 (水) 22:30 JST 米寄付 → 翌5/21 05:00 JST AMC NVDA Q1 FY27 earnings** — SOXL/TECL最大direct catalyst、AMD pattern (blowout + structural partnership) 再現性確認、 hypothesis 4 検証機会
+3. **6/6 (金) 21:30 JST = 5月 NFP release** — hypothesis 2 (AHE leverage amplification) 再観察、Warsh 6/16-17 FOMC前の Fed path 確認
+
+---
+
+## ⚡ Session 30 Handoff (2026-05-03 10:35 JST)
+
+### 今日のセッションで確定した事項
+
+#### update_data.py 実行 (10:20 JST + 10:31 JST macro-only)
+
+10:20 全データ更新: マクロ9系列、日足10銘柄、5分足8銘柄。10:31 再 macro-only 確認。
+**鮮度**: マクロ 5/01 (BRENT/VIX/VIX3M/YIELD_CURVE)、4/30 (HY_SPREAD/US10Y/VXN)、4/24 (USD_INDEX 横這い)、日足/5分足 5/01。
+
+#### /scan-market 実行 (10:22-10:30 JST、5 events 登録)
+
+前回 4/28 17:38 以降 113h を調査。**FOMC 8-4 dissent + UAE OPEC離脱 + Trump blockade + Mag7 mixed + AAPL beat** が主題。
+
+| 日時(JST) | カテゴリ | impact | サマリ | lesson 適用 |
+|-----------|---------|--------|--------|------------|
+| 4/28 18:00 | oil | neutral | UAE OPEC・OPEC+ 離脱発表 (5/1 効力、59 年加盟終了、第3位生産国離脱) | 構造変化、両論並走 |
+| 4/30 03:30 | fed | neutral | FOMC 8-4 dissent (1992 以来最大)、Powell governor 残留 (chair 5/15 終了) | K-009 非該当 = 確定発表、surprise 余地ゼロ |
+| 4/30 04:00 | oil | neutral | Trump Iran blockade 継続宣言 → Brent +6% close $118.03、4/30 intraday $126 (4年ぶり高値)、5/01 close $108.17 で -8.5% retracement | K-024 transient pattern 部分該当、conditional negative tilt |
+| 4/30 05:00 | market | neutral | Mag7 4/29 AMC mixed: GOOGL+10/AMZN+4/MSFT-4/META-9、capex $650B+ commit | Wells Fargo lesson 照合 = index aggregate neutral 相殺 |
+| 5/01 05:00 | market | **positive** | AAPL Q2 FY26 +3% AH、$111.2B (+17% YoY)、Greater China +28%、$100B buyback | de novo positive、地政学下 China surprise |
+
+#### /update-regime 実行 (10:32 JST、risk_on 維持)
+
+5日前 (4/28 確認) との比較:
+- VIX: 18.2 → **16.99** (低下、normal)
+- VIX/VIX3M: 0.876 → **0.834** (より急コンタンゴ化)
+- HY_SPREAD: 2.86 → **2.83** (微低下、normal)
+- YIELD_CURVE: 0.57 → **0.51** (低下、normal)
+- BRENT: $103.8 → **$108.17** (悪化、crisis 継続)
+- USD: 118.7 → 118.73 (横這い、weak)
+
+overall: risk_on (score 0.79) 維持。**ただし Brent crisis $108 + UAE OPEC 離脱 + Trump blockade で oil divergence 拡大。equity 側 VIX 16.99 で compression 維持の非対称性が深化**。
+
+#### 観察: VIX compression vs Brent divergence の構造的非対称性
+
+5/1 時点で Brent $108 (危機水準) + VIX 16.99 (通常範囲) の併存。geopolitical エスカレーション (UAE OPEC + blockade) が同時進行でも equity vol が無反応 = K-024 transient pattern が構造化している可能性。
+- shock 時の反応係数が拡大している (compression spring 化)
+- 5/5 AMD earnings + AMD 個別株 catalyst で flip 可能性
+- AMD blowout/SOX RSI 80.97 overbought の組み合わせは "両刃" (continuation か mean reversion)
+
+新規 knowledge 候補だが n=1 期間 (5日) で hypothesis レベル止まり、structural 化は要追加観察。
+
+#### lesson 適用境界の再確認
+
+- **K-024 拡張**: Trump blockade は「修辞」ではなく「executive action 継続」だが、Brent $118→$126→$108 の retracement で transient pattern 再現観察。lesson 射程を「修辞」から「executive action でも de-escalation pivot 並走時」に拡張済み (Session 28 改訂と整合)
+- **Mag7 mixed の index aggregate**: Wells Fargo/Citi Q1 lesson が再現観察 (n=複数)、個別銘柄反応を index ETF direction signal にするのは引き続き危険
+
+### 市場環境 summary (5/03 10:35 JST 時点)
+
+- **regime**: risk_on 継続 (本日再判定、score 0.79)、VIX 16.99 で compression 深化
+- **SPX/Nasdaq**: 4月+10% (5年ぶり最良月)、ATH 連続更新中
+- **SOXL/TQQQ**: 5/01 close SOXL $130.40 / TQQQ $65.30、SOXX 5/1 52-week high $464.83 (RSI 80.97 deeply overbought)
+- **BRENT**: $108.17 (5/01)、$118→$126→$108 軌跡で blockade spike 大半 retracement、ただし floor は raised
+- **Iran**: 14-point proposal 進行中 (5/2 Trump 「dissatisfied but prefers non-military path」)、24-72h 内 acceptance/rejection で oil/SOX 大幅振れ
+- **OPEC**: UAE 5/1 効力で離脱、第3位生産国の coordination 喪失
+
+### 次セッション開始時の優先順位
+
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. `update_data.py` (週末経過していれば前回 5/01 → 最新へ更新)
+3. **`/scan-market-quick`** — Trump Iran proposal 諾否反応 + AMD earnings 直前 sentiment 確認
+4. **AMD Q1 2026 earnings (5/5 AMC ET = 5/6 早朝 JST)** — SOXL direct catalyst、SOX overbought 下の continuation/reversion 判定材料、analyst rev estimate $9.84B
+5. **April NFP (5/8 Fri)** — FOMC 8-4 dissent 後の dovish/hawkish path 確認
+6. K-024 transient pattern が AMD earnings 前後でも適用されるか観察 (oil 系 lesson だが equity 系への拡張可能性)
+7. VIX compression vs Brent divergence の hypothesis 観察継続 (n=1 期間→n=2 への確認)
+
+### 未解決予測: **0 件**
+
+### 今日時点の推奨 (時間軸明示)
+
+**現在 2026-05-03 10:35 JST 時点 (週末・米国休場)**:
+- **市場アクション保留推奨**。週末で米市場休場、5/5 AMD earnings 前の position 構築は overbought + earnings 二重 risk
+- 既存ポジションなし (Trade #4 既 close 想定)、新規エントリーは AMD earnings 通過後に再評価
+- VIX 16.99 + Brent $108 の divergence は compression spring 化、shock 時の反応係数拡大に注意
+
+**次の再評価タイミング (実在カタリスト)**:
+1. **5/5 (月) 22:30 JST 米寄付** — 週末ニュース (Trump Iran 諾否、Israel-Lebanon、Gulf 動向) 反映後の oil/equity reaction 確認
+2. **5/6 (火) 早朝 JST = 5/5 AMC ET AMD Q1 2026 earnings** — SOXL direct catalyst、SOX overbought 局面で blowout/miss いずれも増幅、最優先
+3. **5/8 (金) 21:30 JST = 8:30 ET April NFP release** — FOMC 4-dissent 後の Fed path 確認、dovish surprise なら risk asset bid
 
 ---
 
