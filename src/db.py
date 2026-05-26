@@ -203,6 +203,12 @@ class SenseiDB:
             )
         """)
         self.conn.execute("CREATE SEQUENCE IF NOT EXISTS auth_tokens_id_seq START 1")
+        # ADR-025 仕様の partial index は DuckDB 未対応 (NotImplementedException)。
+        # regular composite index で代替: get_active_token の主要 WHERE 句に効く。
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_auth_lookup "
+            "ON auth_tokens(provider, environment, token_type)"
+        )
 
     # ── events ──
 

@@ -109,6 +109,14 @@ class SaxoConfig:
         if missing:
             raise ValueError(f"Missing required env vars: {missing}")
 
+        for url_key in (f"SAXO_AUTH_URL_{suffix}", f"SAXO_TOKEN_URL_{suffix}"):
+            url_val = keys[url_key]
+            if not url_val.startswith("https://"):
+                raise ValueError(
+                    f"{url_key} must use https:// scheme (credentials transmitted via Basic Auth); "
+                    f"got {url_val!r}"
+                )
+
         base_url = BASE_URL_SIM if env == "sim" else BASE_URL_LIVE
         return cls(
             app_key=keys[f"SAXO_APP_KEY_{suffix}"],
@@ -163,9 +171,19 @@ class SaxoClient:
         )
         if not resp.ok:
             raise SaxoAuthError(
-                f"Initial token exchange failed: {resp.status_code} {resp.text[:300]}"
+                f"Initial token exchange failed: HTTP {resp.status_code}"
             )
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise SaxoAuthError(
+                f"Token endpoint returned non-JSON response: HTTP {resp.status_code}"
+            ) from exc
+        if "refresh_token" not in data:
+            raise SaxoAuthError(
+                "Token endpoint did not return refresh_token. "
+                "Check OAuth app scope/grant type configuration on Saxo Developer Portal."
+            )
         self._persist_token_response(data, acquired_via="oauth_initial", prev_refresh_count=0)
         logger.info("Saxo OAuth initial tokens persisted (env=%s)", self.config.environment)
         return data
@@ -208,12 +226,22 @@ class SaxoClient:
             timeout=DEFAULT_TIMEOUT_SEC,
         )
         if not resp.ok:
-            self.db.revoke_token(refresh_row["id"], reason=f"refresh_http_{resp.status_code}")
+            # Only revoke on definitive auth failures (invalid_grant / unauthorized).
+            # 5xx and 429 are transient — keep refresh token so caller can retry later.
+            if self._is_definitive_auth_failure(resp):
+                self.db.revoke_token(
+                    refresh_row["id"], reason=f"refresh_http_{resp.status_code}"
+                )
             raise SaxoAuthError(
-                f"Token refresh failed: {resp.status_code} {resp.text[:300]}"
+                f"Token refresh failed: HTTP {resp.status_code}"
             )
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise SaxoAuthError(
+                f"Token refresh returned non-JSON response: HTTP {resp.status_code}"
+            ) from exc
         prev_count = refresh_row["refresh_count"]
         self._persist_token_response(
             data,
@@ -226,6 +254,35 @@ class SaxoClient:
                     self.config.environment, prev_count + 1)
         return data["access_token"]
 
+    @staticmethod
+    def _is_definitive_auth_failure(resp: requests.Response) -> bool:
+        """refresh token を revoke すべき definitive failure か判定。
+
+        判定基準:
+        - HTTP 401: 認証失敗 (token 無効)
+        - HTTP 400 with body containing OAuth error code 'invalid_grant' / 'invalid_request'
+          / 'unauthorized_client' (refresh token 無効化が確定するケース)
+        - その他 4xx は曖昧、保守的に definitive 扱い
+        - 5xx, 429 (rate limit), その他 transient は revoke しない
+
+        See https://datatracker.ietf.org/doc/html/rfc6749#section-5.2
+        """
+        if resp.status_code == 429 or resp.status_code >= 500:
+            return False
+        if resp.status_code == 401:
+            return True
+        if resp.status_code == 400:
+            try:
+                error_code = (resp.json() or {}).get("error", "")
+            except ValueError:
+                error_code = ""
+            return error_code in {
+                "invalid_grant", "invalid_request", "unauthorized_client",
+                "unsupported_grant_type",
+            }
+        # その他 4xx は保守的に revoke (network proxy, malformed request 等)
+        return 400 <= resp.status_code < 500
+
     def _persist_token_response(
         self,
         data: dict,
@@ -237,12 +294,30 @@ class SaxoClient:
     ) -> None:
         """token endpoint response から access + refresh を DB 保存。
         rotation が発生していれば旧 refresh を revoke。"""
+        required = ("access_token", "expires_in")
+        missing = [k for k in required if k not in data]
+        if missing:
+            raise SaxoAuthError(
+                f"Token response missing required keys {missing} "
+                f"(present keys: {sorted(data.keys())})"
+            )
+        try:
+            expires_in_sec = int(data["expires_in"])
+        except (TypeError, ValueError) as exc:
+            raise SaxoAuthError(
+                f"Token response has invalid expires_in: {data['expires_in']!r}"
+            ) from exc
+
+        anchor = now_jst()
         access_value = data["access_token"]
-        access_expires = now_jst() + timedelta(seconds=int(data["expires_in"]))
+        access_expires = anchor + timedelta(seconds=expires_in_sec)
         new_refresh_value = data.get("refresh_token")
-        refresh_lifetime = int(data.get("refresh_token_expires_in",
-                                         DEFAULT_REFRESH_TOKEN_LIFETIME_SEC))
-        refresh_expires = now_jst() + timedelta(seconds=refresh_lifetime)
+        try:
+            refresh_lifetime = int(data.get("refresh_token_expires_in",
+                                             DEFAULT_REFRESH_TOKEN_LIFETIME_SEC))
+        except (TypeError, ValueError):
+            refresh_lifetime = DEFAULT_REFRESH_TOKEN_LIFETIME_SEC
+        refresh_expires = anchor + timedelta(seconds=refresh_lifetime)
 
         # access token は常に新規保存
         self.db.save_token(
@@ -316,20 +391,33 @@ class SaxoClient:
         bal = self._api_get(
             f"/port/v1/balances?AccountKey={account_key}&ClientKey={client_key}"
         )
+        required = (
+            "Currency", "SpendingPower", "CashAvailableForTrading", "CashBalance",
+            "TotalValue", "UnrealizedPositionsValue", "TransactionsNotBooked",
+            "OpenPositionsCount", "NetPositionsCount", "NonMarginPositionsValue",
+            "CalculationReliability",
+        )
+        missing = [k for k in required if k not in bal]
+        if missing:
+            raise SaxoAuthError(
+                f"Balance response missing required fields {missing} "
+                f"for account {account_id or account_key}. "
+                "Saxo API may have changed; verify docs/api/saxo/balance-fields.md"
+            )
         return AccountBalance(
             account_id=account_id,
             account_key=account_key,
             currency=bal["Currency"],
-            spending_power=float(bal["SpendingPower"]),
-            cash_available_for_trading=float(bal["CashAvailableForTrading"]),
-            settled_cash_balance=float(bal["CashBalance"]),
-            total_value=float(bal["TotalValue"]),
-            unrealized_pnl=float(bal["UnrealizedPositionsValue"]),
-            transactions_not_booked=float(bal["TransactionsNotBooked"]),
-            open_positions_count=int(bal["OpenPositionsCount"]),
-            net_positions_count=int(bal["NetPositionsCount"]),
-            non_margin_positions_value=float(bal["NonMarginPositionsValue"]),
-            calculation_reliability=bal["CalculationReliability"],
+            spending_power=float(bal["SpendingPower"]),  # see balance-fields.md#spendingpower
+            cash_available_for_trading=float(bal["CashAvailableForTrading"]),  # see #cashavailablefortrading
+            settled_cash_balance=float(bal["CashBalance"]),  # see #cashbalance
+            total_value=float(bal["TotalValue"]),  # see #totalvalue
+            unrealized_pnl=float(bal["UnrealizedPositionsValue"]),  # see #unrealizedpositionsvalue
+            transactions_not_booked=float(bal["TransactionsNotBooked"]),  # see #transactionsnotbooked
+            open_positions_count=int(bal["OpenPositionsCount"]),  # see #openpositionscount
+            net_positions_count=int(bal["NetPositionsCount"]),  # see #netpositionscount
+            non_margin_positions_value=float(bal["NonMarginPositionsValue"]),  # see #nonmarginpositionsvalue
+            calculation_reliability=bal["CalculationReliability"],  # see #calculationreliability
         )
 
     def get_all_account_balances(self) -> list[AccountBalance]:
@@ -366,4 +454,9 @@ class SaxoClient:
                 "Try re-authenticating via scripts/saxo_oauth_init.py"
             )
         resp.raise_for_status()
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise SaxoAuthError(
+                f"Non-JSON response from {path}: HTTP {resp.status_code}"
+            ) from exc

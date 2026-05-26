@@ -95,10 +95,30 @@ class TestSaxoConfig:
         monkeypatch.setenv("SAXO_ENVIRONMENT", "live")
         monkeypatch.delenv("SAXO_APP_KEY_LIVE", raising=False)
         monkeypatch.setenv("SAXO_APP_SECRET_LIVE", "s")
-        monkeypatch.setenv("SAXO_AUTH_URL_LIVE", "u")
-        monkeypatch.setenv("SAXO_TOKEN_URL_LIVE", "u")
-        monkeypatch.setenv("SAXO_REDIRECT_URI", "u")
+        monkeypatch.setenv("SAXO_AUTH_URL_LIVE", "https://example.com/a")
+        monkeypatch.setenv("SAXO_TOKEN_URL_LIVE", "https://example.com/t")
+        monkeypatch.setenv("SAXO_REDIRECT_URI", "http://localhost:8080/callback")
         with pytest.raises(ValueError, match="SAXO_APP_KEY_LIVE"):
+            SaxoConfig.from_env()
+
+    def test_from_env_http_auth_url_rejected(self, monkeypatch):
+        monkeypatch.setenv("SAXO_ENVIRONMENT", "live")
+        monkeypatch.setenv("SAXO_APP_KEY_LIVE", "k")
+        monkeypatch.setenv("SAXO_APP_SECRET_LIVE", "s")
+        monkeypatch.setenv("SAXO_AUTH_URL_LIVE", "http://insecure.example/authorize")
+        monkeypatch.setenv("SAXO_TOKEN_URL_LIVE", "https://example.com/token")
+        monkeypatch.setenv("SAXO_REDIRECT_URI", "http://localhost:8080/callback")
+        with pytest.raises(ValueError, match="must use https://"):
+            SaxoConfig.from_env()
+
+    def test_from_env_http_token_url_rejected(self, monkeypatch):
+        monkeypatch.setenv("SAXO_ENVIRONMENT", "live")
+        monkeypatch.setenv("SAXO_APP_KEY_LIVE", "k")
+        monkeypatch.setenv("SAXO_APP_SECRET_LIVE", "s")
+        monkeypatch.setenv("SAXO_AUTH_URL_LIVE", "https://example.com/a")
+        monkeypatch.setenv("SAXO_TOKEN_URL_LIVE", "http://insecure.example/token")
+        monkeypatch.setenv("SAXO_REDIRECT_URI", "http://localhost:8080/callback")
+        with pytest.raises(ValueError, match="must use https://"):
             SaxoConfig.from_env()
 
 
@@ -131,6 +151,35 @@ class TestExchangeCodeForTokens:
         mock_session.post.return_value = _mock_response(400, text="invalid_grant")
         with pytest.raises(SaxoAuthError, match="Initial token exchange failed"):
             client.exchange_code_for_tokens(code="bad_code")
+
+    def test_missing_refresh_token_raises(self, client, mock_session):
+        """initial exchange で refresh_token が response にない場合は明示 raise"""
+        mock_session.post.return_value = _mock_response(200, {
+            "access_token": "AT1",
+            "expires_in": 1200,
+        })
+        with pytest.raises(SaxoAuthError, match="did not return refresh_token"):
+            client.exchange_code_for_tokens(code="callback_code")
+
+    def test_missing_access_token_raises(self, client, mock_session):
+        """access_token 欠落も明示 raise (cryptic KeyError 防止)"""
+        mock_session.post.return_value = _mock_response(200, {
+            "refresh_token": "RT1",
+            "expires_in": 1200,
+        })
+        with pytest.raises(SaxoAuthError, match="missing required keys"):
+            client.exchange_code_for_tokens(code="callback_code")
+
+    def test_non_json_response_raises(self, client, mock_session):
+        """非JSON 200 response も明示 raise"""
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.ok = True
+        resp.text = "<html>not json</html>"
+        resp.json.side_effect = ValueError("Expecting value")
+        mock_session.post.return_value = resp
+        with pytest.raises(SaxoAuthError, match="non-JSON response"):
+            client.exchange_code_for_tokens(code="callback_code")
 
 
 class TestGetAccessToken:
@@ -187,11 +236,66 @@ class TestGetAccessToken:
         mock_session.post.return_value = _mock_response(401, text="invalid refresh")
         with pytest.raises(SaxoAuthError, match="Token refresh failed"):
             client.get_access_token()
-        # Verify revoked
         row = db.conn.execute(
             "SELECT revoke_reason FROM auth_tokens WHERE id = ?", [rt_id]
         ).fetchone()
         assert row[0] == "refresh_http_401"
+
+    def test_refresh_5xx_does_NOT_revoke_token(self, client, db, mock_session):
+        """transient 5xx で refresh token を revoke しない (lockout 防止)"""
+        rt_id = db.save_token(
+            provider=PROVIDER, environment="live", token_type="refresh",
+            token_value="RT_alive", expires_at=now_jst() + timedelta(days=30),
+        )
+        mock_session.post.return_value = _mock_response(503, text="Service Unavailable")
+        with pytest.raises(SaxoAuthError, match="Token refresh failed"):
+            client.get_access_token()
+        row = db.conn.execute(
+            "SELECT revoked_at FROM auth_tokens WHERE id = ?", [rt_id]
+        ).fetchone()
+        assert row[0] is None, "5xx should NOT revoke refresh token"
+
+    def test_refresh_429_does_NOT_revoke_token(self, client, db, mock_session):
+        """rate limit (429) も transient、revoke しない"""
+        rt_id = db.save_token(
+            provider=PROVIDER, environment="live", token_type="refresh",
+            token_value="RT_alive", expires_at=now_jst() + timedelta(days=30),
+        )
+        mock_session.post.return_value = _mock_response(429, text="Too Many Requests")
+        with pytest.raises(SaxoAuthError):
+            client.get_access_token()
+        row = db.conn.execute(
+            "SELECT revoked_at FROM auth_tokens WHERE id = ?", [rt_id]
+        ).fetchone()
+        assert row[0] is None
+
+    def test_refresh_400_invalid_grant_revokes_token(self, client, db, mock_session):
+        """400 invalid_grant は definitive failure、revoke する"""
+        rt_id = db.save_token(
+            provider=PROVIDER, environment="live", token_type="refresh",
+            token_value="RT_bad", expires_at=now_jst() + timedelta(days=30),
+        )
+        mock_session.post.return_value = _mock_response(400, {"error": "invalid_grant"})
+        with pytest.raises(SaxoAuthError):
+            client.get_access_token()
+        row = db.conn.execute(
+            "SELECT revoke_reason FROM auth_tokens WHERE id = ?", [rt_id]
+        ).fetchone()
+        assert row[0] == "refresh_http_400"
+
+    def test_refresh_400_other_error_does_NOT_revoke_token(self, client, db, mock_session):
+        """400 で error が invalid_grant 以外なら revoke しない (保守的)"""
+        rt_id = db.save_token(
+            provider=PROVIDER, environment="live", token_type="refresh",
+            token_value="RT_alive", expires_at=now_jst() + timedelta(days=30),
+        )
+        mock_session.post.return_value = _mock_response(400, {"error": "temporarily_unavailable"})
+        with pytest.raises(SaxoAuthError):
+            client.get_access_token()
+        row = db.conn.execute(
+            "SELECT revoked_at FROM auth_tokens WHERE id = ?", [rt_id]
+        ).fetchone()
+        assert row[0] is None
 
     def test_refresh_rotates_old_refresh_token(self, client, db, mock_session):
         rt_id = db.save_token(
@@ -305,6 +409,16 @@ class TestSemanticAccessors:
         url = mock_session.get.call_args[0][0]
         assert "AccountKey=AK1" in url
         assert "ClientKey=CK1" in url
+
+    def test_get_account_balance_missing_field_raises(self, client, db, mock_session):
+        """balance response から required field が欠けたら SaxoAuthError"""
+        self._setup_valid_access(db)
+        # SpendingPower を意図的に省略
+        incomplete = self._balance_response()
+        del incomplete["SpendingPower"]
+        mock_session.get.return_value = _mock_response(200, incomplete)
+        with pytest.raises(SaxoAuthError, match="missing required fields"):
+            client.get_account_balance(account_key="AK", client_key="CK")
 
     def test_get_all_account_balances_iterates_active_only(
             self, client, db, mock_session):

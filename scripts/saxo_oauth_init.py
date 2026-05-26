@@ -13,8 +13,10 @@ Authorization Code grant の初回フローを対話的に実行する:
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import logging
 import secrets
+import stat
 import sys
 import threading
 import webbrowser
@@ -32,6 +34,9 @@ from src.saxo_client import SaxoAuthError, SaxoClient, SaxoConfig
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent.parent / "data" / "sensei.duckdb"
+
+# ADR-025: token_value plaintext を含む DB ファイルは owner-only にする
+DB_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600
 
 
 class _CallbackResult:
@@ -53,6 +58,12 @@ def _make_handler(expected_state: str, result: _CallbackResult):
                 self.end_headers()
                 return
 
+            # idempotency: 既に callback 処理済みなら何もしない (race 防止)
+            if result.event.is_set():
+                self.send_response(200)
+                self.end_headers()
+                return
+
             params = parse_qs(parsed.query)
             received_state = (params.get("state") or [None])[0]
             received_code = (params.get("code") or [None])[0]
@@ -61,7 +72,10 @@ def _make_handler(expected_state: str, result: _CallbackResult):
             if received_error:
                 result.error = received_error
             elif received_state != expected_state:
-                result.error = f"state mismatch: expected={expected_state!r} got={received_state!r}"
+                # SECURITY: expected_state は session secret なので error message に含めない
+                result.error = (
+                    f"state mismatch: callback returned unexpected state (got={received_state!r})"
+                )
             elif not received_code:
                 result.error = "no code in callback"
             else:
@@ -87,11 +101,45 @@ def _make_handler(expected_state: str, result: _CallbackResult):
     return CallbackHandler
 
 
+def _validate_loopback_host(host: str | None) -> None:
+    """redirect_uri の host が loopback 専用であることを保証 (network exposure 防止)"""
+    if host is None:
+        raise SystemExit(
+            "SAXO_REDIRECT_URI hostname could not be parsed. "
+            "Ensure URI starts with http:// and includes host (e.g., http://localhost:8080/callback)"
+        )
+    if host == "localhost":
+        return
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        raise SystemExit(
+            f"SAXO_REDIRECT_URI host must be 'localhost' or a loopback IP, got {host!r}"
+        )
+    if not addr.is_loopback:
+        raise SystemExit(
+            f"SAXO_REDIRECT_URI host must be a loopback address (127.0.0.1 or ::1), got {host!r}. "
+            "Binding to non-loopback exposes the OAuth callback to the network."
+        )
+
+
+def _ensure_db_file_mode(path: Path) -> None:
+    """DB ファイルが存在すれば 0o600 に強制 (ADR-025)"""
+    if path.exists():
+        try:
+            path.chmod(DB_FILE_MODE)
+        except OSError as exc:
+            logger.warning("Could not chmod %s to 0o600: %s", path, exc)
+
+
 def run_oauth_init(environment: str | None = None, port: int = 8080,
                    open_browser: bool = True) -> None:
     config = SaxoConfig.from_env(environment=environment)
-    expected_host = urlparse(config.redirect_uri).hostname
-    expected_port = urlparse(config.redirect_uri).port
+    parsed_redirect = urlparse(config.redirect_uri)
+    expected_host = parsed_redirect.hostname
+    expected_port = parsed_redirect.port
+
+    _validate_loopback_host(expected_host)
     if expected_port != port:
         raise SystemExit(
             f"Port mismatch: SAXO_REDIRECT_URI port={expected_port} but CLI port={port}. "
@@ -99,6 +147,7 @@ def run_oauth_init(environment: str | None = None, port: int = 8080,
         )
 
     conn = duckdb.connect(str(DB_PATH))
+    _ensure_db_file_mode(DB_PATH)
     db = SenseiDB(conn)
     try:
         client = SaxoClient(db, config=config)
@@ -111,27 +160,30 @@ def run_oauth_init(environment: str | None = None, port: int = 8080,
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
 
-        print(f"[saxo-oauth-init] environment: {config.environment}")
-        print(f"[saxo-oauth-init] listening on http://{expected_host}:{port}/callback")
-        print(f"[saxo-oauth-init] Open this URL in your browser if it does not open automatically:")
-        print(f"\n  {auth_url}\n")
-        if open_browser:
-            webbrowser.open(auth_url)
+        try:
+            print(f"[saxo-oauth-init] environment: {config.environment}")
+            print(f"[saxo-oauth-init] listening on http://{expected_host}:{port}/callback")
+            print(f"[saxo-oauth-init] Open this URL in your browser if it does not open automatically:")
+            print(f"\n  {auth_url}\n")
+            if open_browser:
+                webbrowser.open(auth_url)
 
-        # 5分待機。手動ログインが終わるまで block。
-        if not result.event.wait(timeout=300):
+            # 5分待機。手動ログインが終わるまで block。
+            if not result.event.wait(timeout=300):
+                raise SystemExit("[saxo-oauth-init] timeout waiting for callback (5 min)")
+
+            if result.error:
+                raise SystemExit(f"[saxo-oauth-init] callback error: {result.error}")
+
+            print("[saxo-oauth-init] code received, exchanging for tokens...")
+            client.exchange_code_for_tokens(code=result.code)
+            print(f"[saxo-oauth-init] OK. access + refresh tokens saved to {DB_PATH}")
+        finally:
             server.shutdown()
-            raise SystemExit("[saxo-oauth-init] timeout waiting for callback (5 min)")
-        server.shutdown()
-
-        if result.error:
-            raise SystemExit(f"[saxo-oauth-init] callback error: {result.error}")
-
-        print("[saxo-oauth-init] code received, exchanging for tokens...")
-        client.exchange_code_for_tokens(code=result.code)
-        print(f"[saxo-oauth-init] OK. access + refresh tokens saved to {DB_PATH}")
+            server.server_close()
     finally:
         conn.close()
+        _ensure_db_file_mode(DB_PATH)
 
 
 def main():
