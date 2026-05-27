@@ -30,7 +30,10 @@ class TestSchema:
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
         ).fetchall()
         names = {t[0] for t in tables}
-        assert names >= {"events", "predictions", "knowledge", "regime_assessments", "event_reviews", "skill_executions"}
+        assert names >= {
+            "events", "predictions", "knowledge", "regime_assessments",
+            "event_reviews", "skill_executions", "trades", "auth_tokens",
+        }
         assert "market_observations" not in names  # ADR-009: 廃止
 
     def test_regime_assessments_has_snapshot_columns(self, db):

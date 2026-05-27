@@ -7,6 +7,8 @@
 - regime_assessments: レジーム判定（入力値スナップショット含む、ADR-009）
 - event_reviews: イベント事後検証
 - skill_executions: スキル実行履歴（Airflow dag_runパターン）
+- trades: 取引履歴
+- auth_tokens: 外部API認証トークン（OAuth access/refresh、ADR-025）
 """
 from __future__ import annotations
 
@@ -182,6 +184,31 @@ class SenseiDB:
             )
         """)
         self.conn.execute("CREATE SEQUENCE IF NOT EXISTS trades_id_seq START 1")
+
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS auth_tokens (
+                id INTEGER PRIMARY KEY,
+                provider VARCHAR NOT NULL,
+                environment VARCHAR NOT NULL,
+                token_type VARCHAR NOT NULL,
+                token_value VARCHAR NOT NULL,
+                acquired_at TIMESTAMPTZ NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                acquired_via VARCHAR,
+                refresh_count INTEGER DEFAULT 0,
+                metadata VARCHAR,
+                revoked_at TIMESTAMPTZ,
+                revoke_reason VARCHAR,
+                created_at TIMESTAMP DEFAULT current_timestamp
+            )
+        """)
+        self.conn.execute("CREATE SEQUENCE IF NOT EXISTS auth_tokens_id_seq START 1")
+        # ADR-025 仕様の partial index は DuckDB 未対応 (NotImplementedException)。
+        # regular composite index で代替: get_active_token の主要 WHERE 句に効く。
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_auth_lookup "
+            "ON auth_tokens(provider, environment, token_type)"
+        )
 
     # ── events ──
 
@@ -637,6 +664,76 @@ class SenseiDB:
             "SELECT * FROM trades WHERE exit_date IS NULL ORDER BY entry_date"
         ).fetchdf().to_dict("records")
         return rows
+
+    # ── auth_tokens (ADR-025) ──
+
+    def save_token(
+        self,
+        provider: str,
+        environment: str,
+        token_type: str,
+        token_value: str,
+        expires_at: datetime,
+        *,
+        acquired_via: str = None,
+        refresh_count: int = 0,
+        metadata: str = None,
+    ) -> int:
+        _require_aware(expires_at, "expires_at")
+        token_id = self.conn.execute(
+            "SELECT nextval('auth_tokens_id_seq')"
+        ).fetchone()[0]
+        self.conn.execute(
+            "INSERT INTO auth_tokens "
+            "(id, provider, environment, token_type, token_value, "
+            "acquired_at, expires_at, acquired_via, refresh_count, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [token_id, provider, environment, token_type, token_value,
+             now_jst(), expires_at, acquired_via, refresh_count, metadata],
+        )
+        return token_id
+
+    def get_active_token(
+        self,
+        provider: str,
+        environment: str,
+        token_type: str,
+    ) -> Optional[dict]:
+        """最新の未失効・未revokeなトークンを返す。なければ None。"""
+        row = self.conn.execute(
+            "SELECT id, provider, environment, token_type, token_value, "
+            "acquired_at, expires_at, acquired_via, refresh_count, metadata "
+            "FROM auth_tokens "
+            "WHERE provider = ? AND environment = ? AND token_type = ? "
+            "AND revoked_at IS NULL AND expires_at > ? "
+            "ORDER BY acquired_at DESC LIMIT 1",
+            [provider, environment, token_type, now_jst()],
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row[0],
+            "provider": row[1],
+            "environment": row[2],
+            "token_type": row[3],
+            "token_value": row[4],
+            "acquired_at": row[5],
+            "expires_at": row[6],
+            "acquired_via": row[7],
+            "refresh_count": row[8],
+            "metadata": row[9],
+        }
+
+    def revoke_token(self, token_id: int, reason: str = None) -> None:
+        existing = self.conn.execute(
+            "SELECT id FROM auth_tokens WHERE id = ?", [token_id]
+        ).fetchone()
+        if existing is None:
+            raise ValueError(f"Token {token_id} not found")
+        self.conn.execute(
+            "UPDATE auth_tokens SET revoked_at = ?, revoke_reason = ? WHERE id = ?",
+            [now_jst(), reason, token_id],
+        )
 
     # ── self-evaluation ──
 

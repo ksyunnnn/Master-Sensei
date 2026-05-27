@@ -18,6 +18,7 @@
 | docs/gdr/ | 成長メカニズムの判断記録 |
 | docs/code-review-checklist.md | 統計・金融コードのレビュー基準（ADR-022） |
 | docs/testing-guidelines.md | 統計・金融コードのテスト設計原則（ADR-022） |
+| docs/api/ | 外部API公式仕様の集約（ADR-026、provider別） |
 
 ## Data Architecture (ADR-001)
 
@@ -30,6 +31,14 @@
 - FRED: 9シリーズ（公式、1-2日遅延）
 - Tiingo: 10シンボル日足 + 8シンボル5分足
 - yfinance: VIX/VIX3M/Brent即時取得（ProviderChainでFREDにフォールバック）
+- Saxo OpenAPI: 口座残高・ポジション (Live, OAuth, ADR-025)
+
+## 外部 API 統合 (ADR-026)
+
+- 全 provider の公式仕様は `docs/api/<provider>/` に集約 (Saxo は完全文書化済、他は段階的)
+- **API field の意味を変数名から推測しない**。`docs/api/<provider>/` を必ず参照
+- `src/*_client.py` 外部での raw dict キー access 禁止。意味的アクセサ経由のみ
+- 新規 provider 追加時は `docs/api/TEMPLATE.md` に従う
 
 ## DB Write基準 (ADR-003)
 

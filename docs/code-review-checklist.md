@@ -56,7 +56,18 @@ Created: 2026-04-02
 - [ ] テストで同一 seed が同一結果を保証するか
 - [ ] 浮動小数点の比較に適切な許容誤差（pytest.approx等）を使っているか
 
-## 4. テスト設計
+## 4. 外部 API 統合 (ADR-026)
+
+- [ ] `src/*_client.py` 外部に `["FieldName"]` パターンの raw dict access が無いか (`grep -rn '\["[A-Z][a-zA-Z]*"\]' src/ scripts/`)
+- [ ] 新規 endpoint 使用時、対応する意味的アクセサが `src/<provider>_client.py` に追加されているか
+- [ ] 各意味的アクセサに `docs/api/<provider>/<file>.md#<field>` の citation コメントがあるか
+- [ ] field 意味の解釈に推測が含まれていないか (公式 doc 未記載のものは "ページに記載なし" と明示)
+- [ ] 新規 provider 追加時、`docs/api/<provider>/` を `TEMPLATE.md` に従って作成しているか
+- [ ] `docs/api/README.md` の provider 一覧表が最新か
+
+事例: 2026-05-26、Saxo `CashBalance` を `CashAvailableForTrading` と混同し position sizing を誤った (ADR-026 Context)
+
+## 5. テスト設計
 
 テスト設計の詳細原則は @docs/testing-guidelines.md を参照。
 
