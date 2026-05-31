@@ -13,6 +13,10 @@ learning/data/*.duckdb
 learning/data/*.duckdb.wal
 *.parquet.bak
 
+# Research artifacts (large binaries / raw intraday dumps — regenerable, not for VCS)
+data/research/polygon_intraday/
+data/research/charts_*/
+
 # Python
 __pycache__/
 .pytest_cache/
