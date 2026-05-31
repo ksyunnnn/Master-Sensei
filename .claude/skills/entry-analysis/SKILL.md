@@ -288,6 +288,7 @@ tid = db.add_trade(
         "[シナリオ] {選択したシナリオの要約}. "
         "[注文] entry=${entry} TP=${tp} SL=${sl}"
     ),
+    status="{placed/filled}",  # ADR-027: 即時約定なら filled(既定)、resting指値/IFD-OCOは placed
 )
 print(f"Trade #{tid} recorded")
 conn.close()
@@ -329,3 +330,4 @@ PYEOF
 - heredoc内でトリプルクォート禁止（グローバルCLAUDE.md）
 - {対象銘柄} のプレースホルダーは実行時にユーザー指定の銘柄に置き換える
 - ユーザーがtrade記録を希望しない場合（分析だけ見たい場合）はadd_trade()をスキップ可
+- ADR-027: resting指値/IFD-OCOを発注時点で記録する場合は `status="placed"` を渡す。約定確認後に `update_trade_status(tid, "filled")`、不発キャンセル時は `update_trade_status(tid, "cancelled", notes=...)`。物理削除はしない（発注=意思決定の事実を残す）

@@ -1,6 +1,316 @@
 # Condition
 
-Last updated: 2026-05-24 14:45 JST (session 34、Memorial Day weekend Day1、米5/22引け値取得 + 予測ID6 FALSE resolve + Iran 60日休戦MOU draft 5/23合意 + Cleveland Fed nowcast PCE 4.18% + SOXLスィング多角分析). **次の catalyst: 5/24 (日) afternoon JST Trump+仲介団 Iran deal 公式発表予定 → 5/26 (火) 22:30 JST US Memorial Day明け寄付で weekend headlines 一括 pricing-in、SOXL gap riskレンジ +3-5% / -5-8% 想定**
+Last updated: 2026-05-31 (session 37 継続、週末。市場データは 5/29 金曜引けが最新)。**trade #11 ($215 GTC 指値) 不発キャンセル → ADR-027 で trades に status 列導入し cancelled として記録**。scan-market 2件登録（5/28 record close + MRVL beat）、レジーム **risk_on (VIX normal→low)** を 5/29 付で記録。現在オープンポジション 0 件・口座状況変化なし
+
+---
+
+## ⚡ Session 37 Handoff (2026-05-29 18:01 JST、米寄付前)
+
+### 確定事項
+
+#### データ更新 (18:01 JST)
+`update_data.py` 実行。マクロ 9 系列最新 5/29、日足 10 銘柄 5/28、5分足 8 銘柄 5/28 15:55 ET。SOXL 5/28 close $224.63。
+
+#### trade #11 整合性: ADR-027 で「発注ライフサイクル」を導入
+- **問題**: #11 (SOXL long $215 GTC IFD-OCO、5/29 00:18 JST 発注時点で記録) が約定済みポジションとして残存。だが $215 指値は不発（発注後レギュラー安値 $224.19、$215 未到達）でユーザーがキャンセル。`trades` は約定前提スキーマで「不発」を表現できず、保有ポジションと誤認するリスク。
+- **判断**: 物理削除は ADR-018（後知恵バイアス排除=発注時点の意思決定を記録）に反するため却下。**ADR-027** で `trades.status` (placed/filled/cancelled/expired) を追加。既存全行 filled にバックフィル、#11 を **cancelled** として note 付きで記録。
+- **波及**: `get_open_trades()` を `status='filled' AND exit_date IS NULL` に変更（placed/cancelled を除外）、`get_pending_orders()`・`update_trade_status()` 追加、`add_trade(status=)` 追加。entry-analysis SKILL.md に placed/filled 指針追記。全 704 テスト緑。
+- **結果**: オープンポジション 0 件・pending 0 件。口座「変化なし」と DB 一致。
+
+#### データ被覆の学び（ユーザー指摘「pre の値も認識して」）
+5分足 parquet (Tiingo IEX) は **ET 09:30–15:55 のレギュラー時間のみ**（プレ/アフター 0 本）。GTC/延長時間有効の指値はプレ・アフターでも約定しうるため、レギュラー安値だけで「不発」を断定するのは不完全な検証。価格・安値・高値を語る時は参照データが延長時間を含むか確認し、進行中のプレマーケットはリアルタイム取得（yfinance/Tiingo）で補う。
+
+#### /scan-market (5/28 22:31 → 5/29 19:47 JST、2件登録)
+- **market/positive** (5/29 05:00 JST = 5/28 引け): S&P500・Nasdaq 揃って史上最高値 (各+0.5%)、4月 PCE 3年高にも関わらず。AI infra 主導 (MSFT/ORCL/PLTR +3-4%、SNOW +30%)。**SOXL 5/27 $217.98 → 5/28 $224.63 (+3.05%、Parquet 確認)** で前日 chip selloff (-3.46%) を全戻し。前日の AI capex sustainability doubt thesis を市場が1日で否定。
+- **semiconductor/positive** (5/28 05:05 JST = 5/27 AMC): MRVL Q1 FY27 beat+raise (rev $2.418B 過去最高 +28%、EPS $0.80 vs $0.75、FY27/28 上方、AI networking 需要)、aftermarket +5% → 5/28 premarket -2% sell-the-news (K-016)。SEC 8-K (mrvl-20260527.htm) で確定。
+- スキップ: Iran 60日MOU (5/23 既登録 slow-walk)、oil (Parquet 91.0 vs web 97.5 乖離・routine)、Section 232 (7/1 Commerce 報告まで進展なし)、Fed (今週 discrete なし)。
+
+#### /update-regime (5/29 付で記録)
+- **risk_on (score +1.36)**。前回 5/27 risk_on から overall 不変だが **VIX 16.77→15.84 で normal→low に格上げ**、Brent 92.4→91.0 軟化。リスク選好やや強まる方向、5/28 record close と整合。
+- 入力スナップショット: VIX 15.84 / VIX3M 19.11 (ratio 0.829 steep_contango) / HY 2.71 / YC 0.46 / Brent 91.01 / USD 119.29 (ADR-009)。
+- 記録日は `today_jst()` でなく明示 5/29（データが 5/29 金曜引け＝最新、週末で新規データなし）。
+
+---
+
+## ⚡ Session 36 Handoff (2026-05-28 13:43 - 5/29 00:10 JST、米寄付前 → 米セッション中盤)
+
+### 今日のセッションで確定した事項
+
+#### Saxo OAuth 不通 + Excel transactions 経由の代替検証 (13:43-14:30 JST)
+
+5/27 22:27 JST 期限の refresh token (実効寿命 ~1h 仕様、ADR-025 update 候補) が ~15h 放置で期限切れ + ユーザー側 login trouble で `scripts/saxo_oauth_init.py` 再認証不能。代替として **ユーザー提供の Saxo Excel `Transactions_22013145_2026-03-11_2026-05-28.xlsx`** で取引履歴を分析:
+- 期間: 2026-03-11 〜 2026-05-28、計 16 約定 / 8 ラウンドトリップ、口座 T126816 のみ抽出
+- 確定 P&L 合計 **-96,901 JPY** (5/27 売却分未計上)、SOXS 4/14-5/18 -92,349 JPY が損失の主因 (50株 $21.60→$10.05)
+- 入金 200,000 JPY → 累積 -49% 損失
+
+#### trade DB 整合性 2 段修正 (14:30-23:30 JST)
+
+| 操作 | 内容 | 結果 |
+|------|------|------|
+| **#9 close** | 5/27 buy @$215 → 5/28 sell @$242.43 (実約定) を `SenseiDB.close_trade()` で正規 close | exit_date=2026-05-28、pnl_usd=+$27.43、holding_days=1 |
+| **#8 第1段** | Excel に存在しない fictitious と誤判断し DELETE → entry_reasoning に「P120136 口座」記載発覚 → 復元（exit fields NULL） | 過小復元 (anchoring bias による誤 DELETE) |
+| **#8 第2段** | /scan-market 実行中に **前回 (5/27 21:36) metadata で trade_8_closed factual 記録**発見、exit 情報を確定値で完全復元 | exit=2026-05-26 @$210、pnl=+$34/+19.32%、holding_days=5 |
+
+→ Excel = T126816 抽出のみ、**P120136 口座の trade #8 は別 export 必要**だったことが原因。学びとして `feedback_destructive_action_full_field_check.md` を memory に保存 (DB DELETE 提案前は全 field SELECT + 抽出スコープ明示)。
+
+#### /scan-market 実行 (22:24 JST、2 events 登録)
+
+前回 5/27 21:36 JST 以降 25h ウィンドウ:
+
+| 日時(JST) | カテゴリ | impact | サマリ |
+|-----------|---------|--------|--------|
+| 5/28 05:00 | semiconductor | **negative** | 5/27 chip brutal selloff: **QCOM -13% (2020以来最悪)**、INTC -8%、MU -6%、SOXX -5%、NVDA -1% 選別的。SOXL gap-up open $242.66 → close $217.98 (intraday open→close -10.2%、prev close 比 -3.46%) |
+| 5/28 21:30 | fed | neutral | Q1 GDP 2nd 2.0% 不変、PCE +4.5% 不変、**Core PCE +4.4% (+0.1pp 上方修正、marginal hawkish)** |
+
+#### /update-regime 実行 (22:33 JST、記録スキップ)
+
+| 指標 | 今日 (5/28) | 前日 (5/27) | 判定 |
+|------|------------|------------|------|
+| overall | risk_on (+1.07) | risk_on | 完全一致 |
+| VIX/HY/YC/Brent/USD | 微変動 | 微変動 | 全 6 sub-regime 不変 |
+
+ADR-003 「前日と変化がない場合は記録不要」に従い記録スキップ判断 (ユーザー承認待ち)。
+
+#### 5/27 chip selloff の真因特定 (00:00 JST)
+
+ユーザー「209 まで下げの原因は？」要請に対し他銘柄横断調査:
+
+**根源: Intel Northland Capital downgrade** (5/26-5/27、Outperform → Market Perform、price target suspended)
+
+**thesis**:
+1. AI capex sustainability 疑問 — ハイパースケーラー営業 CF 100% を chip 投入、業界 $260B 債務
+2. INTC サーバー CPU シェア 54.9% (-3.7pp)、AMD +2.3pp / ARM +1.4pp で侵食
+3. 強い Q1 にもかかわらず rally 織り込み済
+
+**結果は chip 内 rotation**:
+
+| 銘柄 | 5/28 intraday low | 種別 |
+|------|------------------|------|
+| INTC | -4.48% | Northland thesis 主犯 |
+| AVGO/MU/MRVL | -1.9〜-2.5% | hyperscaler exposure (=AI capex 懸念) |
+| AMD | -0.41% | INTC からシェア奪取で勝者側 |
+| QCOM | -0.81% | mobile/auto で hyperscaler 露出薄 |
+| NVDA | -0.65% | AI king、selective resilience |
+
+**broad market 無傷の検証**: SPY -0.16% / QQQ -0.42% intraday low、VIX -2.09% (panic 否定)、TLT -0.04% (金利懸念なし)、Brent -1.28% (Iran 無視)。**systemic 売りではなく chip 内ローテーション** が確定。
+
+#### SOXL monitor 設置・運用 (22:44 JST 〜)
+
+`scripts/monitor_soxl_2026-05-28.py` 新設、yfinance polling で SOXL/SOXX/MU/NVDA/AMD を実時間追跡。
+
+| version | poll | trigger 種類 |
+|---------|------|-------------|
+| v1 (22:44-23:25) | 180s | LONG_DIP_zone (210/205/200) / SHORT_RALLY_zone (230/235) / VOL_FLAG / DEEP_DIP / GAP_FILL |
+| **v2 (23:25-)** | **60s** | v1 + **REVERSAL_UP/DOWN** (session low/high から ±1.5% bounce + NVDA leadership 確認) |
+
+**5/28 intraday の発火履歴**:
+
+| 時刻 (JST) | trigger | SOXL |
+|-----------|---------|------|
+| 22:47 | LONG_DIP_210 | $209.87 (寄付 -3.72%) |
+| 23:05 | (session low) | **$208.30 (-4.44%、V-bottom)** |
+| 23:14 | VOL_FLAG_4 | $218.11 (+4.7% bounce from low) |
+| 00:01-0:04 | VOL_FLAG_3 / REVERSAL_UP / VOL_FLAG_4 | $221.86 → $224.02 |
+
+→ session range **$208.30〜$224.02 = +7.5%**、まさに教科書的 V 反転。REVERSAL_UP は NVDA leadership 条件で false positive を上手く抑止 (22:47 の初期 bounce では NVDA -0.16% で不発、00:02 で NVDA +0.02% 確認後に発火)。
+
+#### /entry-analysis 実行 + trade #10 記録 (23:38 JST)
+
+| 軸 | 評価 |
+|----|------|
+| Regime | risk_on (+1.07) |
+| SOXL Flow | bullish (+0.70)、1d -3.46% / 3d +22.2% / σ +1.76 |
+| σ position (5/27 close) | +1.76σ、+1.5σ=$210.29、+2σ=$224.91 |
+| K-029 status | 3d +22.2% で +25% 閾値 1 step 直下 |
+| 5/27 candle | O=H=$242.66, L=$204, C=$217.98 = shooting star + long lower wick |
+
+**trade #10 記録**: SOXL long、entry $210 limit、TP $220、SL $206、1 株、confidence 0.50、setup `long_shallow_dip_1.5sigma_support_post_chip_selloff`。シナリオ A (mean reversion 30%) + B (range 40%) の双方で約定可能性 ~55% 想定。
+
+#### OCO 再提案 (00:05 JST、$223.85 起点で再評価)
+
+V 反転完了後、A1 ($210) が deep OTM 化。**SOXS は day-trade 不可制約** (ユーザー指定) で SOXL only に絞り再設計:
+
+| # | エントリー | TP | SL | R:R | fill 確率 |
+|---|----------|----|----|------|----------|
+| **推奨 ①** | **$215 limit buy** | $223 | $210 | **1:1.6** | **~50%** |
+| ② | $226 stop buy | $235 | $221 | 1:1.8 | ~25% |
+| ③ | $228 limit short (K-031 で A1 cancel 必須) | $218 | $233 | 1:2.0 | ~30% |
+
+→ ① 採用なら A1 と 2-tier ladder ($210 + $215)、平均 $212.5 ロング狙い。
+
+### 重要な観察 (バイアス点検)
+
+- **「Excel に無いから fictitious」anchoring bias で trade #8 を誤 DELETE**: entry_reasoning text に P120136 口座明記があったのを読まずに DELETE 提案、ユーザー承認後実行 → 復元 → さらに前回 metadata で完全 exit info 発見の二段救済。学び memory に保存 (feedback_destructive_action_full_field_check)
+- **broad market 横ばい中の chip 局所 selloff は rotation**: Northland INTC thesis 起点で「AI capex 投資先 (INTC/AVGO/MU/MRVL) を売り、勝者側 (AMD/QCOM) を買う」。systemic 売りと誤認しないこと
+- **K-029 (3d +25% mean reversion) は閾値 1 step 下でも近似発動**: 5/27 3d +22.2% で +25% に未達ながら、5/27 brutal selloff (-10% intraday) + 5/28 朝の continuation → V 反転は K-029 の自然な path として整合
+- **monitor の REVERSAL trigger 設計が機能**: NVDA leadership 条件が「単なる bounce」と「真の反転」を分離、22:47 初動では未発火、00:02 NVDA 復帰確認後に正発火
+- **A1 ($210 limit) は時間経過で deep OTM 化**: V 反転後の price action で fill 確率激減、insurance 扱いに格下げ判断
+
+### 未解決予測: **0 件** (trade #9 prediction 紐付け遡及未実施 = ADR-003 violation 候補継続)
+
+### Saxo 状況サマリー (Excel 経由データ + 推定)
+
+| 口座 | 状態 |
+|------|------|
+| T126816 | trade #9 close 済 (+$27.43、$242.43 寄付 fill)、現在 flat |
+| P120136 | trade #8 close 済 (+$34、$210 で 5/26 fill 確認)、T+2 入金 5/28 受渡完了想定 |
+
+OAuth 復活後、closedpositions API で T126816/P120136 両方の 5/27-5/28 fill 確定値 audit + trade #10 (もし発注実行されれば) ライブ確認の優先順位高。
+
+### 次セッション開始時の優先順位
+
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. **monitor 状態確認**: bash task `bgk8h2hbf` が稼働中か (~5:00 JST 5/29 まで)、output tail
+3. **MRVL/Dell/Costco AMC 結果確認** (5/29 05:00 JST = 5/28 ET 引け直後)
+4. **SOXL 5/29 米寄付 (22:30 JST) gap 反応**: MRVL beat なら gap up でロング/ショート再評価、miss なら gap down で A1 ($210) 約定可能性高
+5. **trade #10 fill 状況確認**: Saxo IFD-OCO の $210 limit が実発注されたか、約定 or 未約定
+6. **Saxo OAuth 再認証** (login trouble 解消後、refresh token chain 再構築)
+7. trade #9 prediction 遡及起草 (ADR-003 violation 解消)
+8. `/scan-market` 5/29 状況 (MRVL/Dell/Costco 反応、Iran 続報、Section 232 など)
+9. `/update-regime` データ更新後の再判定
+10. ADR-025 update 検討 (Saxo refresh token 実効寿命 ~1h vs 想定 60-90日 の乖離)
+11. K-029 evidence に 5/27→5/28 case (premarket gap +10% → 寄付直後 -14.5% fade → 翌日 V 反転) 追記候補
+12. **新 knowledge 候補**: 「broad market 横ばい中の chip selloff は rotation thesis (Northland INTC downgrade パターン) を疑う」(n=1、要追加観察)
+
+---
+
+## ⚡ Session 35 Handoff (2026-05-27 21:23-22:00 JST、米プレマーケット前)
+
+### 今日のセッションで確定した事項
+
+#### Saxo OAuth 再認証 (21:27 JST)
+
+前回 5/27 01:41 JST の refresh token chain (実効寿命 ~1h) が ~19h 放置で expire → `python scripts/saxo_oauth_init.py` でブラウザ再認証実施、access+refresh token 再保存。**Saxo refresh token の実効寿命 ≈ 1h** は ADR-025 設計時の想定 (60-90日) と大きく乖離、今後セッション間で chain 維持するには 1h 以内に必ず API 呼出が必要 (将来 ADR-025 update 候補)。
+
+#### Saxo Live snapshot + Open Orders 取得 (21:28 / 21:55 JST)
+
+| 口座 | 通貨 | NAV | spending_power | settled cash | T+2 未決済 | 状態 |
+|------|------|-----|----------------|--------------|-----------|------|
+| T126816 | JPY | 104,633 | 68,750 | 103,275 | -34,525（買付） | **SOXL 1株 含み益 (stale PnL +35,707 JPY)** |
+| P120136 | JPY | 55,387 | 55,387 | 22,075 | +33,312（売却） | trade #8 利確分入金待ち |
+
+**Trade #9 (open)**: T126816 SOXL Long 1株 @ **$215.00** (entry 5/26 11:54 ET = 5/27 00:54 JST)、setup `swing_long_IFD_pullback_T126816`、regime_at_entry `risk_on`。
+
+**Working orders (T126816、OCO リンク)**:
+| OrderId | BuySell | Type | Price | 用途 |
+|---------|---------|------|-------|------|
+| 5406862623 | Sell 1 | **Limit @ $230** | TP | 寄付 cross で執行 |
+| 5406862624 | Sell 1 | **StopIfTraded @ $215** | **SL = BREAKEVEN** | リスク 0 |
+
+注: 前回 metadata の「IFD $205 BUY × 2 still Working」は今回確認時不在（filled or cancelled）。
+
+**Trade #8 (closed)**: P120136 SOXL Long 1株 $176 → $210 (5/21→5/26、+$34 / +19.3% / 5d hold)、T+2 入金 33,312 JPY 待ち。**prediction_id 未紐付け = ADR-003 violation 候補 (次セッションで遡及起草要)**。
+
+#### /scan-market 実行 (21:34 JST、1 event 登録)
+
+前回 5/27 01:30 JST 以降 20h を6カテゴリ調査。
+
+| 日時(JST) | カテゴリ | impact | サマリ |
+|-----------|---------|--------|--------|
+| 5/27 05:00 | market | **positive** | 5/26 US close 双子 record high: S&P 7,519.12 +0.61% / Nasdaq 26,656.18 +1.19%、MU +19% で一時 $1T mkt cap touch (UBS upgrade $535→$1,625 効果)、SOXL +15.38%、NVDA -1.07% 単独 laggard で **4連続 post-earnings slide パターン継続** |
+
+スキップ 7件: Iran slow-walk 継続 (K-009 既パターン)、Fed Polymarket zero-cut dominant pricing、MU $1T mkt cap (downstream)、UAE OPEC exit (4/28 既登録)、CRM Q1 FY27 result (未公表)、Brent/WTI daily、Section 232 新規進展なし。
+
+#### SOXL 5/27 premarket gap up 観察 (21:55 JST)
+
+ユーザー「premarket 確認」要請に対し yfinance + Polygon で交差検証:
+
+| 時刻 (ET) | 価格 | 出来高 | 出典 |
+|-----------|------|--------|------|
+| 5/26 15:55 (regular close 前) | $227.89 | 71,292 | Polygon 5m |
+| 5/26 19:55 (after-hours 最終) | $230.40 | 36,110 | Polygon 5m |
+| 5/27 07:05 (premarket 開始) | $244.15 | 0 (仲値) | yfinance 5m prepost |
+| 5/27 08:44 (~21:44 JST) | **$252.29** | 0 (仲値) | yfinance 1m prepost |
+
+→ **5/26 close → 5/27 premarket gap = +9.5%**、SOXX +3.3% (3x leverage 整合)。Saxo PnL ($10.72 = $225.72) は完全 stale（subscription 範囲外、`LastUpdated: 0001-01-01`、`PriceTypeBid/Ask: NoAccess`）。
+
+**ドライバー未特定**: scan-market では gap を説明する specific news 未発見。Asian/European session で発生した何か（具体的 catalyst 未確認、要 5/28 review-events）。
+
+#### TP $230 据置判定 (21:58 JST、ユーザー確定)
+
+**Limit Sell @ $230 の挙動**: $230 「以上」で売る = 寄付 cross 価格 ≥ $230 なら **cross 価格で fill**（$230 ではない）。premarket $252 維持なら fill ~$245-255 = +$30-40 / +14-19% per share 期待。
+
+判断根拠:
+- TP は「キャップ」ではなく「下限保証付き寄付売り注文」
+- SL $215 = breakeven、リスクゼロ
+- K-029 mean reversion 閾値超過 (5/19 底 $135 → 現 $252 = **+86.7%**、trade #6 entry $176 → +43.2%) で chase は危険
+- 寄付 cross が $230 割れる急落のみが「もっと取れた」事案、それは Limit @ $230 残しでも対応可
+
+### 重要な観察 (バイアス点検)
+
+- **Saxo Live data が stale な前提を見落としていた**: PnL $10.72 = $225.72 を current mark と誤認、premarket $252 で見直すまで recommendation の base price が誤っていた。**今後 Saxo 経由 quote は必ず yfinance/Polygon と cross verify**
+- **trade #9 prediction 未紐付け**: 次セッションで「現 mark $252 → 5/30 米引け までの方向性」を確信度付きで遡及起草要
+- **利確 → 高値ロール ($210→$215) は結果オーライ**: trade #8 5/26 exit $210 → trade #9 entry $215 → premarket $252 で +$37 浮動利益、$5 高でのロールが正解 (ただし事前評価では K-029 警告を出していた、運の要素大)
+- **5/27 premarket gap +9.5% のドライバー未特定**: AH $230 → premarket $244 の +6% overnight gap は何か specific catalyst のはず、5/28 review-events で要確認
+
+### 未解決予測: **0 件** (trade #9 に prediction 未紐付け、要遡及起草)
+
+### Session 35 延長 (2026-05-28 00:00-00:30 JST、米寄付後 1h46min)
+
+#### Trade #9 TP fill 確定 (寄付直後)
+
+ユーザー Saxo notification 受信。yfinance で fill 価格 verify:
+
+| 項目 | 値 |
+|------|---|
+| 5/26 close (yf) | $230.35 |
+| premarket peak (5/27 08:44 ET) | $252.29 |
+| **寄付 cross (5/27 09:30 ET)** | **$242.66** (Volume 12.87M) |
+| **TP $230 Limit Sell 約定価格** | **$242.66 想定** (cross > $230 で open 価格 fill) |
+| Entry | $215.00 |
+| Per-share profit (gross) | **+$27.66 / +12.87%** |
+| JPY 換算 (@160 JPY/USD) | +4,426 JPY gross、commission -1,600 JPY 控除後 **~+2,800 JPY net** |
+
+→ **寄付 ATH 近辺で出れた、ほぼ optimal exit**。Saxo API は refresh token chain 再切れで actual fill 確認は再認証後 (ユーザー pending)。
+
+#### SOXL 寄付後急落 — K-029 mean reversion 完全 validated
+
+| 時刻 (ET) | SOXL | from open |
+|----------|------|-----------|
+| 09:30 (open) | $242.66 | – |
+| 09:37 | $223.37 | -8.0% |
+| 09:47 | $211.55 | -12.8% |
+| 11:16 (00:16 JST 5/28) | **$207.61** | **-14.5%** |
+
+→ premarket gap +10% → 寄付 1分以内に剥がれ、1h46min で **-14.5%** の急落。**TP $230 据置判断 + K-029 警告が完璧に validated**。
+
+判断比較:
+- TP $230 据置 (実行) → +$27.66 確定
+- 仮 TP $260 raise → 未約定 → 現価 $207.61 で **含み損 -$7.39 / -3.4%**
+- 仮 Phase 3 opportunistic SOXX (即発火 -3% trigger) → SOXX も -10% で **-9,500 JPY loss**
+
+→ **TP 据置 + flat default が完全正解**。Phase 3 opportunistic plan は trigger 「30min 以内に -3%」では速すぎて **falling knife を掴む設計**、今後 plan refine 候補 (60-90min settling + volume 確認後)。
+
+#### 重要 lesson (今回明確に validated)
+
+- **K-029 (急騰後 +25% mean reversion 閾値)**: 5/19 底 $135 → premarket $252 = +86.7% で閾値超過時の警告が **同日中に発動**。lesson の predictive power 確認、knowledge K-029 evidence に今回 case 追記 (upsert、last_verified_date 2026-05-28、evidence 517 chars)
+- **「premarket gap up +10% = 75% 陽線継続」hypothesis (n=12)**: 今回 fade 17% 側、サンプル不足で structural 化見送り判断は妥当
+- **opportunistic re-entry の trigger 設計**: 「-3% in 30min」は速すぎる falling knife、refine 必要
+
+#### TP fill 後の bottom hunting 判定 (02:35 JST、ユーザー「下がってませんか？エントリーすべき？」に対応)
+
+13:35 ET snapshot: SOXL $213.45 (-7.34% from $230.35)、SOXX $559.91 (-2.45%)、TECL $219.01 (-2.78%)、SPY -0.17% / QQQ -0.40% / VIX 16.78 (-1.35%)。**半導体限定 sector rotation**、market broad は無事。SOXL bottom $208.82 (13:05 ET) から +2.2% bounce 進行中だが **volume 580K→265K で declining = ショートカバー主導の薄い反発**。
+
+**判定: エントリー見送り (wait)**。理由:
+1. CRM/SNOW/HPQ AMC が 2.5h 後 binary risk、Saxo IFD-OCO は AH 反応不可
+2. Dead cat bounce パターン疑い、second leg down リスク
+3. K-029 mean reversion 未完了 (5/19 底 + ATR 圏 ~$170 まで戻る余地)
+4. R/R 計算で期待値 ~0、disciplined entry に値しない
+
+バイアス点検: 「下がってるから入りたい」は anchoring bias (premarket $252 / 寄付 $242 に anchor)。本日 +$27/+12.87% 獲得済みで即時 press の経済合理性低い、「勝った後は休む」 discipline 推奨。
+
+### 次セッション開始時の優先順位
+
+1. `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST'` 時刻確認
+2. **Saxo OAuth 再認証** (refresh token chain 再切れで API 不可)
+3. **trade #9 actual fill price 確定** (Saxo ClosedPositions API)、DB trades テーブル update (exit_price, exit_date, pnl_usd, pnl_pct, holding_days, exit_reasoning, discipline_score)
+4. **trade #9 prediction 遡及起草** (ADR-003 violation 解消、確信度・期限・反証条件込み)
+5. **CRM/SNOW/HPQ AMC 結果確認** (5/28 05:00 JST = 5/27 ET AMC、enterprise software triple-header AI capex test)
+6. `/review-events` 候補: 5/27 SOXL gap up → -14.5% fade (K-029 validated impact)、Iran slow-walk
+7. **K-029 knowledge entry の confidence 引き上げ** (新規 case として追加観察)
+8. **opportunistic re-entry plan refine** (trigger 条件の改善: 60-90min settling 後 + volume 確認)
+9. **5/29 21:30 JST April PCE deflator** = 週内最重要 macro、Cleveland Fed nowcast 4.18% verify
+10. Saxo refresh token chain 維持の改善検討 (ADR-025 update、~1h 寿命 vs 60-90日想定の乖離)
 
 ---
 
