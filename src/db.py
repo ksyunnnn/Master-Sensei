@@ -180,9 +180,21 @@ class SenseiDB:
                 discipline_score INTEGER,
                 review_notes TEXT,
                 prediction_id INTEGER,
+                status VARCHAR NOT NULL DEFAULT 'filled',
                 created_at TIMESTAMP DEFAULT current_timestamp
             )
         """)
+        # ADR-027 migration: add status column to existing DBs (backfill 'filled')
+        trade_cols = {
+            row[0] for row in self.conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'trades' AND table_schema = 'main'"
+            ).fetchall()
+        }
+        if "status" not in trade_cols:
+            self.conn.execute(
+                "ALTER TABLE trades ADD COLUMN status VARCHAR DEFAULT 'filled'"
+            )
         self.conn.execute("CREATE SEQUENCE IF NOT EXISTS trades_id_seq START 1")
 
         self.conn.execute("""
@@ -586,6 +598,9 @@ class SenseiDB:
 
     # ── trades (ADR-015) ──
 
+    # ADR-027: 発注ライフサイクルの状態
+    TRADE_STATUSES = ("placed", "filled", "cancelled", "expired")
+
     def add_trade(
         self,
         instrument: str,
@@ -601,19 +616,22 @@ class SenseiDB:
         setup_type: str = None,
         entry_reasoning: str = None,
         prediction_id: int = None,
+        status: str = "filled",
     ) -> int:
         if confidence_at_entry is not None and not (0.0 <= confidence_at_entry <= 1.0):
             raise ValueError("confidence_at_entry must be 0.0-1.0")
+        if status not in self.TRADE_STATUSES:
+            raise ValueError(f"status must be one of {self.TRADE_STATUSES}")
         tid = self.conn.execute("SELECT nextval('trades_id_seq')").fetchone()[0]
         self.conn.execute(
             "INSERT INTO trades "
             "(id, instrument, direction, entry_date, entry_price, quantity, "
             "regime_at_entry, vix_at_entry, brent_at_entry, confidence_at_entry, "
-            "setup_type, entry_reasoning, prediction_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "setup_type, entry_reasoning, prediction_id, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [tid, instrument, direction, entry_date, entry_price, quantity,
              regime_at_entry, vix_at_entry, brent_at_entry, confidence_at_entry,
-             setup_type, entry_reasoning, prediction_id],
+             setup_type, entry_reasoning, prediction_id, status],
         )
         return tid
 
@@ -659,9 +677,47 @@ class SenseiDB:
             [discipline_score, review_notes, trade_id],
         )
 
+    def update_trade_status(self, trade_id: int, status: str, *, notes: str = None):
+        """発注ライフサイクルの結末を記録する (ADR-027)。
+
+        placed → {filled, cancelled, expired} の遷移を想定。物理削除はしない
+        （発注=意思決定の事実を履歴として残す。ADR-018 の後知恵バイアス排除と整合）。
+        notes を渡すと review_notes に追記する。
+        """
+        if status not in self.TRADE_STATUSES:
+            raise ValueError(f"status must be one of {self.TRADE_STATUSES}")
+        row = self.conn.execute(
+            "SELECT review_notes FROM trades WHERE id = ?", [trade_id]
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Trade {trade_id} not found")
+        if notes is not None:
+            existing = row[0]
+            merged = f"{existing}\n{notes}" if existing else notes
+            self.conn.execute(
+                "UPDATE trades SET status = ?, review_notes = ? WHERE id = ?",
+                [status, merged, trade_id],
+            )
+        else:
+            self.conn.execute(
+                "UPDATE trades SET status = ? WHERE id = ?", [status, trade_id]
+            )
+
     def get_open_trades(self) -> list[dict]:
+        """保有中ポジション = 約定済みかつ未手仕舞い (ADR-027)。
+
+        placed/cancelled/expired はポジションではないので含めない。
+        """
         rows = self.conn.execute(
-            "SELECT * FROM trades WHERE exit_date IS NULL ORDER BY entry_date"
+            "SELECT * FROM trades WHERE status = 'filled' AND exit_date IS NULL "
+            "ORDER BY entry_date"
+        ).fetchdf().to_dict("records")
+        return rows
+
+    def get_pending_orders(self) -> list[dict]:
+        """未約定の発注一覧 (status='placed', ADR-027)。"""
+        rows = self.conn.execute(
+            "SELECT * FROM trades WHERE status = 'placed' ORDER BY entry_date"
         ).fetchdf().to_dict("records")
         return rows
 

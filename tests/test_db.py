@@ -528,6 +528,7 @@ class TestTrades:
             "regime_at_entry", "vix_at_entry", "brent_at_entry",
             "confidence_at_entry", "setup_type", "entry_reasoning", "exit_reasoning",
             "discipline_score", "review_notes", "prediction_id", "created_at",
+            "status",
         }
         assert expected <= col_names
 
@@ -629,3 +630,100 @@ class TestTrades:
         open_trades = db.get_open_trades()
         assert len(open_trades) == 1
         assert open_trades[0]["instrument"] == "SOXL"
+
+    # ── ADR-027: 発注ライフサイクル (status) ──
+
+    def test_add_trade_defaults_status_filled(self, db):
+        """後方互換: status 未指定の add_trade は filled。"""
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 3, 31), entry_price=42.949, quantity=28,
+        )
+        status = db.conn.execute(
+            "SELECT status FROM trades WHERE id = ?", [tid]
+        ).fetchone()[0]
+        assert status == "filled"
+
+    def test_add_trade_accepts_placed_status(self, db):
+        """resting 指値は status='placed' で発注時点を記録できる。"""
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 5, 29), entry_price=215.0, quantity=1,
+            status="placed",
+        )
+        status = db.conn.execute(
+            "SELECT status FROM trades WHERE id = ?", [tid]
+        ).fetchone()[0]
+        assert status == "placed"
+
+    def test_add_trade_rejects_invalid_status(self, db):
+        with pytest.raises(ValueError):
+            db.add_trade(
+                instrument="SOXL", direction="long",
+                entry_date=date(2026, 5, 29), entry_price=215.0, quantity=1,
+                status="bogus",
+            )
+
+    def test_update_trade_status_to_cancelled(self, db):
+        """発注→不発キャンセルを結末として記録する（履歴は残す）。"""
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 5, 29), entry_price=215.0, quantity=1,
+            status="placed",
+        )
+        db.update_trade_status(tid, "cancelled", notes="$215 指値が不発")
+        row = db.conn.execute(
+            "SELECT status, review_notes FROM trades WHERE id = ?", [tid]
+        ).fetchone()
+        assert row[0] == "cancelled"
+        assert "$215" in row[1]
+
+    def test_update_trade_status_not_found_raises(self, db):
+        with pytest.raises(ValueError):
+            db.update_trade_status(99999, "cancelled")
+
+    def test_update_trade_status_rejects_invalid(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 5, 29), entry_price=215.0, quantity=1,
+        )
+        with pytest.raises(ValueError):
+            db.update_trade_status(tid, "bogus")
+
+    def test_get_open_trades_excludes_placed(self, db):
+        """未約定の placed 注文はポジションではない（#11 問題の再発防止）。"""
+        db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 5, 29), entry_price=215.0, quantity=1,
+            status="placed",
+        )
+        filled = db.add_trade(
+            instrument="TQQQ", direction="long",
+            entry_date=date(2026, 5, 29), entry_price=83.0, quantity=2,
+            status="filled",
+        )
+        open_trades = db.get_open_trades()
+        assert [t["id"] for t in open_trades] == [filled]
+
+    def test_get_open_trades_excludes_cancelled(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 5, 29), entry_price=215.0, quantity=1,
+            status="placed",
+        )
+        db.update_trade_status(tid, "cancelled")
+        assert db.get_open_trades() == []
+
+    def test_get_pending_orders_returns_placed(self, db):
+        placed = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 5, 29), entry_price=215.0, quantity=1,
+            status="placed",
+        )
+        db.add_trade(
+            instrument="TQQQ", direction="long",
+            entry_date=date(2026, 5, 29), entry_price=83.0, quantity=2,
+            status="filled",
+        )
+        pending = db.get_pending_orders()
+        assert [t["id"] for t in pending] == [placed]
