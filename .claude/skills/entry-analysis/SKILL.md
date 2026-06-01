@@ -212,6 +212,39 @@ if len(df) >= 20:
 PYEOF
 ```
 
+### 3.5 ポジションサイズ算出（risk-based, ADR-028）
+
+数量は直感で決めず risk-based で逆算する。**投入割合 = risk% ÷ stop距離%**。
+
+1. **stop（無効化ライン）を先に決める**: 手順3のσ/サポレジから「ここを割れたら読みが外れ」の価格。stop幅$ = エントリー − stop価格。
+2. **risk%**: 基準 **4%**（ADR-028）、確信度（MAP）で下方スケール（低確信なら3%等）。
+3. **株数 = floor((余力USD × risk%) ÷ stop幅$)**。cap ~90% を超えたら削る。
+4. add は実MAE −3〜5% に置き、残弾を2発目 tranche として確保。「割合◯%入れたい」から逆算して stop を置くのは禁止。
+
+```bash
+python << 'PYEOF'
+# risk-based サイジング (ADR-028)
+EQUITY_USD = 0.0   # Saxo spending_power (T126816 等、余力USD)
+RISK_PCT = 0.04    # 基準4%、確信度で下げる
+ENTRY = 0.0        # エントリー価格
+STOP = 0.0         # 無効化ライン (手順3のサポレジ/σ から)
+CAP = 0.90
+
+stop_dist = ENTRY - STOP
+risk_usd = EQUITY_USD * RISK_PCT
+shares = int(risk_usd // stop_dist) if stop_dist > 0 else 0
+while shares > 0 and shares * ENTRY > EQUITY_USD * CAP:
+    shares -= 1
+deploy = shares * ENTRY / EQUITY_USD if EQUITY_USD else 0
+eff_risk = shares * stop_dist / EQUITY_USD if EQUITY_USD else 0
+print(f"stop幅 ${stop_dist:.2f} ({stop_dist/ENTRY:.1%})")
+print(f"risk予算 ${risk_usd:.0f} ({RISK_PCT:.0%})")
+print(f"株数 {shares}株 (${shares*ENTRY:.0f}, 投入{deploy:.0%}), 実効risk {eff_risk:.1%}")
+PYEOF
+```
+
+ラダー時は first/add の2 tranche に risk% を配分し、合計が基準 risk% に収まるようにする。
+
 ### 4. シナリオ別注文設定の提示
 
 手順2-3の結果を統合し、以下のフォーマットで提示する。
@@ -250,7 +283,7 @@ instrument カテゴリ知見を注文設計に必ず反映する。特に以下
 | エントリー | {指値/成行} ${価格} | {前日終値比/サポレジ根拠} |
 | TP(利確) | ${価格} ({+X%}) | {σ水準/シナリオ根拠} |
 | SL(損切) | ${価格} ({-X%}) | {σ水準/SMA根拠} |
-| 数量 | {N}株 (${金額}) | |
+| 数量 | {N}株 (${金額}, 投入{X}%) | risk-based: risk{R}% ÷ stop{S}% (手順3.5, ADR-028) |
 
 --- Confidence ---
 A) {低め}% — {根拠}
@@ -327,6 +360,7 @@ PYEOF
 - entry_reasoningはエントリー時点の分析を記録する。事後に書き換えない（ADR-003 Decision Tracking）
 - シナリオ構築はテンプレート固定しない。状況に応じて動的に構築する
 - TP/SLは日足のσ・SMAから統計的根拠を計算する。「なんとなく+10%/-5%」は禁止
+- **数量は risk-based で逆算する（手順3.5, ADR-028）。直感で決めない**。stopをチャートから読み、株数 = (余力 × 基準risk4%) ÷ stop幅$。「割合◯%入れたい」からstopを逆算するのは禁止
 - heredoc内でトリプルクォート禁止（グローバルCLAUDE.md）
 - {対象銘柄} のプレースホルダーは実行時にユーザー指定の銘柄に置き換える
 - ユーザーがtrade記録を希望しない場合（分析だけ見たい場合）はadd_trade()をスキップ可

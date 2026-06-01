@@ -1,6 +1,60 @@
 # Condition
 
-Last updated: 2026-05-31 (session 37 継続、週末。市場データは 5/29 金曜引けが最新)。**trade #11 ($215 GTC 指値) 不発キャンセル → ADR-027 で trades に status 列導入し cancelled として記録**。scan-market 2件登録（5/28 record close + MRVL beat）、レジーム **risk_on (VIX normal→low)** を 5/29 付で記録。現在オープンポジション 0 件・口座状況変化なし
+Last updated: 2026-06-02 (session 39、JST 火曜未明＝米 6/01 月曜セッション中)。**ライブ初の intraday エントリー: SOXL long 押し目ラダーを発注 → $218×3株が約定 (trade #12 filled, OCO SL$203/TP$236 GTC)、$208×4株は resting (trade #13 placed, DayOrder, GTC化せず失効方針)**。今夜の SOXL は寄り217→226→ISM(52.7ミス)で210へフラッシュ→V字で223 (7.5%レンジ)。ドライバーは NVDA Computex の incumbent rotation (AMD/INTC安・NVDA堅調) + Iran 米協議停止の原油急騰 (Brent 94→97)。**K-039 登録** (プレ→正規 方向一致率の非対称性)。scan-market 3件 (oil/neg・semi/neg・fed ISM neutral)。regime は intraday 再判定で **risk_on (+1.07)** 維持 (VIX16 normal・原油97 high で +1.36 から軟化)。Saxo は token ~1h 寿命で本セッション計3回再認証（token-free keepalive で延命・終了時停止）。**セッション後半: 資金投入スタンスを risk-based に確定**（基準 risk 4%スタート・cap~90%・stopはチャート・投入割合=risk%÷stop%・add実MAE−3〜5%・SOXS停止）→ **ADR-028 + CLAUDE.md「## Position Sizing」+ entry-analysis SKILL.md 手順3.5 + memory に組み込み**。**SL を実証的に 203→209→215 へ段階引き上げ**（higher low 確定後、#12 notes 記録、最大損失 −$45→−$9）。
+
+**次セッションの起点（reconcile 必須）**:
+1. **#12（3@218, OCO SL$215/TP$236 GTC）の outcome 確認**: Saxo で TP/SL 約定か持越しかを突合 → 決済済なら exit_price/exit_date/pnl/exit_reasoning を記録（ADR-027）。
+2. **#13（$208 DayOrder, 4株）**: 05:00 JST に失効見込み（SOXL ~$228で未約定）→ `cancelled`/`expired` に更新。
+3. **master_sensei 4ファイル変更が未コミット**（ADR-028新規・CLAUDE.md・entry-analysis SKILL.md・memoryはgit外）。コミット要否を確認。
+
+---
+
+## ⚡ Session 39 Handoff (2026-06-01 21:00 - 06-02 00:10 JST、米 6/01 セッション中)
+
+### 確定事項
+
+#### ライブ trade: SOXL long 押し目ラダー (ADR-018/027)
+- `/entry-analysis SOXL long` 実行。MAP: 環境 risk_on(+1.36→intraday +1.07)、フロー neutral(+0.10, σ+1.60伸び切り)、イベント NVDA Computex incumbent ショック。
+- ユーザーが**ラダー発注** (T126816): **#12 SOXL 3株@$218 (filled)** + **#13 SOXL 4株@$208 (placed, DayOrder)**。両 StandAlone Limit で当初ブラケット無し。
+- 約定後、**3株@218 に OCO ブラケット設定** (SL$203 StopIfTraded / TP$236 Limit、GTC、OrderId 5409035181/5409035182)。**$208(4株)は IFD-OCO 未設定のまま resting** → 深押し thesis は今夜のフラッシュで消化済 (底210で$208未達)、**GTC化せず失効/キャンセル方針** (ADR-003: GTCは約定と分析を切り離すため)。失効時 #13 を cancelled 更新。
+- セッション書込時点: **#12 は約+2% (現値$222.8 vs entry$218)**。SL$203 は据置 (higher low 形成まで引き上げない、K-023)。SL引き上げトリガー: 224.3定着＋higher low → $210-212へ (EV改善)。
+
+#### intraday の値動きと学び (タペ実データ)
+- SOXL 6/01: 寄り217.26→高値226.00(09:35)→**安値210.14(10:00 ET=ISM発表＋出来高クライマックス1.1M)**→V字で223。1時間で**7.5%レンジ**。NVDA 3.0%/AMD 4.7%/INTC 4.8% レンジ → SOXL は約1.5-2.5倍に増幅。
+- **K-023 をライブ実証**: #12 が $218約定→210まで−3.7%沈む→223回復。SL$203(≈1σ)は無傷。タイトSL(211-214)なら安値210で刈られ回復を逃していた。**「良いRR狙いのタイトSL」が3xレバ増幅ノイズで底刈られる罠**。
+- 新仮説 (要検証・未登録): ①出来高クライマックス×データ発表＝底(risk_on逆張り) ②日足S/Rは±$2-3の帯として機能 (深シェルフ207.6未達・底210)。
+
+#### scan-market (23:05、intraday 3件)
+- oil/negative: Iran 米協議停止(Tasnim)→WTI+6%$92/Brent+5%$95 (Parquet94.03確認)。K-024でheadline割引、negは原油実価格に付与。
+- semiconductor/negative: 選別AIトレード INTC-6%/AMD-4%/NVDA堅調、SOXバスケット下落=本日SOXL含み損主因だが rotation/profit-taking で thesis破綻でない。
+- fed/neutral: ISM製造業 52.7 (53.0ミス、拡大圏維持)。
+
+#### Saxo 運用
+- token ~1h 寿命 (ADR-025既知乖離) で本セッション**2回再認証** (Claude が oauth_init 起動)。注文照会は `/port/v1/orders/me` (未文書化、raw探索)。**orders エンドポイントの意味的アクセサ未整備＝ADR-026 の gap** (将来 OpenOrder dataclass + docs化候補)。
+
+### 次セッションの起点
+1. **#12 (3株@218) の outcome 確認**: TP$236到達 / SL$203 / 引け持越し。Saxo で建玉・約定を突合 (ADR-027)。
+2. **#13 ($208) 失効確認** → cancelled 更新。
+3. 監視 task `b44877o96` 稼働中 (SOXL支持クロス+6分毎複合/原油/VIX)。次セッションで停止。
+4. 未消化: K-039検証の発展 (①出来高クライマックス底 ②S/R帯精度 の backtest 提案中、ユーザー返答待ち)。
+5. 原油 (Brent97、Iran premium) と VIX(16) が risk_on の振り子。原油スパイク→VIX>20 で long前提崩れ。
+
+---
+
+## ⚡ Session 38 Handoff (2026-06-01 19:52-20:10 JST、JST 月曜夜)
+
+### 確定事項
+
+#### データ更新 (19:52 JST)
+`update_data.py` 実行。マクロ最新 6/01（VIX 15.76 / BRENT 94.08）、日足 10 銘柄・5分足 8 銘柄は 5/29 15:55 ET（週末明けで新規セッションなし）。**US10Y・USD_INDEX は FRED 429 (Too Many Requests) で取得失敗**、US10Y 4.48 (5/27) / USD_INDEX 119.29 (5/22) の既存値据置。SOXL 日足 224.34 (5/29)。
+
+#### Saxo OAuth 再認証 + Live 口座現況 (20:00 JST)
+- access/refresh token **全失効**（最新 refresh も 5/27 22:27 失効、実効寿命 ~1h 仕様は ADR-025 既知の乖離）→ **Claude が `scripts/saxo_oauth_init.py` をバックグラウンド起動**、ユーザーがブラウザログイン → token 再保存 (exit 0)。
+- **Live snapshot（意味的アクセサ `get_all_account_balances()` 経由、ADR-026）**: 全 7 active sub-account でオープンポジション **0 件**・含み損益 0・`calculation_reliability=Ok`（S36 の stale 問題なし）。取引余力 JPY 合計 **¥362,687**（T126816 ¥307,300 / P120136 ¥55,387）、USD 口座（N122798 / TU130134）は **$0**。米国 ETF 新規建ては JPY→USD 資金移動が前提。
+- DB（ポジ 0・pending 0）および condition.md S37（オープン 0 件）と完全一致。
+
+#### CLAUDE.md ルール追記（ユーザー「確実に」指摘）
+セッション開始時に「Saxo API で状況確認」を依頼されたら、**token 失効時は Claude 自身が `saxo_oauth_init.py` をバックグラウンド起動**する（ユーザーが担うのはブラウザログインのみ。「対話フローが必要」を理由に `! python ...` を丸投げしない）。「### 会話中の行動ルール」に明記、SoT は CLAUDE.md + ADR-025/026。Memory の旧 SoT 参照 `docs/data-strategy.md`（不在）を修正。
 
 ---
 
