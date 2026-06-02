@@ -529,6 +529,8 @@ class TestTrades:
             "confidence_at_entry", "setup_type", "entry_reasoning", "exit_reasoning",
             "discipline_score", "review_notes", "prediction_id", "created_at",
             "status",
+            # ADR-029: break-even / net PnL
+            "breakeven_pct", "cost_usd", "pnl_net_usd",
         }
         assert expected <= col_names
 
@@ -595,6 +597,74 @@ class TestTrades:
         # Short: profit when price goes down
         assert row[0] > 0  # positive PnL
         assert row[1] > 0  # positive pct
+
+    # ── ADR-029: break-even / net PnL ──
+
+    def test_add_trade_records_breakeven_pct(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 6, 1), entry_price=218.0, quantity=3,
+            breakeven_pct=0.869,  # entry 時の TradeCost.total_cost_pct
+        )
+        row = db.conn.execute(
+            "SELECT breakeven_pct FROM trades WHERE id = ?", [tid]
+        ).fetchone()
+        assert row[0] == 0.869
+
+    def test_add_trade_breakeven_pct_negative_raises(self, db):
+        with pytest.raises(ValueError, match="breakeven_pct must be"):
+            db.add_trade(
+                instrument="SOXL", direction="long",
+                entry_date=date(2026, 6, 1), entry_price=218.0, quantity=3,
+                breakeven_pct=-1.0,
+            )
+
+    def test_close_trade_with_cost_computes_net_pnl(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 6, 1), entry_price=218.0, quantity=3,
+        )
+        db.close_trade(tid, exit_date=date(2026, 6, 2), exit_price=227.0, cost_usd=5.92)
+        row = db.conn.execute(
+            "SELECT pnl_usd, cost_usd, pnl_net_usd FROM trades WHERE id = ?", [tid]
+        ).fetchone()
+        gross = (227.0 - 218.0) * 3
+        assert abs(row[0] - gross) < 0.01           # gross 維持
+        assert row[1] == 5.92                        # 実コスト記録
+        assert abs(row[2] - (gross - 5.92)) < 0.01   # net = gross − cost
+
+    def test_close_trade_net_pnl_can_be_negative_when_cost_exceeds_gross(self, db):
+        """スキャル前提の核心: 小さな gross をコストが食い切る"""
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 6, 1), entry_price=227.0, quantity=3,
+        )
+        # +0.3% だけ抜いた (gross ~$2.0) が往復コスト $5.92 → net マイナス
+        db.close_trade(tid, exit_date=date(2026, 6, 1), exit_price=227.68, cost_usd=5.92)
+        row = db.conn.execute(
+            "SELECT pnl_usd, pnl_net_usd FROM trades WHERE id = ?", [tid]
+        ).fetchone()
+        assert row[0] > 0       # gross はプラス
+        assert row[1] < 0       # net はマイナス (コスト負け)
+
+    def test_close_trade_without_cost_leaves_net_null(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 6, 1), entry_price=218.0, quantity=3,
+        )
+        db.close_trade(tid, exit_date=date(2026, 6, 2), exit_price=227.0)
+        row = db.conn.execute(
+            "SELECT pnl_net_usd FROM trades WHERE id = ?", [tid]
+        ).fetchone()
+        assert row[0] is None
+
+    def test_close_trade_cost_negative_raises(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 6, 1), entry_price=218.0, quantity=3,
+        )
+        with pytest.raises(ValueError, match="cost_usd must be"):
+            db.close_trade(tid, exit_date=date(2026, 6, 2), exit_price=227.0, cost_usd=-1.0)
 
     def test_review_trade(self, db):
         tid = db.add_trade(

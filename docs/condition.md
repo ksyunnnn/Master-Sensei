@@ -1,11 +1,38 @@
 # Condition
 
-Last updated: 2026-06-02 (session 39、JST 火曜未明＝米 6/01 月曜セッション中)。**ライブ初の intraday エントリー: SOXL long 押し目ラダーを発注 → $218×3株が約定 (trade #12 filled, OCO SL$203/TP$236 GTC)、$208×4株は resting (trade #13 placed, DayOrder, GTC化せず失効方針)**。今夜の SOXL は寄り217→226→ISM(52.7ミス)で210へフラッシュ→V字で223 (7.5%レンジ)。ドライバーは NVDA Computex の incumbent rotation (AMD/INTC安・NVDA堅調) + Iran 米協議停止の原油急騰 (Brent 94→97)。**K-039 登録** (プレ→正規 方向一致率の非対称性)。scan-market 3件 (oil/neg・semi/neg・fed ISM neutral)。regime は intraday 再判定で **risk_on (+1.07)** 維持 (VIX16 normal・原油97 high で +1.36 から軟化)。Saxo は token ~1h 寿命で本セッション計3回再認証（token-free keepalive で延命・終了時停止）。**セッション後半: 資金投入スタンスを risk-based に確定**（基準 risk 4%スタート・cap~90%・stopはチャート・投入割合=risk%÷stop%・add実MAE−3〜5%・SOXS停止）→ **ADR-028 + CLAUDE.md「## Position Sizing」+ entry-analysis SKILL.md 手順3.5 + memory に組み込み**。**SL を実証的に 203→209→215 へ段階引き上げ**（higher low 確定後、#12 notes 記録、最大損失 −$45→−$9）。
+Last updated: 2026-06-02 (session 40、JST 火曜朝 10:24)。**取引コスト/損益分岐(break-even)の追跡基盤を構築 (ADR-029)**。Saxo cost endpoint を実コールし手数料体系を実測確定 → `get_trade_cost()`+`TradeCost`(src/saxo_client.py)、`trades` に `breakeven_pct`/`cost_usd`/`pnl_net_usd` 追加で **net PnL** 記録 (src/db.py)、TDD 13件で全730 pass。docs: ADR-029・cost-fields.md・**fee-schedule.md(公式手数料体系の一次資料)**・entry-analysis 手順3.6。**K-040 登録**(円口座SOXL往復break-even≈0.72-0.87%、為替0.5%が下限、grossでなくnet評価)。verify: 実手数料率0.08%・最低$1.0(2経路一致)・当口座SOXLカストディ現在なし。Saxo 再認証 + 突合(#12=3@218 が DB と一致)。
 
 **次セッションの起点（reconcile 必須）**:
-1. **#12（3@218, OCO SL$215/TP$236 GTC）の outcome 確認**: Saxo で TP/SL 約定か持越しかを突合 → 決済済なら exit_price/exit_date/pnl/exit_reasoning を記録（ADR-027）。
-2. **#13（$208 DayOrder, 4株）**: 05:00 JST に失効見込み（SOXL ~$228で未約定）→ `cancelled`/`expired` に更新。
-3. **master_sensei 4ファイル変更が未コミット**（ADR-028新規・CLAUDE.md・entry-analysis SKILL.md・memoryはgit外）。コミット要否を確認。
+1. **#12（3@218, OCO SL$215/TP$236 GTC）の outcome 確認**: Saxo で TP/SL 約定か持越しかを突合 → 決済済なら exit_price/exit_date/pnl/exit_reasoning を記録（ADR-027）。**決済時は `close_trade(cost_usd=)` で net PnL を残す（ADR-029）**。
+2. **#13（$208 DayOrder, 4株）**: DB は依然 `placed`。session 40 では orders endpoint 未実装のため API 確認できず未更新。失効済みなら `cancelled`/`expired` に更新。
+3. **(session 40 で解消) ~~master_sensei 変更が未コミット~~** → session 40 で main に commit & push 済み。
+
+---
+
+## ⚡ Session 40 Handoff (2026-06-02 09:14 - 10:24 JST、米市場クローズ中)
+
+### 確定事項
+- **ADR-029「取引コストと損益分岐(break-even)の追跡」を accepted**。発端はユーザーの「手数料が利幅を上回ったら意味がない/損益分岐を明確化したい」。
+- **実装(恒久)**:
+  - `SaxoClient.get_trade_cost()` + `TradeCost` dataclass(`total_cost_pct`=往復break-even%、`break_even_price()`、為替/手数料/spread を意味的展開)、`SAXO_UIC` 定数(SOXL=46780,Etf 検証済) — src/saxo_client.py
+  - `trades` に `breakeven_pct`(entry見積り)/`cost_usd`(実コスト)/`pnl_net_usd`(net PnL) 追加 + migration、`add_trade(breakeven_pct=)`・`close_trade(cost_usd=)` — src/db.py
+  - TDD 13件追加(saxo 8 + db 5)、**全730 pass**、live DB migration 適用済
+- **ドキュメント**: ADR-029 / `docs/api/saxo/cost-fields.md`(API field) / `docs/api/saxo/fee-schedule.md`(公式手数料体系の普遍的事実・citation付) / entry-analysis SKILL.md 手順3.6「break-even チェック」+ 注文表に break-even 行 / README 索引。
+- **knowledge K-040 登録**(instrument): 円口座SOXL往復break-even≈0.72-0.87%、為替0.5%が下限、最低手数料$1.0が小サイズで発動、grossでなくnet PnLで評価、米ドル口座でper-trade為替0。
+
+### 実測で確定した事実 (2026-06-02 cost/instrument endpoint, 口座 T126816)
+- SOXL 3株@$227 往復 break-even = **0.869%**(為替0.501% + 手数料0.294%[min$1発動] + spread0.044% + 税)。10株〜で **0.722%** に収束。
+- 実適用 手数料率 = **0.08%**(`RateOnAmount=0.0008`、公式Classic表記0.088%と差)、**最低 $1.0/片道**(cost+instrument 2経路一致、二次情報$1.10は不採用)。
+- 為替 = 円口座 片道0.25%/往復0.5%、米ドル口座 無料。**米ドル口座運用が break-even を最大~0.5%下げる最大レバー(方針判断は保留)**。
+- カストディ = **当口座SOXLは現在課金なし**(`CustodyFees.FeeRules`空)。公式年率はプラットフォーム取引条件画面のみ(platform-gated)。
+
+### Saxo 突合
+- token 完全失効 → Claude が `saxo_oauth_init.py` 起動(ユーザーはブラウザログインのみ)→ 再認証。
+- get_all_account_balances + get_positions: **#12(SOXL 3@$218) が Saxo と DB で一致**。sizing 口座 T126816 spending_power ¥202,588。
+
+### 次の起点 / 保留
+- **見送り(YAGNI、ADR-029に再開トリガー記載)**: ① `tradingconditions/instrument` の意味的アクセサ(custody/collateral 消費 workflow が出たら)、② `cost_usd` 実績の自動取得(trades蓄積で見積りvs実績の乖離が観測されたら)。
+- #13(4@$208 placed)の真の状態は orders endpoint 未実装で API 確認不可。
 
 ---
 

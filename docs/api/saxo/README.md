@@ -15,7 +15,9 @@
 |---------|------|
 | README.md | 本ファイル |
 | [balance-fields.md](balance-fields.md) | Balance response の全 field 公式定義 (citation 必須) |
-| [endpoints.md](endpoints.md) | 使用 4 endpoint + 実例レスポンス |
+| [cost-fields.md](cost-fields.md) | Trade cost response の全 field 公式定義 = break-even 判定 (ADR-029) |
+| [fee-schedule.md](fee-schedule.md) | 公式手数料体系 (commission/為替/カストディ) の普遍的事実 + citation |
+| [endpoints.md](endpoints.md) | 使用 endpoint + 実例レスポンス |
 | [rate-limits.md](rate-limits.md) | rate limit 公式値 |
 
 ## 用途別 field 早見表

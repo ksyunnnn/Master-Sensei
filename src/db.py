@@ -168,7 +168,10 @@ class SenseiDB:
                 quantity INTEGER NOT NULL,
                 pnl_usd DOUBLE,
                 pnl_pct DOUBLE,
+                pnl_net_usd DOUBLE,
                 commission_usd DOUBLE,
+                cost_usd DOUBLE,
+                breakeven_pct DOUBLE,
                 holding_days INTEGER,
                 regime_at_entry VARCHAR,
                 vix_at_entry DOUBLE,
@@ -195,6 +198,14 @@ class SenseiDB:
             self.conn.execute(
                 "ALTER TABLE trades ADD COLUMN status VARCHAR DEFAULT 'filled'"
             )
+        # ADR-029 migration: break-even (entry時見積り) と net PnL (実コスト控除後)
+        for col, coltype in (
+            ("breakeven_pct", "DOUBLE"),   # entry 時の往復 break-even% (TradeCost.total_cost_pct)
+            ("cost_usd", "DOUBLE"),        # 実 all-in 往復コスト (commission+為替+spread+税)
+            ("pnl_net_usd", "DOUBLE"),     # net PnL = pnl_usd − cost_usd
+        ):
+            if col not in trade_cols:
+                self.conn.execute(f"ALTER TABLE trades ADD COLUMN {col} {coltype}")
         self.conn.execute("CREATE SEQUENCE IF NOT EXISTS trades_id_seq START 1")
 
         self.conn.execute("""
@@ -617,21 +628,24 @@ class SenseiDB:
         entry_reasoning: str = None,
         prediction_id: int = None,
         status: str = "filled",
+        breakeven_pct: float = None,
     ) -> int:
         if confidence_at_entry is not None and not (0.0 <= confidence_at_entry <= 1.0):
             raise ValueError("confidence_at_entry must be 0.0-1.0")
         if status not in self.TRADE_STATUSES:
             raise ValueError(f"status must be one of {self.TRADE_STATUSES}")
+        if breakeven_pct is not None and breakeven_pct < 0:
+            raise ValueError("breakeven_pct must be >= 0")
         tid = self.conn.execute("SELECT nextval('trades_id_seq')").fetchone()[0]
         self.conn.execute(
             "INSERT INTO trades "
             "(id, instrument, direction, entry_date, entry_price, quantity, "
             "regime_at_entry, vix_at_entry, brent_at_entry, confidence_at_entry, "
-            "setup_type, entry_reasoning, prediction_id, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "setup_type, entry_reasoning, prediction_id, status, breakeven_pct) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [tid, instrument, direction, entry_date, entry_price, quantity,
              regime_at_entry, vix_at_entry, brent_at_entry, confidence_at_entry,
-             setup_type, entry_reasoning, prediction_id, status],
+             setup_type, entry_reasoning, prediction_id, status, breakeven_pct],
         )
         return tid
 
@@ -643,7 +657,17 @@ class SenseiDB:
         *,
         exit_reasoning: str = None,
         commission_usd: float = None,
+        cost_usd: float = None,
     ):
+        """決済を記録する。
+
+        cost_usd を渡すと **net PnL (pnl_net_usd = pnl_usd − cost_usd)** を算出する。
+        cost_usd は all-in 往復コスト (commission + 為替 + spread + 税)。これが
+        実 edge 計測の基準になる (ADR-029)。gross の pnl_usd も従来通り残す。
+        後方互換のため commission_usd 単独指定も維持 (その場合 net は commission のみ控除)。
+        """
+        if cost_usd is not None and cost_usd < 0:
+            raise ValueError("cost_usd must be >= 0")
         row = self.conn.execute(
             "SELECT entry_price, quantity, direction, entry_date FROM trades WHERE id = ?",
             [trade_id],
@@ -657,11 +681,14 @@ class SenseiDB:
             pnl_usd = (entry_price - exit_price) * quantity
         pnl_pct = (pnl_usd / (entry_price * quantity)) * 100
         holding_days = (exit_date - entry_dt).days
+        deduction = cost_usd if cost_usd is not None else commission_usd
+        pnl_net_usd = pnl_usd - deduction if deduction is not None else None
         self.conn.execute(
             "UPDATE trades SET exit_date = ?, exit_price = ?, pnl_usd = ?, pnl_pct = ?, "
-            "commission_usd = ?, holding_days = ?, exit_reasoning = ? WHERE id = ?",
-            [exit_date, exit_price, pnl_usd, pnl_pct, commission_usd, holding_days,
-             exit_reasoning, trade_id],
+            "pnl_net_usd = ?, commission_usd = ?, cost_usd = ?, holding_days = ?, "
+            "exit_reasoning = ? WHERE id = ?",
+            [exit_date, exit_price, pnl_usd, pnl_pct, pnl_net_usd, commission_usd,
+             cost_usd, holding_days, exit_reasoning, trade_id],
         )
 
     def review_trade(

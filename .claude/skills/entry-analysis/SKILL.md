@@ -245,6 +245,43 @@ PYEOF
 
 ラダー時は first/add の2 tranche に risk% を配分し、合計が基準 risk% に収まるようにする。
 
+### 3.6 break-even チェック（コスト見積り, ADR-029）
+
+サイズが決まったら **取引前に往復コスト（=break-even 値幅%）を Saxo から取得**する。
+スキャル/小利幅では「TP が break-even を上回っているか」が発注可否のゲートになる。
+
+- **`total_cost_pct` が往復 break-even%**（円口座は為替0.25%×往復が支配的）。
+- **TP は break-even を超えていること**を確認。`break_even_price()` 未満の TP は期待値マイナス。
+- **最低手数料の発動**（小サイズで `commission` が `min_commission` 由来）に注意。サイズが小さすぎると効率が落ちる。
+- この `total_cost_pct` を手順5で `breakeven_pct` として trade に記録する（後知恵排除）。
+
+```bash
+python << 'PYEOF'
+import duckdb
+from src.db import SenseiDB
+from src.saxo_client import SaxoClient, SaxoConfig, SAXO_UIC
+conn = duckdb.connect('data/sensei.duckdb')
+db = SenseiDB(conn)
+client = SaxoClient(db, config=SaxoConfig.from_env(environment="live"))
+
+ACCOUNT_ID = "77800/T126816"   # sizing 口座
+SYMBOL = "SOXL"
+AMOUNT = 0                      # 手順3.5 の株数
+PRICE = 0.0                    # エントリー価格
+
+ak = [a for a in client.get_accounts() if a.get("AccountId") == ACCOUNT_ID][0]["AccountKey"]
+uic, atype = SAXO_UIC[SYMBOL]
+tc = client.get_trade_cost(account_key=ak, uic=uic, asset_type=atype,
+                           amount=AMOUNT, price=PRICE)
+print(f"break-even {tc.total_cost_pct:.3f}% -> ${tc.break_even_price():.2f} "
+      f"(round_trip={tc.is_round_trip})")
+print(f"  内訳: 手数料{tc.commission_pct:.3f}%(min${tc.min_commission}) "
+      f"為替{tc.conversion_cost_pct:.3f}% spread{tc.spread_pct:.3f}%")
+PYEOF
+```
+
+新規 symbol が `SAXO_UIC` に無い場合は cost を取得できないため、その旨を明示し break-even は手動見積り（為替0.5% + 手数料）に留める。
+
 ### 4. シナリオ別注文設定の提示
 
 手順2-3の結果を統合し、以下のフォーマットで提示する。
@@ -281,9 +318,10 @@ instrument カテゴリ知見を注文設計に必ず反映する。特に以下
 | 項目 | 値 | 根拠 |
 |---|---|---|
 | エントリー | {指値/成行} ${価格} | {前日終値比/サポレジ根拠} |
-| TP(利確) | ${価格} ({+X%}) | {σ水準/シナリオ根拠} |
+| TP(利確) | ${価格} ({+X%}) | {σ水準/シナリオ根拠}。**break-even ${BE価格}({BE}%) 超を確認** |
 | SL(損切) | ${価格} ({-X%}) | {σ水準/SMA根拠} |
 | 数量 | {N}株 (${金額}, 投入{X}%) | risk-based: risk{R}% ÷ stop{S}% (手順3.5, ADR-028) |
+| break-even | {BE}% (${BE価格}) | 往復コスト見積り (手順3.6, ADR-029)。TP はこれを超えること |
 
 --- Confidence ---
 A) {低め}% — {根拠}
@@ -314,6 +352,8 @@ tid = db.add_trade(
     brent_at_entry={Brent値},
     confidence_at_entry={confidence/100},
     setup_type="{シナリオから導出}",
+    breakeven_pct={手順3.6 の total_cost_pct},  # ADR-029: entry時の往復break-even%
+
     entry_reasoning=(
         "[環境] {regime.overall} ({regime.overall_score:+.2f}). "
         "[フロー] {flow.overall} ({flow.overall_score:+.2f}). "

@@ -81,6 +81,73 @@ class AccountBalance:
     calculation_reliability: str
 
 
+# Saxo の Uic は instrument 固有で安定。本プロジェクトの取引ユニバース (ADR-004)
+# について live ポジション/cost endpoint で検証済みの値。新規 symbol は
+# /ref/v1/instruments で解決すること (未実装、必要時に追加)。
+# 検証: 2026-06-02 live position (SOXL) + cost endpoint 実コール
+SAXO_UIC = {
+    "SOXL": (46780, "Etf"),
+}
+
+
+@dataclass
+class TradeCost:
+    """単一銘柄・サイズの往復取引コスト見積り (ADR-029)。
+
+    Saxo `/cs/v1/tradingconditions/cost` の `Cost.Long`/`Cost.Short` を意味的に
+    展開する。`is_round_trip` が True (= 応答に `IncludesOpenAndCloseCost`) のとき、
+    `total_cost_pct` は **往復 (open+close) コスト = break-even 値幅%** を表す。
+
+    raw dict access を防ぐ (ADR-026)。各 field の公式定義・実レスポンス例は
+    docs/api/saxo/cost-fields.md を参照。
+
+    Attributes:
+        total_cost: 往復コスト絶対額 (instrument_currency)。
+        total_cost_pct: 往復コスト÷notional の % = break-even 値幅% (round-trip 時)。
+        is_round_trip: 見積りが open+close を含むか (CostCalculationAssumptions)。
+        commission / commission_pct / min_commission: 売買手数料 (片道 × 往復)。
+            min_commission 発動時は notional が小さいほど commission_pct が上昇。
+        conversion_cost / conversion_cost_pct / conversion_rate_pct: 為替手数料。
+            account_currency≠instrument_currency (円口座×USD建) で発生。
+            conversion_rate_pct は片道率 (例 0.25)。米ドル口座なら 0。
+        spread_cost / spread_pct: bid/ask スプレッド (implicit cost)。
+        holding_cost: 保有コスト合計絶対額 (税・SEC手数料等、HoldingCost.Tax の合算)。
+        assumptions: Saxo の前提リスト (round-trip 判定等の根拠)。
+    """
+    instrument: str
+    uic: int
+    asset_type: str
+    direction: str            # "long" | "short"
+    amount: float
+    price: float
+    account_currency: str     # 口座通貨 (例 JPY)
+    instrument_currency: str  # 建玉通貨 (例 USD)
+    total_cost: float
+    total_cost_pct: float
+    is_round_trip: bool
+    commission: float
+    commission_pct: float
+    min_commission: float
+    conversion_cost: float
+    conversion_cost_pct: float
+    conversion_rate_pct: float
+    spread_cost: float
+    spread_pct: float
+    holding_cost: float
+    assumptions: list
+
+    def break_even_price(self) -> float:
+        """コストを回収できる価格。long は上方向、short は下方向。
+
+        total_cost_pct が往復%なので、long は entry を total_cost_pct% 上回れば
+        break-even。is_round_trip=False の場合は片道コスト基準になる点に注意。
+        """
+        factor = self.total_cost_pct / 100.0
+        if self.direction == "long":
+            return self.price * (1 + factor)
+        return self.price * (1 - factor)
+
+
 @dataclass
 class SaxoConfig:
     app_key: str
@@ -374,6 +441,80 @@ class SaxoClient:
         See docs/api/saxo/endpoints.md#1-get-portv1accountsme
         """
         return self._api_get("/port/v1/accounts/me").get("Data", [])
+
+    def get_trade_cost(self, *, account_key: str, uic: int, asset_type: str,
+                       amount: float, price: float,
+                       direction: str = "long") -> TradeCost:
+        """指定銘柄・サイズの取引コスト見積りを意味的 snapshot で返す (ADR-029)。
+
+        break-even 判定に使う。`result.total_cost_pct` が往復 break-even%、
+        `result.break_even_price()` がコスト回収価格。
+
+        **Amount と Price は必須** (どちらか欠けると Saxo は 400/404 を返す)。
+        `direction` は "long"/"short"。応答に該当 side が無ければ SaxoAuthError。
+
+        ADR-026 に基づき raw dict 露出を防ぐ。新規 field が必要な場合は `TradeCost`
+        を拡張し docs/api/saxo/cost-fields.md に公式定義を追記 (citation 必須)。
+
+        See docs/api/saxo/cost-fields.md
+        """
+        side_key = {"long": "Long", "short": "Short"}.get(direction)
+        if side_key is None:
+            raise ValueError(f"direction must be 'long' or 'short', got {direction!r}")
+
+        resp = self._api_get(
+            f"/cs/v1/tradingconditions/cost/{account_key}/{uic}/{asset_type}"
+            f"?Amount={amount}&Price={price}"
+        )
+        cost = resp.get("Cost", {})
+        if side_key not in cost:
+            raise SaxoAuthError(
+                f"Cost response missing '{side_key}' side for Uic {uic} "
+                f"(available: {list(cost.keys())}). "
+                "Saxo API may have changed; verify docs/api/saxo/cost-fields.md"
+            )
+        side = cost[side_key]
+        required = ("Currency", "TotalCost", "TotalCostPct", "TradingCost")
+        missing = [k for k in required if k not in side]
+        if missing:
+            raise SaxoAuthError(
+                f"Cost.{side_key} missing required fields {missing} for Uic {uic}. "
+                "Saxo API may have changed; verify docs/api/saxo/cost-fields.md"
+            )
+
+        trading = side["TradingCost"]
+        commissions = trading.get("Commissions") or [{}]
+        comm = commissions[0]
+        comm_rule = comm.get("Rule", {})
+        conv = trading.get("ConversionCost", {})
+        spread = trading.get("Spread", {})
+        holding = side.get("HoldingCost", {})
+        holding_total = sum(t.get("Value", 0.0) for t in holding.get("Tax", []))
+        assumptions = resp.get("CostCalculationAssumptions", [])
+
+        return TradeCost(
+            instrument=resp.get("Instrument", str(uic)),  # see cost-fields.md#instrument
+            uic=int(resp.get("Uic", uic)),
+            asset_type=resp.get("AssetType", asset_type),
+            direction=direction,
+            amount=float(resp.get("Amount", amount)),
+            price=float(resp.get("Price", price)),
+            account_currency=resp.get("AccountCurrency", ""),  # see #accountcurrency
+            instrument_currency=side["Currency"],  # see #cost-currency
+            total_cost=float(side["TotalCost"]),  # see #totalcost
+            total_cost_pct=float(side["TotalCostPct"]),  # see #totalcostpct
+            is_round_trip="IncludesOpenAndCloseCost" in assumptions,  # see #costcalculationassumptions
+            commission=float(comm.get("Value", 0.0)),  # see #commissions
+            commission_pct=float(comm.get("Pct", 0.0)),
+            min_commission=float(comm_rule.get("MinCommission", 0.0)),
+            conversion_cost=float(conv.get("Value", 0.0)),  # see #conversioncost
+            conversion_cost_pct=float(conv.get("Pct", 0.0)),
+            conversion_rate_pct=float(conv.get("Rule", {}).get("Pct", 0.0)),
+            spread_cost=float(spread.get("Value", 0.0)),  # see #spread
+            spread_pct=float(spread.get("Pct", 0.0)),
+            holding_cost=float(holding_total),  # see #holdingcost
+            assumptions=assumptions,
+        )
 
     def get_account_balance(self, account_key: str, client_key: str,
                             account_id: str = "") -> AccountBalance:

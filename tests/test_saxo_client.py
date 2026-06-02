@@ -20,6 +20,7 @@ from src.saxo_client import (
     SaxoAuthError,
     SaxoClient,
     SaxoConfig,
+    TradeCost,
 )
 
 
@@ -442,3 +443,148 @@ class TestSemanticAccessors:
         results = client.get_all_account_balances()
         assert len(results) == 2  # Inactive 1つを除外
         assert {r.account_id for r in results} == {"77800/P120136", "77800/T126816"}
+
+
+class TestTradeCost:
+    """ADR-029: 取引コスト見積り (break-even) の意味的アクセサ"""
+
+    def _setup_valid_access(self, db):
+        db.save_token(
+            provider=PROVIDER, environment="live", token_type="access",
+            token_value="AT_valid", expires_at=now_jst() + timedelta(seconds=1200),
+        )
+
+    @staticmethod
+    def _cost_response():
+        """2026-06-02 SOXL 3株@$227 (口座 T126816/JPY) の実レスポンス由来"""
+        return {
+            "AccountCurrency": "JPY",
+            "AccountID": "77800/T126816",
+            "Amount": 3.0,
+            "AssetType": "Etf",
+            "Cost": {
+                "Long": {
+                    "BuySell": "Buy",
+                    "Currency": "USD",
+                    "HoldingCost": {
+                        "Tax": [
+                            {"Pct": 0.029, "Value": 0.2,
+                             "Rule": {"TargetCostType": "CTaxOnCommission"}},
+                            {"Pct": 0.001, "Value": 0.01,
+                             "Rule": {"Description": "SEC手数料"}},
+                        ]
+                    },
+                    "TotalCost": 5.92,
+                    "TotalCostPct": 0.869,
+                    "TradingCost": {
+                        "Commissions": [
+                            {"Pct": 0.294, "Value": 2.0,
+                             "Rule": {"Currency": "USD", "MinCommission": 1.0}},
+                        ],
+                        "ConversionCost": {"Pct": 0.501, "Value": 3.41,
+                                           "Rule": {"Pct": 0.25}},
+                        "Spread": {"Pct": 0.044, "Value": 0.3, "Rule": {"Value": 0.1}},
+                    },
+                }
+            },
+            "CostCalculationAssumptions": [
+                "IncludesOpenAndCloseCost",
+                "EquivalentOpenAndClosePrice",
+                "ImplicitCostsNotChargedOnAccount",
+            ],
+            "HoldingPeriodInDays": 0,
+            "Instrument": "Direxion Daily Semiconductor Bull 3X ETF",
+            "Price": 227.0,
+            "Uic": 46780,
+        }
+
+    def test_returns_dataclass_with_breakeven(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._cost_response())
+        tc = client.get_trade_cost(
+            account_key="AK", uic=46780, asset_type="Etf", amount=3, price=227,
+        )
+        assert isinstance(tc, TradeCost)
+        # TotalCostPct = 往復 break-even%
+        assert tc.total_cost_pct == 0.869
+        assert tc.total_cost == 5.92
+        assert tc.is_round_trip is True  # IncludesOpenAndCloseCost
+        assert tc.account_currency == "JPY"
+        assert tc.instrument_currency == "USD"
+
+    def test_parses_cost_breakdown(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._cost_response())
+        tc = client.get_trade_cost(
+            account_key="AK", uic=46780, asset_type="Etf", amount=3, price=227,
+        )
+        # 為替手数料 (円口座の最大コスト要因)
+        assert tc.conversion_cost == 3.41
+        assert tc.conversion_cost_pct == 0.501
+        assert tc.conversion_rate_pct == 0.25  # 片道率
+        # 最低手数料の発動を検知できる
+        assert tc.commission == 2.0
+        assert tc.min_commission == 1.0
+        # spread + holding(税)
+        assert tc.spread_cost == 0.3
+        assert tc.holding_cost == pytest.approx(0.21)  # 0.2 + 0.01
+
+    def test_break_even_price_long_is_above_entry(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._cost_response())
+        tc = client.get_trade_cost(
+            account_key="AK", uic=46780, asset_type="Etf", amount=3, price=227,
+        )
+        # long: entry を 0.869% 上回ればコスト回収
+        assert tc.break_even_price() == pytest.approx(227 * 1.00869)
+        assert tc.break_even_price() > 227
+
+    def test_break_even_price_short_is_below_entry(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        resp = self._cost_response()
+        resp["Cost"]["Short"] = resp["Cost"]["Long"]  # 同構造を Short に流用
+        mock_session.get.return_value = _mock_response(200, resp)
+        tc = client.get_trade_cost(
+            account_key="AK", uic=46780, asset_type="Etf", amount=3, price=227,
+            direction="short",
+        )
+        assert tc.break_even_price() == pytest.approx(227 * (1 - 0.00869))
+        assert tc.break_even_price() < 227
+
+    def test_calls_endpoint_with_amount_and_price(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._cost_response())
+        client.get_trade_cost(
+            account_key="AK1", uic=46780, asset_type="Etf", amount=3, price=227,
+        )
+        url = mock_session.get.call_args[0][0]
+        assert "/cs/v1/tradingconditions/cost/AK1/46780/Etf" in url
+        assert "Amount=3" in url
+        assert "Price=227" in url
+
+    def test_missing_side_raises(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        resp = self._cost_response()
+        del resp["Cost"]["Long"]  # long side を欠落
+        mock_session.get.return_value = _mock_response(200, resp)
+        with pytest.raises(SaxoAuthError, match="missing 'Long' side"):
+            client.get_trade_cost(
+                account_key="AK", uic=46780, asset_type="Etf", amount=3, price=227,
+            )
+
+    def test_missing_required_field_raises(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        resp = self._cost_response()
+        del resp["Cost"]["Long"]["TotalCostPct"]
+        mock_session.get.return_value = _mock_response(200, resp)
+        with pytest.raises(SaxoAuthError, match="missing required fields"):
+            client.get_trade_cost(
+                account_key="AK", uic=46780, asset_type="Etf", amount=3, price=227,
+            )
+
+    def test_invalid_direction_raises(self, client, db):
+        with pytest.raises(ValueError, match="direction must be"):
+            client.get_trade_cost(
+                account_key="AK", uic=46780, asset_type="Etf", amount=3, price=227,
+                direction="sideways",
+            )
