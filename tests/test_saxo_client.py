@@ -17,6 +17,7 @@ from src.saxo_client import (
     BASE_URL_SIM,
     PROVIDER,
     AccountBalance,
+    CashBooking,
     SaxoAuthError,
     SaxoClient,
     SaxoConfig,
@@ -720,3 +721,106 @@ class TestTradeReports:
             client_key="CK", from_date="2026-06-01", to_date="2026-06-03",
         )
         assert reports == []
+
+
+class TestBookings:
+    """ADR-030 Phase 5: 入出金・現金移動の供給源 = reports/bookings の AssetType='Cash' 行。
+
+    bookings は記帳全エントリ (約定内訳 + 現金移動 + 手数料内訳) を返すため、
+    Cash 行のみを抽出する。ETF 行は reports/trades と二重計上になるので除外。
+    docs/api/saxo/booking-fields.md 参照。
+    """
+
+    def _setup_valid_access(self, db):
+        db.save_token(
+            provider=PROVIDER, environment="live", token_type="access",
+            token_value="AT_valid", expires_at=now_jst() + timedelta(seconds=1200),
+        )
+
+    @staticmethod
+    def _bookings_response():
+        # 2026-06-03 live で観測: Cash 1 件 (口座間振替) + ETF 内訳 1 件 (除外対象)
+        return {
+            "__count": 2,
+            "Data": [
+                {
+                    "AssetType": "Cash", "BkAmountId": "53283970258",
+                    "AccountId": "77800/T126816", "Date": "2026-03-11",
+                    "ValueDate": "2026-03-11", "AmountUSD": 314.53,
+                    "AmountAccountCurrency": 50000.0, "AccountCurrency": "JPY",
+                    "InstrumentSymbol": "CASHINTRTP",
+                    "InstrumentDescription": "Interaccount transfer within different client in S",
+                },
+                {
+                    "AssetType": "Etf", "BkAmountId": "53283970300",
+                    "AccountId": "77800/T126816", "Date": "2026-06-01",
+                    "ValueDate": "2026-06-02", "AmountUSD": -655.77,
+                    "AmountAccountCurrency": -104712.0, "AccountCurrency": "JPY",
+                    "InstrumentSymbol": "SOXL:arcx",
+                    "InstrumentDescription": "Direxion Daily Semiconductor Bull 3X ETF",
+                },
+            ],
+        }
+
+    def test_returns_cash_only_dataclass_list(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._bookings_response())
+        bookings = client.get_bookings(
+            client_key="CK", from_date="2026-01-01", to_date="2026-06-03",
+        )
+        assert len(bookings) == 1                       # ETF 行は除外
+        assert all(isinstance(b, CashBooking) for b in bookings)
+        assert bookings[0].symbol == "CASHINTRTP"
+
+    def test_cash_field_mapping(self, client, db, mock_session):
+        from datetime import date
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._bookings_response())
+        b = client.get_bookings(
+            client_key="CK", from_date="2026-01-01", to_date="2026-06-03",
+        )[0]
+        assert b.booking_id == "53283970258"
+        assert b.account_id == "77800/T126816"
+        assert b.date == date(2026, 3, 11)
+        assert b.value_date == date(2026, 3, 11)
+        assert b.amount_usd == 314.53
+        assert b.amount_account_currency == 50000.0
+        assert b.account_currency == "JPY"
+
+    def test_passes_query_params(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._bookings_response())
+        client.get_bookings(
+            client_key="CK77", from_date="2026-01-01", to_date="2026-06-03",
+        )
+        url = mock_session.get.call_args[0][0]
+        assert "/cs/v1/reports/bookings/CK77" in url
+        assert "FromDate=2026-01-01" in url
+        assert "ToDate=2026-06-03" in url
+
+    def test_missing_required_field_raises(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        resp = self._bookings_response()
+        del resp["Data"][0]["AmountUSD"]
+        mock_session.get.return_value = _mock_response(200, resp)
+        with pytest.raises(SaxoAuthError, match="missing required"):
+            client.get_bookings(
+                client_key="CK", from_date="2026-01-01", to_date="2026-06-03",
+            )
+
+    def test_empty_data_returns_empty(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"__count": 0, "Data": []})
+        assert client.get_bookings(
+            client_key="CK", from_date="2026-01-01", to_date="2026-06-03",
+        ) == []
+
+    def test_no_cash_rows_returns_empty(self, client, db, mock_session):
+        """Cash 行が無ければ空 (ETF だけの期間)。"""
+        self._setup_valid_access(db)
+        resp = self._bookings_response()
+        resp["Data"] = [r for r in resp["Data"] if r["AssetType"] != "Cash"]
+        mock_session.get.return_value = _mock_response(200, resp)
+        assert client.get_bookings(
+            client_key="CK", from_date="2026-01-01", to_date="2026-06-03",
+        ) == []

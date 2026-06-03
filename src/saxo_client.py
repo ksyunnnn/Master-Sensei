@@ -196,6 +196,38 @@ class TradeReport:
 
 
 @dataclass
+class CashBooking:
+    """現金移動1件 (deposit/withdrawal) の意味的 snapshot (ADR-030 Phase 5)。
+
+    `GET /cs/v1/reports/bookings/{ClientKey}` の `Data[]` のうち `AssetType='Cash'`
+    の行を展開する。執行事実層 `account_transactions` の入出金行の供給源。
+    raw dict access を防ぐ (ADR-026)。各 field の定義・観測値は
+    docs/api/saxo/booking-fields.md を参照。
+
+    Attributes:
+        booking_id: 記帳エントリの一意 ID (BkAmountId)。現金行の主キー (TradeId は無い)。
+        account_id: 口座 (例 77800/T126816)。
+        date: 記帳日。
+        value_date: 受渡日 (settlement)。
+        amount_usd: USD 換算額。**符号付 (+ = cash in / deposit, − = cash out)**。
+        amount_account_currency: 口座通貨での額。
+        account_currency: 口座通貨 (例 JPY)。
+        symbol: 現金種別コード (例 CASHINTRTP = 口座間振替)。元の性質を保持。
+        description: 説明文 (例 "Interaccount transfer...")。
+    """
+
+    booking_id: str
+    account_id: str
+    date: date
+    value_date: date
+    amount_usd: float
+    amount_account_currency: float
+    account_currency: str
+    symbol: str
+    description: str
+
+
+@dataclass
 class SaxoConfig:
     app_key: str
     app_secret: str
@@ -693,6 +725,52 @@ class SaxoClient:
                 spread_cost_usd=float(r.get("SpreadCostUSD", 0.0)),
             ))
         return reports
+
+    def get_bookings(self, *, client_key: str, from_date: str, to_date: str,
+                     account_key: Optional[str] = None) -> list[CashBooking]:
+        """期間内の**現金移動** (deposit/withdrawal) を意味的 snapshot で返す (ADR-030 Phase 5)。
+
+        `GET /cs/v1/reports/bookings/{ClientKey}` は記帳全エントリ (約定内訳 + 現金移動 +
+        手数料内訳) を返す。本メソッドは **`AssetType='Cash'` の行のみ**を抽出する
+        (ETF 行は約定内訳で reports/trades と二重計上になるため除外)。`from_date`/
+        `to_date` は "YYYY-MM-DD"。向き (deposit/withdrawal) は `AmountUSD` の符号で
+        判定する (写像は account_ledger 側)。ADR-026 に基づき raw dict 露出を防ぐ。
+
+        See docs/api/saxo/booking-fields.md
+        """
+        path = (f"/cs/v1/reports/bookings/{client_key}"
+                f"?FromDate={from_date}&ToDate={to_date}")
+        if account_key:
+            path += f"&AccountKey={account_key}"
+        rows = self._api_get(path).get("Data", [])
+
+        required = (
+            "BkAmountId", "AccountId", "Date", "ValueDate", "AmountUSD",
+            "AmountAccountCurrency", "AccountCurrency", "InstrumentSymbol",
+        )
+        bookings: list[CashBooking] = []
+        for r in rows:
+            if r.get("AssetType") != "Cash":
+                continue
+            missing = [k for k in required if k not in r]
+            if missing:
+                raise SaxoAuthError(
+                    f"bookings (Cash) row missing required fields {missing} "
+                    f"(BkAmountId={r.get('BkAmountId')}). "
+                    "Saxo API may have changed; verify docs/api/saxo/booking-fields.md"
+                )
+            bookings.append(CashBooking(
+                booking_id=str(r["BkAmountId"]),       # see booking-fields.md
+                account_id=r["AccountId"],
+                date=date.fromisoformat(r["Date"][:10]),
+                value_date=date.fromisoformat(r["ValueDate"][:10]),  # settlement
+                amount_usd=float(r["AmountUSD"]),       # 符号付: + = cash in
+                amount_account_currency=float(r["AmountAccountCurrency"]),
+                account_currency=r["AccountCurrency"],
+                symbol=r["InstrumentSymbol"],           # 例 CASHINTRTP (口座間振替)
+                description=r.get("InstrumentDescription", ""),
+            ))
+        return bookings
 
     def _api_get(self, path: str) -> dict:
         token = self.get_access_token()

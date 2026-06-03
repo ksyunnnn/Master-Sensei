@@ -149,6 +149,17 @@ open positions のリスト。
 - 結合キー: **`OrderId`**（`trades.broker_ref` と join）、約定主キー `TradeId`
 - 買売判定: `TradeEventType`（"Bought"/"Sold"）。`Direction` は "None" で使えない
 
+### GET /cs/v1/reports/bookings/{ClientKey}
+
+記帳＝全勘定エントリー（約定の内訳＋現金移動＋手数料内訳）。`account_transactions` の
+**入出金・現金移動（deposit/withdrawal）行**の供給源（ADR-030 Phase 5）。
+
+- 検証: 2026-06-03 live で HTTP 200 確認（108 行）
+- フィールド定義: [booking-fields.md](booking-fields.md)
+- 取り込みは **`AssetType='Cash'` 行のみ**（ETF 行は約定内訳で reports/trades と二重計上になるため除外）
+- code: `SaxoClient.get_bookings()` → `CashBooking`
+- query: `FromDate`/`ToDate`（trades と同形）
+
 ## 未使用 / 未特定 endpoint (将来検討)
 
 - `/trade/v1/orders/me`: 発注 (本プロジェクトは read-only、未使用)
@@ -156,4 +167,4 @@ open positions のリスト。
 - `/port/v1/orders/me`: 未約定注文一覧（照合で使用、意味的アクセサ未整備）
 - `/port/v1/closedpositions/me`: クローズ済 position 履歴（照合で使用）
 - `/cs/v1/audit/orderactivities/me`: 取引履歴 audit
-- `/cs/v1/reports/accountStatement/{ClientKey}`: 入出金（**404、正しい名前未特定**。ADR-030 Phase3 後続）
+- `/cs/v1/reports/accountStatement/{ClientKey}`: 404（PDF/XLS 用レポートで JSON 不可）。入出金は **`/cs/v1/reports/bookings/` で解決済**（上記、ADR-030 Phase 5）

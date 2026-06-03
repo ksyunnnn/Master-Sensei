@@ -9,7 +9,8 @@ ID 体系 (docs/api/saxo/trade-report-fields.md):
 - `broker_ref` = TradeId (約定=fill の主キー。ADR-015 の "Saxo 取引ID")
 - `order_id`   = OrderId (注文。`trades.broker_ref` との結合キー)
 
-入出金 (deposit/withdrawal) は別エンドポイント (未特定) のため本写像には含まない。
+入出金・現金移動 (deposit/withdrawal) は `reports/bookings` の `AssetType='Cash'` 行を
+`cash_bookings_to_rows` で写像する (ADR-030 Phase 5、docs/api/saxo/booking-fields.md)。
 """
 from __future__ import annotations
 
@@ -17,13 +18,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from src.saxo_client import TradeReport
+from src.saxo_client import CashBooking, TradeReport
 
 # ADR-015 のスキーマ + ADR-009(source/updated_at) + 3ID 体系対応(order_id/account_id)。
 ACCOUNT_TX_COLUMNS = [
     "trade_date",        # 約定日
     "settlement_date",   # 受渡日 (ValueDate)
-    "type",              # buy / sell (将来 deposit / withdrawal)
+    "type",              # buy / sell / deposit / withdrawal
     "instrument",        # 銘柄コード (例 SOXL)
     "quantity",          # 数量 (常に正)
     "price_per_unit",    # 約定単価
@@ -66,6 +67,45 @@ def trade_reports_to_rows(
             "broker_ref": r.trade_id,
             "order_id": r.order_id,
             "account_id": r.account_id,
+            "source": source,
+            "updated_at": updated_at,
+        })
+    return rows
+
+
+def cash_bookings_to_rows(
+    bookings: list[CashBooking], *, source: str, updated_at: datetime,
+) -> list[dict]:
+    """CashBooking のリストを account_transactions 行 (dict) のリストに写像する。
+
+    入出金・現金移動 (ADR-030 Phase 5)。純関数。
+
+    - type: `amount_usd >= 0 → 'deposit'`、`< 0 → 'withdrawal'`。口座間振替の「入」も
+      この取引口座にとっては資金供給 (cash in) なので機能的に deposit。元の性質は
+      `instrument` に symbol (例 CASHINTRTP) を保持して可逆にする (symbol へのハード
+      コード禁止: 外部入出金の symbol は未観測のため向きは符号で判定)。
+    - quantity / price_per_unit: 現金行は株数・単価を持たない → None。
+    - broker_ref: BkAmountId (現金行の主キー)。order_id: 注文を伴わない → None。
+    """
+    rows: list[dict] = []
+    for b in bookings:
+        usd = b.amount_usd
+        fx_rate = abs(b.amount_account_currency / usd) if usd else None
+        rows.append({
+            "trade_date": b.date,
+            "settlement_date": b.value_date,
+            "type": "deposit" if usd >= 0 else "withdrawal",
+            "instrument": b.symbol,
+            "quantity": None,
+            "price_per_unit": None,
+            "amount": usd,
+            "currency": "USD",
+            "fx_rate": fx_rate,
+            "amount_jpy": b.amount_account_currency,
+            "realized_pnl": None,
+            "broker_ref": b.booking_id,
+            "order_id": None,
+            "account_id": b.account_id,
             "source": source,
             "updated_at": updated_at,
         })

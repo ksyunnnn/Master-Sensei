@@ -59,8 +59,9 @@ Saxo 照合ワークフローを実行してください (ADR-030)。判断層 `
 
 ## 注意
 
-- 入出金(deposit/withdrawal)は別エンドポイント未特定のため本 mirror に含まれない
-  (約定のみ)。`docs/api/saxo/trade-report-fields.md` の「未解決」参照。
+- 入出金・現金移動(deposit/withdrawal)も mirror 対象 (ADR-030 Phase 5)。
+  `reports/bookings` の `AssetType='Cash'` 行から取り込む (`docs/api/saxo/booking-fields.md`)。
+  現金行は建玉照合に干渉しない (`reconcile_positions` は buy/sell のみ集計)。
 - 結合キーは **OrderId** (`trades.broker_ref` ↔ `ledger.order_id`)。`TradeId`/`PositionId`
   と混同しない (docs/api/saxo/trade-report-fields.md)。
 - ライブ状態(現保有/注文)は保存しない。履歴は `account_transactions`(Parquet) が SoT。

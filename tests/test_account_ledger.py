@@ -9,8 +9,12 @@ from datetime import date, datetime
 
 import pytest
 
-from src.account_ledger import ACCOUNT_TX_COLUMNS, trade_reports_to_rows
-from src.saxo_client import TradeReport
+from src.account_ledger import (
+    ACCOUNT_TX_COLUMNS,
+    cash_bookings_to_rows,
+    trade_reports_to_rows,
+)
+from src.saxo_client import CashBooking, TradeReport
 
 
 def _buy():
@@ -96,3 +100,92 @@ def test_zero_usd_amount_fx_rate_none():
 
 def test_empty_input():
     assert trade_reports_to_rows([], source="s", updated_at=UPDATED) == []
+
+
+# --- 現金移動 (deposit/withdrawal) の写像 (ADR-030 Phase 5) ---
+
+
+def _transfer_in():
+    """2026-06-03 live で観測した口座間振替 (CASHINTRTP, +50,000 JPY)。"""
+    return CashBooking(
+        booking_id="53283970258", account_id="77800/T126816",
+        date=date(2026, 3, 11), value_date=date(2026, 3, 11),
+        amount_usd=314.53, amount_account_currency=50000.0, account_currency="JPY",
+        symbol="CASHINTRTP", description="Interaccount transfer within different client in S",
+    )
+
+
+def _withdrawal():
+    """符号が負の現金移動 (cash out)。外部入出金の符号表現は未観測のため合成。"""
+    return CashBooking(
+        booking_id="99999999999", account_id="77800/T126816",
+        date=date(2026, 4, 1), value_date=date(2026, 4, 2),
+        amount_usd=-200.0, amount_account_currency=-31700.0, account_currency="JPY",
+        symbol="CASHWD", description="Cash withdrawal",
+    )
+
+
+def test_cash_maps_all_columns():
+    rows = cash_bookings_to_rows([_transfer_in()], source="saxo_reports_bookings", updated_at=UPDATED)
+    assert len(rows) == 1
+    assert set(rows[0].keys()) == set(ACCOUNT_TX_COLUMNS)
+
+
+def test_cash_in_is_deposit():
+    row = cash_bookings_to_rows([_transfer_in()], source="s", updated_at=UPDATED)[0]
+    assert row["type"] == "deposit"          # AmountUSD >= 0
+    assert row["amount"] == 314.53           # USD, cash in は正
+    assert row["amount"] > 0
+    assert row["currency"] == "USD"
+    assert row["amount_jpy"] == 50000.0
+    assert row["trade_date"] == date(2026, 3, 11)
+    assert row["settlement_date"] == date(2026, 3, 11)
+
+
+def test_cash_out_is_withdrawal():
+    row = cash_bookings_to_rows([_withdrawal()], source="s", updated_at=UPDATED)[0]
+    assert row["type"] == "withdrawal"       # AmountUSD < 0
+    assert row["amount"] < 0                  # cash out は負
+
+
+def test_cash_preserves_symbol_in_instrument():
+    """元の性質 (口座間振替 CASHINTRTP 等) を instrument に保持し可逆にする。"""
+    row = cash_bookings_to_rows([_transfer_in()], source="s", updated_at=UPDATED)[0]
+    assert row["instrument"] == "CASHINTRTP"
+
+
+def test_cash_has_no_quantity_or_price():
+    """現金行は株数・単価を持たない (NULL)。"""
+    row = cash_bookings_to_rows([_transfer_in()], source="s", updated_at=UPDATED)[0]
+    assert row["quantity"] is None
+    assert row["price_per_unit"] is None
+
+
+def test_cash_broker_ref_is_booking_id_no_order():
+    """現金行の主キーは BkAmountId。注文を伴わないので order_id は None。"""
+    row = cash_bookings_to_rows([_transfer_in()], source="s", updated_at=UPDATED)[0]
+    assert row["broker_ref"] == "53283970258"
+    assert row["order_id"] is None
+
+
+def test_cash_fx_rate_positive():
+    row = cash_bookings_to_rows([_transfer_in()], source="s", updated_at=UPDATED)[0]
+    assert row["fx_rate"] == pytest.approx(50000.0 / 314.53, rel=1e-6)
+    assert row["fx_rate"] > 0
+
+
+def test_cash_zero_usd_fx_rate_none():
+    b = _transfer_in()
+    b.amount_usd = 0.0
+    row = cash_bookings_to_rows([b], source="s", updated_at=UPDATED)[0]
+    assert row["fx_rate"] is None
+    assert row["type"] == "deposit"          # 0 は deposit 側 (>= 0)
+
+
+def test_cash_realized_pnl_none():
+    row = cash_bookings_to_rows([_transfer_in()], source="s", updated_at=UPDATED)[0]
+    assert row["realized_pnl"] is None
+
+
+def test_cash_empty_input():
+    assert cash_bookings_to_rows([], source="s", updated_at=UPDATED) == []

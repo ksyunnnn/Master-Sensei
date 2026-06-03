@@ -81,11 +81,11 @@ Master Sensei は ADR-025 で Saxo Live API を導入済みであり、**Saxo �
 
 | account_transactions の type | Saxo エンドポイント |
 |------|------|
-| buy / sell（約定明細） | `/cs/v1/reports/trades/{ClientKey}`（TradeId・日付範囲） |
-| deposit / withdrawal（入出金） | Account Statement / Transaction 系レポート |
+| buy / sell（約定明細） | `/cs/v1/reports/trades/{ClientKey}`（TradeId・日付範囲、動作確認済） |
+| deposit / withdrawal（入出金・現金移動） | `/cs/v1/reports/bookings/{ClientKey}` の `AssetType='Cash'` 行（2026-06-03 live で動作確認済、Phase 5） |
 | （round-trip 成績の導出補助） | `/port/v1/closedpositions/me`（動作確認済） |
 
-**フィールド定義は ADR-026 に従い、実装時に公式仕様で確認してから `docs/api/saxo/` に追記する**（推測禁止）。`/cs/v1/reports/trades/` と入出金レポートは未検証のため、実装前に endpoint 存在・契約状態・フィールドを確認する。
+**フィールド定義は ADR-026 に従い、実装時に公式仕様で確認してから `docs/api/saxo/` に追記する**（推測禁止）。`/cs/v1/reports/trades/` と `bookings` は実 call で endpoint 存在・契約状態・フィールドを確認済（→ `docs/api/saxo/booking-fields.md`）。
 
 ### 3. 導出ビュー（非永続、ADR-015 原則に回帰）
 
@@ -130,6 +130,18 @@ TDD（ADR 記録 → テスト → 実装）で段階的に進める。
 ### Phase 4: 照合機構
 - `.claude/skills/sync-saxo/SKILL.md`: pull → mirror → diff → break 提示 → 自動/手動更新。
 - SessionStart フック（`scripts/`）に未照合 break の状態注入。
+
+### Phase 5: 入出金・現金移動の取り込み（2026-06-03）
+
+Phase 3 で「別エンドポイント未特定」として保留していた入出金（deposit/withdrawal）を取り込む。きっかけは「残高変動を損益で説明できない」「Master Sensei が口座の質問に答えられる状態であってほしい」というユーザー要望。
+
+- **エンドポイント特定（実 call で検証）**: `GET /cs/v1/reports/bookings/{ClientKey}`（`FromDate`/`ToDate`、trades と同形）。`bookings` は記帳＝全勘定エントリー（約定の内訳＋現金移動＋手数料内訳）を返す。このうち **`AssetType='Cash'` の行のみ**を現金移動として取り込む（ETF 行＝約定内訳は reports/trades と二重計上になるため取り込まない）。
+- **観測（2026-06-03 live）**: Cash 行 4 件、すべて `InstrumentSymbol='CASHINTRTP'`（口座間振替、計 450,000 JPY 入金）。**外部銀行 deposit/withdrawal は本口座の履歴に存在せず、その表現は未確認**（確信度: 振替捕捉=95% / 外部入出金も同型=70%）。したがって symbol 値に依存せず、`AssetType='Cash'` で汎用に拾い、向き（in/out）は **`AmountUSD` の符号**で判定する設計とする（symbol へのハードコード禁止）。
+- **type の写像**: `AmountUSD >= 0 → 'deposit'`、`< 0 → 'withdrawal'`。口座間振替の「入」も、この取引口座にとっては資金供給（cash in）なので機能的に deposit とする。元の性質（CASHINTRTP 等）は `instrument` 列に symbol を保持して可逆にする。
+- **スキーマ**: `account_transactions` の列は不変（ADR-015 / Phase 3 のまま）。`type` の取りうる値に `deposit`/`withdrawal` が加わるだけ。`quantity`/`price_per_unit` は現金行では NULL。`broker_ref` には `BkAmountId`（記帳エントリ ID）、`order_id` は NULL（注文を伴わない）。
+- **照合への影響なし**: `reconcile_positions` は `CASE type WHEN 'buy'/'sell'` で集計し現金行は `ELSE 0`。建玉照合に干渉しない（テストで保証）。
+- 変更ファイル: `src/saxo_client.py`（`CashBooking` + `get_bookings`）, `src/account_ledger.py`（`cash_bookings_to_rows`）, `scripts/import_account_transactions.py`（bookings も mirror）, `docs/api/saxo/booking-fields.md`（新規）, `endpoints.md`/`trade-report-fields.md`（未解決の解消）, 各テスト。
+- **非スコープ（明示）**: TWR/MWR 等の運用力指標の算出はやらない（ユーザー選択。必要になったら別途）。本 Phase は「現金移動を台帳に記録し、残高変動を損益＋資金移動で説明可能にする」までに限定。
 
 ### 変更ファイル（想定）
 - `src/db.py`, `src/saxo_client.py`, `tests/test_db.py`, `tests/test_saxo_client.py`

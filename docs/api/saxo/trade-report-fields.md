@@ -88,6 +88,6 @@ Saxo には**別名前空間の ID が3系統**ある。照合の結合キーは
 | `broker_ref` | **`TradeId`**（台帳の主キー） |
 | （decision 結合用）| `OrderId` → `trades.broker_ref` と join |
 
-## 未解決（後続）
+## 解決済（後続）
 
-- **入出金（deposit/withdrawal）**: `/cs/v1/reports/accountStatement/{ClientKey}` は 404。正しいエンドポイント名は未特定（"Transaction" / "Account Statement" 系を要調査）。約定台帳とは別途。
+- **入出金（deposit/withdrawal）**: `/cs/v1/reports/bookings/{ClientKey}` の `AssetType='Cash'` 行で取得（ADR-030 Phase 5、2026-06-03 live 検証）。フィールド定義は [booking-fields.md](booking-fields.md)。`accountStatement` は PDF/XLS 用で JSON 不可だったため不使用。
