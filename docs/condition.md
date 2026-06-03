@@ -1,6 +1,15 @@
 # Condition
 
-Last updated: 2026-06-03 (session 41、JST 火曜夕〜水曜朝 17:19→08:38)。**SOXL が +15.6% の大ギャップ継続日 (Computex/AI モメンタム)。#12 を寄りで利確 +$75.54 確定**。寄付22:30で TP$236 指値が gap-up 寄り値 **~$243.2 で約定**(指値売りは寄り値が上なら有利約定)、realized **+$75.54 (+11.5%)**。SOXL は $244→最高 $267 (+15.6%) まで上伸、SOXX +2.4%/NVDA +1.6%/**AMD −1.2%**=ブレッドス薄。**#13($208,4株,DayOrder)は失効**(orders endpoint で working に不在を確認)。**新規 dip-buy IFD-OCO 発注(ユーザー): BUY $228/5株 → OCO TP$242/SL$222、GTC、延長時間無効、OrderId 5409497457**(SOXLが$262+まで走り現値−13%で stale・未約定)。**K-041 登録**(risk_management: デプロイ規律)+ CLAUDE.md「Position Sizing」/memory に反映。scan-market×2(geo/neutral 1件)、update-regime(risk_on 不変・再保存せず)。Saxo 再認証 + 監視/トークン更新の常駐構築(overnight対応・downsideトリガー・モバイルpush)。**orders endpoint `/port/v1/orders/me` を read で使用**(ADR-026 gap、raw)。
+Last updated: 2026-06-03 (session 42、JST 水曜夕 18:03→)。**インフラ整備セッション: ADR-031 延長時間リアルタイム現値 `src/realtime.py::fetch_realtime_quote()` を実装・main マージ**(yfinance prepost 主 + Tiingo IEX afterHours 裏取り[~08:00-16:55 ET]、**Saxo は未購読 NoAccess で価格には使わない**、on-demand・非永続、`is_thin` froth 注記、22 tests)。プレ/アフター分析で stale parquet を現値扱いする穴を解消(検証: yfinance $281 ≈ ユーザー TradingView「プレ281.20」一致、6/02 最安値 レギュラー$238.82 vs **延長込み$223.39**)。CLAUDE.md 行動ルール/entry-analysis SKILL/condition.md に反映。**口座P&Lレビュー**(Saxo live: 建玉0・フラット、現金 P120136 ¥55,387 + T126816 ¥318,871、確定損益 **−75,742 JPY** = SOXS **−120,963 が損失源**/SOXL **+45,221 黒字**、PF 0.38、勝率60%だが平均損失が利益の4倍)。scan-market×2(6/02引け S&P最高値7,609.78・半導体ラリー SOX+6%/MRVL+32%/HPE+19%、Alphabet $80B AI capex 登録)、update-regime(risk_on 不変・非保存)。**↓「次セッションの起点」の trade reconcile(#12 close/#13 cancel/dip-buy stale)は session 41 からの未処理で持ち越し(本セッション未着手)**。
+
+---
+
+## ⚡ Session 42 Handoff (2026-06-03 18:03→ JST、米 6/03 プレマ跨ぎ)
+
+- **ADR-031 実装・マージ完了** (merge `cc42dd0`): `src/realtime.py` に `fetch_realtime_quote()`(便利ラッパー) + `get_realtime_quote()`(注入可能コア) + `classify_session()`(pre/regular/post/closed) + 実ソース2種(`YFinanceExtendedSource`/`TiingoExtendedSource`)。`tests/test_realtime.py` 22件 green、回帰なし(791 collected)。**永続化しない**(froth がレギュラー系列を汚さない)。
+- **発見した穴**: entry-analysis は現値を parquet(レギュラー終値・最大1日stale)から読んでおり、プレ/アフターの実勢を知らずに MAP を組む = 推測の上に推測。Session 35/41 で繰り返し実害(dip-buy stale 等)。SaxoClient は価格 quote メソッドを持たず、Saxo は市場データ未購読(`NoAccess`/`LastUpdated 0001-01-01`)で価格取得に使えない(発注・約定は購読なしで正常、約定は account_transactions が SoT)。
+- **運用ルール確定**: プレ/アフター時間帯に価格・タイミングが絡む分析は、`fetch_realtime_quote()` で実勢を提示してから判断に入る。`is_thin=True`(pre/post)は froth=寄りまで持たない可能性として sizing に注記、瞬間値を stop/エントリー基準にしない。
+- **未処理(push 待ち)**: ローカル main にマージ済。`origin/main` への push はユーザー指示待ち。
 
 **次セッションの起点（reconcile / 未処理の DB 書込）**:
 1. **#12 を決済済みで DB 更新**: exit ~$243.2 / exit_date 2026-06-02 / realized +$75.54 / TP約定。**`close_trade(cost_usd=)` で net PnL を残す（ADR-029、往復~$6 → net≈+$69-70）**。Saxo ClosedProfitLoss=75.54 が gross/net どちらか要確認。
