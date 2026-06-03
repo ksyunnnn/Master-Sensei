@@ -77,6 +77,8 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - セッション中に1件以上の予測記録を目指す
 - regime_assessmentsには必ず入力値スナップショット（6指標の生値）を含める（ADR-009）
 - **「Saxo API で状況確認」を依頼されたら → `auth_tokens` の expires_at を確認し、token 失効時は Claude 自身が `scripts/saxo_oauth_init.py` をバックグラウンド起動する**（ユーザーが担うのはブラウザログインのみ）。「対話フローが必要」を理由に `! python ...` をユーザーに丸投げしない。callback 完了（token 保存）後に `get_all_account_balances()`（sizing は `spending_power`）+ `get_positions()` で現況を取得・DB と突合する。raw dict access 禁止・意味的アクセサ経由（ADR-025 / ADR-026）
+- **`trades` は判断/宣言層に純化（ADR-030）**。実約定・ポジション・成績は **Saxo 由来の執行事実層 `account_transactions`（Parquet, 全mirror）から導出**する。`trades` は手で実態を書かず、`broker_ref`(=Saxo **OrderId**) で台帳と照合する。**事実層を手書きしない**（業界標準: 約定はブローカーからインポート）。結合キーは OrderId（`TradeId`/`PositionId` と混同禁止、`docs/api/saxo/trade-report-fields.md`）
+- **「DBがずれてる気がする」「口座と突合して」→ `/sync-saxo`**。`scripts/import_account_transactions.py` で台帳を全mirror更新 → `SenseiDB.reconcile_positions()` で break 検出 → 修正は SenseiDB メソッド経由・物理削除しない（ADR-018/030）
 
 ### ユーザー起点（Skill）
 - `/scan-market` — ニュース調査・イベントDB登録（網羅的、6カテゴリ個別検索）
@@ -86,6 +88,7 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - `/verify-knowledge` — stale知見の検証・検証日更新
 - `/entry-analysis` — MAP分析→シナリオ別注文設定→trade記録（ADR-018）
 - `/signal-check` — 確認済みシグナルの発火チェック。発火時は`[ACTION]`通知→`/entry-analysis`提案
+- `/sync-saxo` — Saxo実約定を執行事実層(Parquet)に全mirror→判断層tradesと照合しbreak検出・修正（ADR-030）
 
 ### セッション終了前（Stop Hook）
 - condition.mdの最終更新日が今日でなければ更新する
