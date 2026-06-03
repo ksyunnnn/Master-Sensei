@@ -124,7 +124,7 @@ Last updated: 2026-06-03 (session 41、JST 火曜夕〜水曜朝 17:19→08:38)�
 - **結果**: オープンポジション 0 件・pending 0 件。口座「変化なし」と DB 一致。
 
 #### データ被覆の学び（ユーザー指摘「pre の値も認識して」）
-5分足 parquet (Tiingo IEX) は **ET 09:30–15:55 のレギュラー時間のみ**（プレ/アフター 0 本）。GTC/延長時間有効の指値はプレ・アフターでも約定しうるため、レギュラー安値だけで「不発」を断定するのは不完全な検証。価格・安値・高値を語る時は参照データが延長時間を含むか確認し、進行中のプレマーケットはリアルタイム取得（yfinance/Tiingo）で補う。
+5分足 parquet (Tiingo IEX) は **ET 09:30–15:55 のレギュラー時間のみ**（プレ/アフター 0 本）。GTC/延長時間有効の指値はプレ・アフターでも約定しうるため、レギュラー安値だけで「不発」を断定するのは不完全な検証。価格・安値・高値を語る時は参照データが延長時間を含むか確認し、進行中のプレマーケットはリアルタイム取得（yfinance/Tiingo）で補う。**→ ADR-031 で `src/realtime.py` の `fetch_realtime_quote()` として実装（yfinance prepost 主＋Tiingo afterHours 裏取り、on-demand・非永続、`is_thin` froth 注記付き）。プレ/アフター分析時はこれで実勢を提示してから判断する。**
 
 #### /scan-market (5/28 22:31 → 5/29 19:47 JST、2件登録)
 - **market/positive** (5/29 05:00 JST = 5/28 引け): S&P500・Nasdaq 揃って史上最高値 (各+0.5%)、4月 PCE 3年高にも関わらず。AI infra 主導 (MSFT/ORCL/PLTR +3-4%、SNOW +30%)。**SOXL 5/27 $217.98 → 5/28 $224.63 (+3.05%、Parquet 確認)** で前日 chip selloff (-3.46%) を全戻し。前日の AI capex sustainability doubt thesis を市場が1日で否定。

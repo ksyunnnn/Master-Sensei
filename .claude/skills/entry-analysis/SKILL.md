@@ -42,6 +42,28 @@ PYEOF
 
 - 日足またはマクロが1日以上古い場合 → `update_data.py` の実行を提案（P2: 警告して続行）
 
+### 1.5 延長時間の現値確認（ADR-031）
+
+**プレ/アフター時間帯にエントリー分析する場合は、parquet（レギュラー終値・stale）を現値扱いせず、必ず実勢を取得してから分析に入る。** stale 現値で MAP を組むと「推測の上に推測」になる。
+
+```bash
+python << 'PYEOF'
+from src.realtime import fetch_realtime_quote, classify_session, ET
+from datetime import datetime
+
+if classify_session(datetime.now(ET)) in ("pre", "post"):
+    q = fetch_realtime_quote("SOXL")   # 対象銘柄に置換
+    print(q.summary())
+    print(f"  is_thin={q.is_thin} → True の現値は sizing/stop の基準アンカーにしない")
+else:
+    print("レギュラー時間 or 休場: parquet 現値で可")
+PYEOF
+```
+
+- 現値・乖離%・取得時刻・session を提示してから MAP に進む。
+- `is_thin=True`（pre/post）は **froth＝寄りまで持たない可能性**として sizing 判断に注記する（S37 / K-041）。薄商いの瞬間値を stop/エントリーの基準にしない。
+- 実約定の確定は `account_transactions`（ADR-030）で裏取り。延長安値/高値での約定可否を現値ヘルパー単独で断定しない。
+
 ### 2. MAP分析（3軸独立評価）
 
 Charter 3.3: 各軸を独立に評価してから統合する。先に結論を出さない。
