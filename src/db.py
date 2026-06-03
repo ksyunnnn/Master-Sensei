@@ -769,6 +769,48 @@ class SenseiDB:
         ).fetchdf().to_dict("records")
         return rows
 
+    def reconcile_positions(self, transactions_parquet: str) -> list[dict]:
+        """判断層 trades の保有申告 vs 執行事実層(Parquet)の純ポジションを突合 (ADR-030)。
+
+        instrument ごとに、
+          - trades_open_qty: status='filled' AND exit_date IS NULL の数量合計（=保有申告）
+          - ledger_net_qty:  account_transactions の buy(+)/sell(−) 純数量（=実態）
+        が一致しない instrument を **break** として返す。「クローズ済なのに建玉中」
+        「未記録のエントリー」を機械検出する（"よくずれる" の検出機構）。
+
+        台帳は Saxo 由来の全 mirror（`scripts/import_account_transactions.py`）。
+        ファイルが無い/空でも例外にせず、trades 側の保有申告のみで判定する。
+        """
+        ledger = (
+            "SELECT instrument, "
+            "SUM(CASE type WHEN 'buy' THEN quantity WHEN 'sell' THEN -quantity "
+            "ELSE 0 END) AS net_qty "
+            f"FROM read_parquet('{transactions_parquet}') GROUP BY instrument"
+        )
+        try:
+            ledger_rows = self.conn.execute(ledger).fetchall()
+        except (duckdb.IOException, duckdb.CatalogException):
+            ledger_rows = []
+        ledger_net = {sym: float(q) for sym, q in ledger_rows}
+
+        open_rows = self.conn.execute(
+            "SELECT instrument, SUM(quantity) FROM trades "
+            "WHERE status = 'filled' AND exit_date IS NULL GROUP BY instrument"
+        ).fetchall()
+        trades_open = {sym: float(q) for sym, q in open_rows}
+
+        breaks: list[dict] = []
+        for sym in sorted(set(ledger_net) | set(trades_open)):
+            lq = ledger_net.get(sym, 0.0)
+            tq = trades_open.get(sym, 0.0)
+            if abs(lq - tq) > 1e-9:
+                breaks.append({
+                    "instrument": sym,
+                    "trades_open_qty": tq,
+                    "ledger_net_qty": lq,
+                })
+        return breaks
+
     # ── auth_tokens (ADR-025) ──
 
     def save_token(
