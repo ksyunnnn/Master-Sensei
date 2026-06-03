@@ -138,9 +138,22 @@ open positions のリスト。
 - code 実装: `SaxoClient.exchange_code_for_tokens()`, `SaxoClient._refresh_access_token()`
 - ADR-025 参照
 
-## 未使用 endpoint (将来検討)
+## Historical Report Data (ADR-030, 執行事実層の供給源)
+
+### GET /cs/v1/reports/trades/{ClientKey}
+
+実約定の不変台帳（buy/sell）。`account_transactions`（Parquet）の供給源。
+
+- 検証: 2026-06-03 live で HTTP 200 確認（ADR-026 / 事実検証3段階クリア）
+- フィールド定義: [trade-report-fields.md](trade-report-fields.md)
+- 結合キー: **`OrderId`**（`trades.broker_ref` と join）、約定主キー `TradeId`
+- 買売判定: `TradeEventType`（"Bought"/"Sold"）。`Direction` は "None" で使えない
+
+## 未使用 / 未特定 endpoint (将来検討)
 
 - `/trade/v1/orders/me`: 発注 (本プロジェクトは read-only、未使用)
 - `/trade/v1/prices/`: リアルタイム価格 (米市場休場対策で将来検討)
-- `/port/v1/closedpositions/me`: クローズ済 position 履歴
+- `/port/v1/orders/me`: 未約定注文一覧（照合で使用、意味的アクセサ未整備）
+- `/port/v1/closedpositions/me`: クローズ済 position 履歴（照合で使用）
 - `/cs/v1/audit/orderactivities/me`: 取引履歴 audit
+- `/cs/v1/reports/accountStatement/{ClientKey}`: 入出金（**404、正しい名前未特定**。ADR-030 Phase3 後続）

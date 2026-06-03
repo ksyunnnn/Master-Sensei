@@ -157,3 +157,5 @@ data/parquet/account/transactions.parquet
 - ADR-003のWrite基準セクションに上記2テーブルを追記
 - SessionStartフックに「未決済トレードの有無」を表示（将来タスク）
 - 見直しトリガー: 部分約定・ナンピン・段階利確が頻発した場合、executions 子テーブルの分離を検討
+
+> **追記 (2026-06-03, ADR-030):** ここで設計した生データ層 `account_transactions` は「Saxo Excel インポート」想定のまま未実装だった。**ADR-030** で供給源を Saxo Historical Report Data（API）に変更して実装する方針に更新。`trades` は判断/宣言層に純化し、ポジション・成績は本層からの導出（非永続）に回帰、`broker_ref` で照合する。

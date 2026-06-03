@@ -78,3 +78,5 @@ Session 35 で、`trades` #11（SOXL long $215 GTC 指値 IFD-OCO）が**約定�
 - 成績集計は `status='filled'` フィルタが必須になる。
 - `trades` が「決定」と「執行」を1テーブルで兼ねる歪みは残る。decision 層の完全分離が必要になった場合は別 ADR で対応する。
 - 見直しトリガー: placed→filled の遷移を Saxo API 約定確認と自動同期する仕組みを将来検討（現状は手動 `update_trade_status`）。
+
+> **追記 (2026-06-03, ADR-030):** ここで挙げた「決定と執行の歪み」と「Saxo 約定確認の自動同期」は **ADR-030** で対応した。`trades` を判断/宣言層に純化し、執行事実は Saxo 由来の `account_transactions`（Parquet）から導出、`broker_ref` で照合する。本 ADR の `status` 列はその判断層側のライフサイクル表現として引き続き有効。

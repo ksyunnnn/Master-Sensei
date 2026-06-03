@@ -21,6 +21,7 @@ from src.saxo_client import (
     SaxoClient,
     SaxoConfig,
     TradeCost,
+    TradeReport,
 )
 
 
@@ -588,3 +589,134 @@ class TestTradeCost:
                 account_key="AK", uic=46780, asset_type="Etf", amount=3, price=227,
                 direction="sideways",
             )
+
+
+class TestTradeReports:
+    """ADR-030: 執行事実層 (account_transactions) の供給源 = reports/trades。
+
+    買売判定は TradeEventType ("Bought"/"Sold")、Amount は符号付。
+    結合キーは OrderId (broker_ref)、約定主キーは TradeId。
+    docs/api/saxo/trade-report-fields.md 参照。
+    """
+
+    def _setup_valid_access(self, db):
+        db.save_token(
+            provider=PROVIDER, environment="live", token_type="access",
+            token_value="AT_valid", expires_at=now_jst() + timedelta(seconds=1200),
+        )
+
+    @staticmethod
+    def _trades_response():
+        # 2026-06-03 live で観測した SOXL 往復 (trade 12 に対応)
+        return {
+            "__count": 2,
+            "Data": [
+                {
+                    "TradeId": "6732724591", "OrderId": "5409009626",
+                    "AccountId": "77800/T126816", "Uic": 46780,
+                    "InstrumentSymbol": "SOXL:arcx", "AssetType": "Etf",
+                    "Amount": 3.0, "Price": 218.0,
+                    "TradeEventType": "Bought", "Direction": "None",
+                    "ToOpenOrClose": "ToOpen", "TradeType": "Limit",
+                    "TradeDate": "2026-06-01", "ValueDate": "2026-06-02",
+                    "TradeExecutionTime": "2026-06-01T13:51:47.737000Z",
+                    "BookedAmountUSD": -655.77, "BookedAmountAccountCurrency": -104712.0,
+                    "AccountCurrency": "JPY", "SpreadCostUSD": 0.0,
+                },
+                {
+                    "TradeId": "6734709190", "OrderId": "5409035181",
+                    "AccountId": "77800/T126816", "Uic": 46780,
+                    "InstrumentSymbol": "SOXL:arcx", "AssetType": "Etf",
+                    "Amount": -3.0, "Price": 243.18,
+                    "TradeEventType": "Sold", "Direction": "None",
+                    "ToOpenOrClose": "ToOpen", "TradeType": "Limit",
+                    "TradeDate": "2026-06-02", "ValueDate": "2026-06-03",
+                    "TradeExecutionTime": "2026-06-02T13:30:00.233000Z",
+                    "BookedAmountUSD": 727.05, "BookedAmountAccountCurrency": 116283.0,
+                    "AccountCurrency": "JPY", "SpreadCostUSD": 0.0,
+                },
+            ],
+        }
+
+    def test_returns_dataclass_list(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._trades_response())
+        reports = client.get_trade_reports(
+            client_key="CK", from_date="2026-06-01", to_date="2026-06-03",
+        )
+        assert len(reports) == 2
+        assert all(isinstance(r, TradeReport) for r in reports)
+
+    def test_buy_sell_from_trade_event_type(self, client, db, mock_session):
+        """買売は TradeEventType。Direction='None' に依存しない。"""
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._trades_response())
+        buy, sell = client.get_trade_reports(
+            client_key="CK", from_date="2026-06-01", to_date="2026-06-03",
+        )
+        assert buy.side == "buy"
+        assert buy.quantity == 3.0
+        assert buy.order_id == "5409009626"
+        assert buy.trade_id == "6732724591"
+        assert sell.side == "sell"
+        assert sell.quantity == 3.0  # abs(Amount)
+        assert sell.price == 243.18
+
+    def test_value_date_is_settlement(self, client, db, mock_session):
+        from datetime import date
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._trades_response())
+        buy, _ = client.get_trade_reports(
+            client_key="CK", from_date="2026-06-01", to_date="2026-06-03",
+        )
+        assert buy.trade_date == date(2026, 6, 1)
+        assert buy.value_date == date(2026, 6, 2)
+
+    def test_booked_amount_signs(self, client, db, mock_session):
+        """買=負(cash out)、売=正(cash in)。"""
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._trades_response())
+        buy, sell = client.get_trade_reports(
+            client_key="CK", from_date="2026-06-01", to_date="2026-06-03",
+        )
+        assert buy.booked_amount_usd < 0
+        assert sell.booked_amount_usd > 0
+
+    def test_passes_query_params(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, self._trades_response())
+        client.get_trade_reports(
+            client_key="CK99", from_date="2026-05-01", to_date="2026-06-03",
+        )
+        url = mock_session.get.call_args[0][0]
+        assert "/cs/v1/reports/trades/CK99" in url
+        assert "FromDate=2026-05-01" in url
+        assert "ToDate=2026-06-03" in url
+
+    def test_unknown_trade_event_type_raises(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        resp = self._trades_response()
+        resp["Data"][0]["TradeEventType"] = "Mystery"
+        mock_session.get.return_value = _mock_response(200, resp)
+        with pytest.raises(SaxoAuthError, match="TradeEventType"):
+            client.get_trade_reports(
+                client_key="CK", from_date="2026-06-01", to_date="2026-06-03",
+            )
+
+    def test_missing_required_field_raises(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        resp = self._trades_response()
+        del resp["Data"][0]["OrderId"]
+        mock_session.get.return_value = _mock_response(200, resp)
+        with pytest.raises(SaxoAuthError, match="missing required"):
+            client.get_trade_reports(
+                client_key="CK", from_date="2026-06-01", to_date="2026-06-03",
+            )
+
+    def test_empty_data_returns_empty(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"__count": 0, "Data": []})
+        reports = client.get_trade_reports(
+            client_key="CK", from_date="2026-06-01", to_date="2026-06-03",
+        )
+        assert reports == []

@@ -13,7 +13,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlencode
@@ -146,6 +146,53 @@ class TradeCost:
         if self.direction == "long":
             return self.price * (1 + factor)
         return self.price * (1 - factor)
+
+
+@dataclass
+class TradeReport:
+    """実約定1件 (fill) の意味的 snapshot (ADR-030)。
+
+    `GET /cs/v1/reports/trades/{ClientKey}` の Data[] を展開する。執行事実層
+    `account_transactions` (Parquet) の供給源。raw dict access を防ぐ (ADR-026)。
+    各 field の定義・観測値は docs/api/saxo/trade-report-fields.md を参照。
+
+    Attributes:
+        trade_id: 約定の一意 ID (TradeId)。account_transactions の主キー。
+        order_id: この約定を生んだ注文 ID (OrderId)。**trades.broker_ref との
+            結合キー**。1 order が複数 fill を生むため fill 単位では重複しうる。
+        side: "buy" / "sell"。**TradeEventType ("Bought"/"Sold") から決定**。
+            Saxo の Direction field は "None" を返すため使わない。
+        quantity: 約定数量 (abs(Amount))。
+        amount_signed: 符号付数量 (正=買, 負=売)。
+        price: 約定単価 (instrument 通貨)。
+        trade_date: 約定日。
+        value_date: 受渡日 (settlement)。
+        execution_time_utc: 約定時刻 (UTC ISO8601 文字列、原文保持)。
+        booked_amount_usd: 記帳額 USD (買=負/cash out, 売=正/cash in)。
+        booked_amount_account_currency: 記帳額 (口座通貨)。
+        account_currency: 口座通貨 (例 JPY)。
+        instrument_symbol: "SYMBOL:exchange" (例 "SOXL:arcx")。
+        uic: instrument 一意 ID。
+        asset_type: "Etf" 等。
+        spread_cost_usd: spread コスト (USD)。
+    """
+    trade_id: str
+    order_id: str
+    account_id: str
+    side: str
+    quantity: float
+    amount_signed: float
+    price: float
+    trade_date: date
+    value_date: date
+    execution_time_utc: str
+    booked_amount_usd: float
+    booked_amount_account_currency: float
+    account_currency: str
+    instrument_symbol: str
+    uic: int
+    asset_type: str
+    spread_cost_usd: float
 
 
 @dataclass
@@ -580,6 +627,72 @@ class SaxoClient:
             )
             results.append(balance)
         return results
+
+    # ADR-030: 買売を表す TradeEventType → side のマップ。
+    # Direction field は "None" を返すため使えない (trade-report-fields.md)。
+    _TRADE_EVENT_SIDE = {"Bought": "buy", "Sold": "sell"}
+
+    def get_trade_reports(self, *, client_key: str, from_date: str, to_date: str,
+                          account_key: Optional[str] = None) -> list[TradeReport]:
+        """期間内の実約定 (fill) を意味的 snapshot のリストで返す (ADR-030)。
+
+        執行事実層 `account_transactions` の供給源。`from_date`/`to_date` は
+        "YYYY-MM-DD"。買売は `TradeEventType` から決定する (`Direction` は "None"
+        を返すため使わない)。ADR-026 に基づき raw dict 露出を防ぐ。新規 field が
+        必要な場合は `TradeReport` を拡張し docs/api/saxo/trade-report-fields.md に
+        公式/観測定義を追記する。
+
+        See docs/api/saxo/trade-report-fields.md
+        """
+        path = (f"/cs/v1/reports/trades/{client_key}"
+                f"?FromDate={from_date}&ToDate={to_date}")
+        if account_key:
+            path += f"&AccountKey={account_key}"
+        rows = self._api_get(path).get("Data", [])
+
+        required = (
+            "TradeId", "OrderId", "AccountId", "Uic", "InstrumentSymbol",
+            "AssetType", "Amount", "Price", "TradeEventType", "TradeDate",
+            "ValueDate", "TradeExecutionTime", "BookedAmountUSD",
+            "BookedAmountAccountCurrency", "AccountCurrency",
+        )
+        reports: list[TradeReport] = []
+        for r in rows:
+            missing = [k for k in required if k not in r]
+            if missing:
+                raise SaxoAuthError(
+                    f"trades report row missing required fields {missing} "
+                    f"(TradeId={r.get('TradeId')}). "
+                    "Saxo API may have changed; verify docs/api/saxo/trade-report-fields.md"
+                )
+            event = r["TradeEventType"]
+            side = self._TRADE_EVENT_SIDE.get(event)
+            if side is None:
+                raise SaxoAuthError(
+                    f"Unknown TradeEventType {event!r} (TradeId={r['TradeId']}). "
+                    "Expected 'Bought'/'Sold'; verify docs/api/saxo/trade-report-fields.md"
+                )
+            amount = float(r["Amount"])
+            reports.append(TradeReport(
+                trade_id=str(r["TradeId"]),  # see trade-report-fields.md
+                order_id=str(r["OrderId"]),  # broker_ref 結合キー
+                account_id=r["AccountId"],
+                side=side,                    # TradeEventType 由来
+                quantity=abs(amount),
+                amount_signed=amount,         # 正=買, 負=売
+                price=float(r["Price"]),
+                trade_date=date.fromisoformat(r["TradeDate"][:10]),
+                value_date=date.fromisoformat(r["ValueDate"][:10]),  # settlement
+                execution_time_utc=r["TradeExecutionTime"],
+                booked_amount_usd=float(r["BookedAmountUSD"]),
+                booked_amount_account_currency=float(r["BookedAmountAccountCurrency"]),
+                account_currency=r["AccountCurrency"],
+                instrument_symbol=r["InstrumentSymbol"],
+                uic=int(r["Uic"]),
+                asset_type=r["AssetType"],
+                spread_cost_usd=float(r.get("SpreadCostUSD", 0.0)),
+            ))
+        return reports
 
     def _api_get(self, path: str) -> dict:
         token = self.get_access_token()

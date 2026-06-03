@@ -797,3 +797,45 @@ class TestTrades:
         )
         pending = db.get_pending_orders()
         assert [t["id"] for t in pending] == [placed]
+
+    # ── ADR-030: broker_ref (執行事実層との結合キー) ──
+
+    def test_add_trade_defaults_broker_ref_null(self, db):
+        """後方互換: broker_ref 未指定なら NULL。"""
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 6, 1), entry_price=218.0, quantity=3,
+        )
+        ref = db.conn.execute(
+            "SELECT broker_ref FROM trades WHERE id = ?", [tid]
+        ).fetchone()[0]
+        assert ref is None
+
+    def test_add_trade_records_broker_ref(self, db):
+        """発注時に Saxo OrderId/TradeId を結合キーとして記録できる。"""
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 6, 1), entry_price=228.0, quantity=5,
+            status="placed", broker_ref="5409497457",
+        )
+        ref = db.conn.execute(
+            "SELECT broker_ref FROM trades WHERE id = ?", [tid]
+        ).fetchone()[0]
+        assert ref == "5409497457"
+
+    def test_set_trade_broker_ref(self, db):
+        """既存 trade に broker_ref を後付けで紐付けできる（照合の結合）。"""
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 6, 1), entry_price=228.0, quantity=5,
+            status="placed",
+        )
+        db.set_trade_broker_ref(tid, "5409497457")
+        ref = db.conn.execute(
+            "SELECT broker_ref FROM trades WHERE id = ?", [tid]
+        ).fetchone()[0]
+        assert ref == "5409497457"
+
+    def test_set_trade_broker_ref_not_found_raises(self, db):
+        with pytest.raises(ValueError, match="not found"):
+            db.set_trade_broker_ref(99999, "5409497457")

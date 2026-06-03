@@ -184,6 +184,7 @@ class SenseiDB:
                 review_notes TEXT,
                 prediction_id INTEGER,
                 status VARCHAR NOT NULL DEFAULT 'filled',
+                broker_ref VARCHAR,
                 created_at TIMESTAMP DEFAULT current_timestamp
             )
         """)
@@ -206,6 +207,9 @@ class SenseiDB:
         ):
             if col not in trade_cols:
                 self.conn.execute(f"ALTER TABLE trades ADD COLUMN {col} {coltype}")
+        # ADR-030 migration: broker_ref (執行事実層=Saxo TradeId/OrderId との結合キー)
+        if "broker_ref" not in trade_cols:
+            self.conn.execute("ALTER TABLE trades ADD COLUMN broker_ref VARCHAR")
         self.conn.execute("CREATE SEQUENCE IF NOT EXISTS trades_id_seq START 1")
 
         self.conn.execute("""
@@ -629,6 +633,7 @@ class SenseiDB:
         prediction_id: int = None,
         status: str = "filled",
         breakeven_pct: float = None,
+        broker_ref: str = None,
     ) -> int:
         if confidence_at_entry is not None and not (0.0 <= confidence_at_entry <= 1.0):
             raise ValueError("confidence_at_entry must be 0.0-1.0")
@@ -641,11 +646,11 @@ class SenseiDB:
             "INSERT INTO trades "
             "(id, instrument, direction, entry_date, entry_price, quantity, "
             "regime_at_entry, vix_at_entry, brent_at_entry, confidence_at_entry, "
-            "setup_type, entry_reasoning, prediction_id, status, breakeven_pct) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "setup_type, entry_reasoning, prediction_id, status, breakeven_pct, broker_ref) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [tid, instrument, direction, entry_date, entry_price, quantity,
              regime_at_entry, vix_at_entry, brent_at_entry, confidence_at_entry,
-             setup_type, entry_reasoning, prediction_id, status, breakeven_pct],
+             setup_type, entry_reasoning, prediction_id, status, breakeven_pct, broker_ref],
         )
         return tid
 
@@ -729,6 +734,22 @@ class SenseiDB:
             self.conn.execute(
                 "UPDATE trades SET status = ? WHERE id = ?", [status, trade_id]
             )
+
+    def set_trade_broker_ref(self, trade_id: int, broker_ref: str):
+        """trades 行に Saxo OrderId/TradeId を結合キーとして紐付ける (ADR-030)。
+
+        執行事実層 (account_transactions, Saxo 由来) との照合は broker_ref を
+        join key にする。発注後にブローカー側 ID が判明した時や、既存 trade を
+        実約定/実注文に突合する時に後付けで設定する。
+        """
+        row = self.conn.execute(
+            "SELECT id FROM trades WHERE id = ?", [trade_id]
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Trade {trade_id} not found")
+        self.conn.execute(
+            "UPDATE trades SET broker_ref = ? WHERE id = ?", [broker_ref, trade_id]
+        )
 
     def get_open_trades(self) -> list[dict]:
         """保有中ポジション = 約定済みかつ未手仕舞い (ADR-027)。
