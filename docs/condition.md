@@ -1,11 +1,36 @@
 # Condition
 
-Last updated: 2026-06-02 (session 40、JST 火曜朝 10:24)。**取引コスト/損益分岐(break-even)の追跡基盤を構築 (ADR-029)**。Saxo cost endpoint を実コールし手数料体系を実測確定 → `get_trade_cost()`+`TradeCost`(src/saxo_client.py)、`trades` に `breakeven_pct`/`cost_usd`/`pnl_net_usd` 追加で **net PnL** 記録 (src/db.py)、TDD 13件で全730 pass。docs: ADR-029・cost-fields.md・**fee-schedule.md(公式手数料体系の一次資料)**・entry-analysis 手順3.6。**K-040 登録**(円口座SOXL往復break-even≈0.72-0.87%、為替0.5%が下限、grossでなくnet評価)。verify: 実手数料率0.08%・最低$1.0(2経路一致)・当口座SOXLカストディ現在なし。Saxo 再認証 + 突合(#12=3@218 が DB と一致)。
+Last updated: 2026-06-03 (session 41、JST 火曜夕〜水曜朝 17:19→08:38)。**SOXL が +15.6% の大ギャップ継続日 (Computex/AI モメンタム)。#12 を寄りで利確 +$75.54 確定**。寄付22:30で TP$236 指値が gap-up 寄り値 **~$243.2 で約定**(指値売りは寄り値が上なら有利約定)、realized **+$75.54 (+11.5%)**。SOXL は $244→最高 $267 (+15.6%) まで上伸、SOXX +2.4%/NVDA +1.6%/**AMD −1.2%**=ブレッドス薄。**#13($208,4株,DayOrder)は失効**(orders endpoint で working に不在を確認)。**新規 dip-buy IFD-OCO 発注(ユーザー): BUY $228/5株 → OCO TP$242/SL$222、GTC、延長時間無効、OrderId 5409497457**(SOXLが$262+まで走り現値−13%で stale・未約定)。**K-041 登録**(risk_management: デプロイ規律)+ CLAUDE.md「Position Sizing」/memory に反映。scan-market×2(geo/neutral 1件)、update-regime(risk_on 不変・再保存せず)。Saxo 再認証 + 監視/トークン更新の常駐構築(overnight対応・downsideトリガー・モバイルpush)。**orders endpoint `/port/v1/orders/me` を read で使用**(ADR-026 gap、raw)。
 
-**次セッションの起点（reconcile 必須）**:
-1. **#12（3@218, OCO SL$215/TP$236 GTC）の outcome 確認**: Saxo で TP/SL 約定か持越しかを突合 → 決済済なら exit_price/exit_date/pnl/exit_reasoning を記録（ADR-027）。**決済時は `close_trade(cost_usd=)` で net PnL を残す（ADR-029）**。
-2. **#13（$208 DayOrder, 4株）**: DB は依然 `placed`。session 40 では orders endpoint 未実装のため API 確認できず未更新。失効済みなら `cancelled`/`expired` に更新。
-3. **(session 40 で解消) ~~master_sensei 変更が未コミット~~** → session 40 で main に commit & push 済み。
+**次セッションの起点（reconcile / 未処理の DB 書込）**:
+1. **#12 を決済済みで DB 更新**: exit ~$243.2 / exit_date 2026-06-02 / realized +$75.54 / TP約定。**`close_trade(cost_usd=)` で net PnL を残す（ADR-029、往復~$6 → net≈+$69-70）**。Saxo ClosedProfitLoss=75.54 が gross/net どちらか要確認。
+2. **#13 を `cancelled`/`expired` に更新**: DayOrder 失効を Saxo orders endpoint で確認済（working に不在）。DB は依然 `placed`。
+3. **新規 dip-buy #?(BUY $228/5株 IFD-OCO, OrderId 5409497457) を trades に記録**: 約定すれば entry記録(ADR-018)。**未約定のまま stale（SOXL $262+）→ ユーザー判断: 放置/キャンセル/再設定**。次の寄り(22:30 JST 6/3)で再アクティブ化。
+4. **監視常駐**: `/tmp/saxo_monitor.py` がスタンバイ(次寄りまでトークン維持)。session跨ぎで生存しない可能性あり→復帰時に状態確認。
+
+---
+
+## ⚡ Session 41 Handoff (2026-06-02 17:19 - 06-03 08:38 JST、米 6/02 セッション跨ぎ)
+
+### ライブ trade の決着
+- **#12 (SOXL 3@$218) 利確完了**: 6/02 寄付 22:30 JST で TP$236 指値が gap-up 寄り値 **~$243.2 で約定** (ExecutionTimeClose 13:30 UTC)、**realized +$75.54 (+11.5%)**。「指値売りは寄り値が上なら寄り値で約定」をライブ実証 → ギャップを丸取り。SL は最終 $215 まで段階引上げ済だった (OCO 5409035182)。
+- **#13 (SOXL 4@$208 DayOrder) 失効**: orders endpoint で working に不在を確認。実安値 6/01 $210.14 が $208 に $2.14 届かず未約定 → DayOrder 当日失効。**DB は依然 `placed`、要 cancelled 更新**。
+- **新規 dip-buy 発注 (ユーザー、T126816)**: IFD-OCO **BUY $228/5株 → OCO TP$242/SL$222、GTC、延長時間無効** (OrderId 5409497457)。Saxo 実機で Working 確認。設計: 4日終値クラスター($224-227)上端=ギャップ基点を front-run、stop$222=クラスター割れ無効化、5株=現余力フィット(投入57%≒risk目標、stop近く risk実質1.5%、AVGO跨ぎ/離席で意図的低リスク)。**SOXL が $262+ まで走り現値−13% で stale・未約定**。
+
+### 値動き / マクロ
+- **SOXL 6/02: +15.6% の大ギャップ継続日** ($227.03→寄り$244→最高$267)。Computex/AI モメンタムの織り込み継続。**SOXX +2.4% / NVDA +1.6% / AMD −1.2% / QQQ・SPY フラット = ブレッドス薄**(指数押し上げは MU/AVGO 推定)。プレマ ETF/レバETF 価格は薄商いで上振れ froth。
+- 23:00 JOLTS は SOXL に大きな反応なし。**regime risk_on 不変**(VIX16.2/VIX_TERM 0.835/HY2.74/YC0.42/Brent$93.3/USD118.9、ADR-003で再保存せず)。
+- scan-market×2: 6/02 10:42→17:50 窓で geo/neutral 1件(トランプ デエスカレーション修辞、K-009/K-024照合)、他は6/1再掲でスキップ。
+
+### 知見 / 規律
+- **K-041 登録 (risk_management、デプロイ規律)**: ①サイズ妥当性は事前のrisk%目標デプロイで評価(損益でなく=結果バイアス) ②モメンタムは1発目をrisk目標に寄せ深玉はadd(実MAE−3〜5%) ③期待デプロイ=P(約定)×サイズ(離れた深指値に本体を置かない、多日はGTC) ④増量はrisk%でなくstop構造で。発端=#12が4%目標58%に対し33%デプロイ(#13空振り)。**CLAUDE.md「Position Sizing」に4行追記 + memory(feedback_position_sizing_policy) 同期 + MEMORY.md 更新**。Claude Code 公式メモリ推奨(SoT=repo、CLAUDE.md正典、memoryはキャッシュ、重複させない)を claude-code-guide で確認の上で多層記録。
+
+### インフラ / 運用
+- Saxo token TTL ~60分(refresh)で複数回失効 → 再認証。**監視常駐を構築** (`/tmp/saxo_monitor.py`): 次寄りまでスタンバイ→寄りでアクティブ、downside($230接近/$224割れ)・fill・heartbeat(時刻ベース)・トークン各ポーリング独立更新、overnight(22:30→翌05:00 JST)対応、モバイル PushNotification。**バグ修正2件**: ①extension トリガーが上昇トレンドで再発火スパム→閾値adaptive後に撤去 ②OPEN_AT 日付跨ぎ(深夜にtoday22:28を見て21h誤待機)→overnight判定追加。
+- **orders endpoint `/port/v1/orders/me` を read で使用**(working order/IFD-OCO構造の確認)。ADR-026 の gap(OpenOrder dataclass + docs化)が再度顕在化。
+
+### 次セッション直近カタリスト
+- **AVGO Q2 決算 6/3 引け後 (≒6/4 05:05 JST)** = 最大の半導体固有(SOXX~7%、AIネットワーキング bellwether)。dip-buy が約定し保有継続なら二値リスク。**6/5 NFP**(21:30 JST)が週次マクロ最大。
 
 ---
 
