@@ -119,6 +119,7 @@
 - **§2 オープン中の現金予約を実機で測定** (working order ありの状態で市場オープン中の `CashBlocked`)。
 - **§4 の算数と文言の確定**: 拒否再現時に「エラー文言スクショ＋`CashAvailableForTrading`＋注文サイズ」を記録。
 - buffer の具体割合 (§2)、売り指値/stop の予約挙動 (§2 は買い指値のみ)。
+- **§3 為替コストの projection vs realized 不一致【要検証】**: #14 往復 (2026-06-04, SOXL 5株 $232→$266) を `account_transactions` で確認すると、両レグの `amount_jpy` が ほぼ同一 fx (160.009) で計上され **FX スプレッドが台帳上に顕在化しない** (realized 手数料は $5.65 = USD 手数料のみ)。`get_trade_cost` の projection (為替 0.501% / 往復 break-even 0.72-0.87%, K-040) と矛盾。FX が ①price に内包 ②別 booking ③当口座で非課金 のどれか未確定。再現時に `amount_jpy`・別 fee booking・約定価格の内訳を突合して確定する。
 - 同方向逆銘柄 (SOXL 売り→SOXS 買い) の扱い (未実証)。
 - USD 口座ベース移行の検討 (§3)。
 
