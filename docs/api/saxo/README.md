@@ -15,6 +15,7 @@
 |---------|------|
 | README.md | 本ファイル |
 | [balance-fields.md](balance-fields.md) | Balance response の全 field 公式定義 (citation 必須) |
+| [cash-account-constraints.md](cash-account-constraints.md) | 現金口座の取引制約 (同一銘柄同日ロック・買い指値は現金非予約・MODIFY可) 検証済/未検証 |
 | [cost-fields.md](cost-fields.md) | Trade cost response の全 field 公式定義 = break-even 判定 (ADR-029) |
 | [fee-schedule.md](fee-schedule.md) | 公式手数料体系 (commission/為替/カストディ) の普遍的事実 + citation |
 | [endpoints.md](endpoints.md) | 使用 endpoint + 実例レスポンス |

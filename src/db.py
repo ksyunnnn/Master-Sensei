@@ -751,6 +751,33 @@ class SenseiDB:
             "UPDATE trades SET broker_ref = ? WHERE id = ?", [broker_ref, trade_id]
         )
 
+    def set_trade_fill_price(self, trade_id: int, entry_price: float, *, note: str = None):
+        """宣言時の指値を、台帳 (account_transactions) の実約定価格に補正する (ADR-030)。
+
+        注文を発注後に改定 (例: $228→$232) して約定した場合、trades の entry_price は
+        宣言時の値のまま古い。reconcile で台帳の実 fill 価格に揃えることで、close_trade の
+        PnL 計算が実約定基準になる。note を渡すと review_notes に追記し、元宣言値の監査痕跡を残す。
+        執行事実の SoT は account_transactions (Parquet) 側 (ADR-030)。
+        """
+        if entry_price <= 0:
+            raise ValueError("entry_price must be > 0")
+        row = self.conn.execute(
+            "SELECT review_notes FROM trades WHERE id = ?", [trade_id]
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Trade {trade_id} not found")
+        if note is not None:
+            existing = row[0]
+            merged = f"{existing}\n{note}" if existing else note
+            self.conn.execute(
+                "UPDATE trades SET entry_price = ?, review_notes = ? WHERE id = ?",
+                [entry_price, merged, trade_id],
+            )
+        else:
+            self.conn.execute(
+                "UPDATE trades SET entry_price = ? WHERE id = ?", [entry_price, trade_id]
+            )
+
     def get_open_trades(self) -> list[dict]:
         """保有中ポジション = 約定済みかつ未手仕舞い (ADR-027)。
 

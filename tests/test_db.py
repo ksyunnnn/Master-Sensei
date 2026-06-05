@@ -748,6 +748,38 @@ class TestTrades:
         assert row[0] == "cancelled"
         assert "$215" in row[1]
 
+    def test_set_trade_fill_price_corrects_entry_and_appends_note(self, db):
+        """改定後に確定した実約定価格を台帳から反映する (ADR-030 reconcile)。
+
+        宣言時の指値 ($228) を実 fill ($232) に補正し、PnL が実約定基準になる。
+        元宣言値の監査痕跡を note として review_notes に残す。
+        """
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 6, 4), entry_price=228.0, quantity=5,
+            status="placed",
+        )
+        db.set_trade_fill_price(tid, 232.0, note="台帳実約定 $232 (元宣言 $228)")
+        db.close_trade(tid, exit_date=date(2026, 6, 4), exit_price=266.0)
+        row = db.conn.execute(
+            "SELECT entry_price, pnl_usd, review_notes FROM trades WHERE id = ?", [tid]
+        ).fetchone()
+        assert row[0] == 232.0
+        assert abs(row[1] - (266.0 - 232.0) * 5) < 0.01  # 実約定 $232 基準の PnL
+        assert "232" in row[2]
+
+    def test_set_trade_fill_price_invalid_raises(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long",
+            entry_date=date(2026, 6, 4), entry_price=228.0, quantity=5,
+        )
+        with pytest.raises(ValueError):
+            db.set_trade_fill_price(tid, 0)
+
+    def test_set_trade_fill_price_not_found_raises(self, db):
+        with pytest.raises(ValueError):
+            db.set_trade_fill_price(99999, 232.0)
+
     def test_update_trade_status_not_found_raises(self, db):
         with pytest.raises(ValueError):
             db.update_trade_status(99999, "cancelled")
