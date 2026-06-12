@@ -1,6 +1,82 @@
 # Condition
 
-Last updated: 2026-06-08 (session 45、JST 金未明〜日、米 6/05 セッション)。**事前プラン規律が −30% 暴落を回避＝実証**: 6/5 NFP 前に SOXL long の『事前プラン骨格』を作成（buy-stop+OCO・risk4%・equity≈$2,130[T126816, ¥340,673÷159.94]・**ライブ変数を①寄り後5分高値=エントリー逆指値②直近swing安値=OCO stop の2つだけに圧縮**・NFPゲート判断ツリー、約定なしで trade行は作らず）+ `/schedule` でモバイル通知2本(21:30 NFP / 22:30 寄り、共に発火想定)。**NFP=172K（予想85Kの倍）・失業率4.3%据置 → 10年債4.5%超・30年債5%超・年内利上げ確率50%→57% → good news is bad news + AVGO半導体売り**で全面リスクオフ（rotation でなく risk-off）: SOXL **引け −30.5%（$182.54、日中−25%→引けへ売り加速で安値$182.00≒引け値、SOX換算≈−8%）**/ TECL −20.0% / TQQQ −14.3% / SPXL −7.9% / SOXS +31.5%（確定引け、Nasdaq100 −4.77%/S&P −2.64%/$1兆消失）。**事前プランのシナリオC（強NFP→金利警戒で見送り）が的中・終日 higher-low 未形成（高値=寄り$233.69、反発は10:20の+8%[$229.79]含め3回すべて lower-high のブルトラップ）→ buy-stop 発火せず → 完全フラット維持で暴落を自動回避**。逆指値（反発確認で入る）構造が落ちるナイフを掴ませず、前session で議論した「処理待ちで機会を逃す」懸念は無効化（−30%の日は『機会損失こそ利益』）。**先行カタリスト（DB未登録）: 6/10(水)21:30 JST 5月CPI（前回3.8%）/ 6/16-17 FOMC（Warsh初・SEP/ドット・決定6/18 03:00 JST、※DB NFPイベントの「6/6開始」は誤りで正は6/16-17）/ 7/1 商務省半導体報告(Section232)。VIX引け21.51・HY2.74タイトでマクロ恐怖/信用ストレスは未発生＝金利レジーム再評価主導**。**`/sync-saxo`: token 完全失効(access+refresh) → Claude が oauth_init バックグラウンド起動・ユーザーはブラウザログインのみで再認証(UserId 22013145)、台帳28行(24 fills+4 cash) mirror・`reconcile_positions` 0 break・建玉0/未約定注文0**、余力 T126816 ¥340,673 / P120136 ¥55,387（USD口座は0→FX手当て、USD/JPY 159.94）。scan-market×2(6/4引けローテーション negative 登録 / 2回目0件・米イラン60日MOUは暫定&既織込でskip)、update-regime risk_on(+1.43) スナップショット記録（NFP前基準、データ更新で値変化したため記録）。 ／ 前session(44): **dip-buy が設計通り機能＝実証**: 寄り前に既存 $228 IFD-OCO をアプリで **$232/stop$207/TP$266・5株 GTC** に改定（エントリーを 6/2 ベース下端へ・stop は 6/1 安値$210.14 直下の構造的＝当日浅stop禁止 K-023、薄商いプレ値を基準にせず構造から設定）→ 6/4 **安値$228.55で$232約定→$266 TP決済**、**実現 net +$164.35（¥26,297, gross$170−手数料$5.65）**。**同週・同setup の #15（当日浅stop$259）−$28 と対照で「dip-call品質でなく stop 構造が勝敗を分けた」実証ペア（K-023 n=2 / K-042）**。`/sync-saxo` で台帳照合 **0 break**、新メソッド `set_trade_fill_price`（TDD）で #14 を実約定$232に補正・close、#15 決済を$258.925に補正。ライブ完全フラット・注文0。 ／ 以下 session 43 (2026-06-04) の経緯: **ライブ trade（SOXL 浅押し $267×3株）が $259 損切り**(gross −$24/net −$30.8/−3.0%)。**当初「froth で入る局面でなかった」と書いたがデータで否定**＝6/3 寄り$281.33→V底$257.34(−8.5%)→引け$280.54全戻し、entry$267 は押し目を正しく捕捉し $258.06 で stop ヒット(V底$1.66上)、swing なら +5.1%。**誤りは entry でなく当日完結の浅stop(K-023ライブn=2)、教訓は dip-call品質とstop品質を分離評価(K-042)・エッジは swing**。**「同日に同一銘柄を即買い直せない」の正体は"同一銘柄ロック"でなく"現金予約不足"と確定**(精査でT+1差金→wash trading→freeriding→同一銘柄ロックの4誤帰属を全撤回)。Saxo公式3記事に同一銘柄ルールは存在せず、実体は**未約定の$228買い注文がオープン中に予約現金として差し引かれ利用可能現金が不足**したこと(insufficient cash 理由②)。受渡T+1はvalue_dateで実証、TQQQが通ったのは小額で残額に収まったから。判断は銘柄でなく「実際に使える現金(=現金残高−未決済−未約定注文の予約−buffer)」で(K-031書き直し)。**AVGO Q2 FY26 通過**(売上$22.2B +48%/AI半導体$10.8B +143%、Q3ガイド$29.4B、ただし**ソフト売上ミス+AIガイドが最強気未達でアフター −3%=sell-the-news K-016型**)→ SOXL アフター $262.37(6/2比 −1.5%、薄商い froth)。**Saxo トークン更新ループが PC スリープで死亡**(00:26→07:37 JST の7hギャップで refresh token失効、ローカル sleep ループは OS サスペンドで停止する=運用教訓)。**宿題対応済**: ①`docs/api/saxo/cash-account-constraints.md` 作成(検証済/未検証を区別) ②knowledge(K-023に#15追記+high、K-042新規、K-031にTQQQ対照実験追記) ③Saxo再認証+口座突合(下記)。**残**: 監視スクリプトのリポジトリ化+エージェント協調設計(PCスリープ耐性含む)=次セッションの独立タスク。**Saxo実態(10:38 JST再認証後・検証済)**: 全口座フラット(建玉0)、余力 T126816 spending_power ¥314,376 / P120136 ¥55,387、working order は **SOXL Buy5株@$228 Limit GTC(OrderId 5409497457)の1件のみ**(=DB #14 `placed` と一致)。**TQQQテスト注文は失効済で存在せず=要キャンセルは誤認だった**(推測訂正)。**6/4 はSOXL同日ロック解除済=再エントリー可**。$228 は現値$261-280 比 −33〜52$ で深く stale(K-041: 期待デプロイ≒0)。
+Last updated: 2026-06-12 (session 48、JST 金夜、米 6/11 引け後)。**定期メンテ＝ライブ完全フラット維持・break 0**: トレード・新規知見なしのメンテセッション。データ更新(マクロ6/12: VIX **20.65→18.70** 鎮静化/VIX3M21.42/HY2.80/US10Y4.55/Brent **$92.42→$86.44**[米イラン緊張のピーク後後退]/YC0.40/VXN32.68/FEDFUNDS3.63、日足・5分足6/11)。`/sync-saxo`: token 失効(access+refresh とも6/11失効=refresh 不可でフル再認証)→Claude oauth_init bg起動・ユーザーは browser ログインのみで再認証(有効 6/12 19:32 JST)→台帳全mirror **30行(26 fills+4 cash)**→`reconcile_positions` **break 0**・ライブ現保有0/未約定注文0/DB open_trades 0/pending 0 で全レイヤー整合。再エントリーは higher-low 確認後の逆指値が原則(落ちるナイフ回避)。次カタリスト: **FOMC 6/16-17(Warsh初・SEP/ドット、決定6/18 03:00 JST)** / **7/1 商務省半導体報告(Section232)**。 ／ 前session(47、JST 火夜、米 6/10 引け後)。**Trade #16 SOXL が SL で −11.1% 損切り確定＝事前プラン規律のクリーン執行**: 6/8約定の SOXL long(3株@$202.5)は、翌 6/9 に OCO の **SL$180 が発火→実約定$180.005**(ledger order_id 5412355620、settle 6/10)。gross −$67.49 / **net −$70.40(USD-cash、コミ往復$2.92)/ −11.1%**。**当日BE引き上げをせず構造stop($180=6/5終値$182.54下の無効化ライン)で規律的に撤退**(K-023遵守)＝損失だが執行・サイズ評価上はクリーン(「事前に決めた無効化ラインで切れた」、K-041の損益でなく規律で評価)。`/sync-saxo`: token失効→Claude oauth_init bg起動・ユーザーbrowserログインのみ再認証→台帳全mirror **30行(26 fills+4 cash)** → reconcile **break 1件検出**(trades=3株 vs ledger net=0=クローズ済未反映)→ライブ現保有0/注文0で裏付け→`close_trade()`で台帳sell fillから反映→**再reconcile break=0**。物理削除なし(ADR-018)。結合キーOrderId(broker_ref 5412341223=entry placed↔ledger)。**為替spreadは projection vs realized 不一致(要検証, 0bb1055)のため net未計上＝cost_usd$2.92はコミッションのみ、JPY建て真の all-in はこれより大きい**。データ更新済(マクロ6/11/日足・5分足6/10、VIX20.65/Brent$92.42)。現在ライブ完全フラット・open_trades 0。 ／ 前session(46、JST 月夜〜火未明、米 6/08 セッション中)。**押し目指値規律でSOXL long約定＝froth追わず実行**: 6/5 NFP暴落(−30.5%, $182.54)からの半導体リバウンドで SOXL がプレ +15.6%($210)。MAP=risk_on(+0.93, 金利チャネル盲点)×flow bearish(−0.60, 6/5 stale で当日リバウンド未反映)×froth(K-017 プレ=コイン投げ)で『寄り追撃は低EV』判断→**SMA20 $201.61の押し目に GTC買い指値**。ユーザーの『成行に変える?』に数値で反論(成行~$206=2株/BE1.04%/stop12.6% vs 指値$202=3株/BE0.87%/stop10.9%、成行は全指標で劣後)し据置→ $202.06タッチ反発で指値$202→$202.5に$0.5微上げ→**6/8 23:04 JST $202.5約定(3株, risk3%, 投入24%, Trade #16)**。**IFD-OCO作動: TP Limit$233(OrderId 5412355619)/SL StopIfTraded$180(5412355620), GTC, relation=Oco, broker_ref=entry 5412341223, PositionId 7626330007, BE≈0.87%($204.27)**。約定後 SOXL $218.96(+8.1% vs建値)まで上昇。**市場反応の裏取り(reference-first)**: SOXX +5.45%(寄り後維持=froth でなく本物のリバウンド)/SMH+4.50%、主導はメモリ MU+7.96%/MRVL+5.24%、NVDA+1.4%/AVGO+1.8%出遅れ、QQQ+2.1%/SPY+0.95%テック集中、10Y4.53%横ばい→短期カバー/平均回帰主導で新規上カタリストなし(脆さ併存)。**先行カタリスト: CPI 6/10(水)21:30 JST(本丸の二項)/ FOMC 6/16-17(Warsh初)/ Section232報告 7/1**。/sync-saxo 台帳28行(24 fills+4 cash) 0 break・約定前は全フラット、余力≈$2,476(T126816 ¥340,673/P120136 ¥55,387, USDJPY159.98)→約定後 spending_power ¥298,394≈$1,864(残75%)。**Saxo token完全失効→Claude oauth_init bg起動・ユーザーbrowserログインのみ再認証+15分keepalive常駐(/tmp/saxo_keepalive.py, セッション中失効防止・LLMトークン非消費・rolling refresh競合回避でリフレッサー1本厳守)**。update-regime risk_on(+0.93)スナップショット記録(VIX18.78/VIX3M21.82/HY2.74/YC0.38/Brent94.60/USD118.88[5/29 stale]、金利チャネル盲点を明記)。**残資金75%($1,864)はrisk-based×広stop(σ≈18%)×意図的バッファ+add残弾($192-195)+CPI前の意図的アンダーデプロイ=設計どおり(K-041)**。**要検証(ADR-026): 余力accessor `unrealized_pnl`=¥103,140 が建玉時価とほぼ一致(実P&Lは+¥5,500)＝フィールド誤読の可能性、docs/api/saxo/balance-fields.md で定義確認**。 ／ 前session(45、JST 金未明〜日、米 6/05 セッション): **事前プラン規律が −30% 暴落を回避＝実証**: 6/5 NFP 前に SOXL long の『事前プラン骨格』を作成（buy-stop+OCO・risk4%・equity≈$2,130[T126816, ¥340,673÷159.94]・**ライブ変数を①寄り後5分高値=エントリー逆指値②直近swing安値=OCO stop の2つだけに圧縮**・NFPゲート判断ツリー、約定なしで trade行は作らず）+ `/schedule` でモバイル通知2本(21:30 NFP / 22:30 寄り、共に発火想定)。**NFP=172K（予想85Kの倍）・失業率4.3%据置 → 10年債4.5%超・30年債5%超・年内利上げ確率50%→57% → good news is bad news + AVGO半導体売り**で全面リスクオフ（rotation でなく risk-off）: SOXL **引け −30.5%（$182.54、日中−25%→引けへ売り加速で安値$182.00≒引け値、SOX換算≈−8%）**/ TECL −20.0% / TQQQ −14.3% / SPXL −7.9% / SOXS +31.5%（確定引け、Nasdaq100 −4.77%/S&P −2.64%/$1兆消失）。**事前プランのシナリオC（強NFP→金利警戒で見送り）が的中・終日 higher-low 未形成（高値=寄り$233.69、反発は10:20の+8%[$229.79]含め3回すべて lower-high のブルトラップ）→ buy-stop 発火せず → 完全フラット維持で暴落を自動回避**。逆指値（反発確認で入る）構造が落ちるナイフを掴ませず、前session で議論した「処理待ちで機会を逃す」懸念は無効化（−30%の日は『機会損失こそ利益』）。**先行カタリスト（DB未登録）: 6/10(水)21:30 JST 5月CPI（前回3.8%）/ 6/16-17 FOMC（Warsh初・SEP/ドット・決定6/18 03:00 JST、※DB NFPイベントの「6/6開始」は誤りで正は6/16-17）/ 7/1 商務省半導体報告(Section232)。VIX引け21.51・HY2.74タイトでマクロ恐怖/信用ストレスは未発生＝金利レジーム再評価主導**。**`/sync-saxo`: token 完全失効(access+refresh) → Claude が oauth_init バックグラウンド起動・ユーザーはブラウザログインのみで再認証(UserId 22013145)、台帳28行(24 fills+4 cash) mirror・`reconcile_positions` 0 break・建玉0/未約定注文0**、余力 T126816 ¥340,673 / P120136 ¥55,387（USD口座は0→FX手当て、USD/JPY 159.94）。scan-market×2(6/4引けローテーション negative 登録 / 2回目0件・米イラン60日MOUは暫定&既織込でskip)、update-regime risk_on(+1.43) スナップショット記録（NFP前基準、データ更新で値変化したため記録）。 ／ 前session(44): **dip-buy が設計通り機能＝実証**: 寄り前に既存 $228 IFD-OCO をアプリで **$232/stop$207/TP$266・5株 GTC** に改定（エントリーを 6/2 ベース下端へ・stop は 6/1 安値$210.14 直下の構造的＝当日浅stop禁止 K-023、薄商いプレ値を基準にせず構造から設定）→ 6/4 **安値$228.55で$232約定→$266 TP決済**、**実現 net +$164.35（¥26,297, gross$170−手数料$5.65）**。**同週・同setup の #15（当日浅stop$259）−$28 と対照で「dip-call品質でなく stop 構造が勝敗を分けた」実証ペア（K-023 n=2 / K-042）**。`/sync-saxo` で台帳照合 **0 break**、新メソッド `set_trade_fill_price`（TDD）で #14 を実約定$232に補正・close、#15 決済を$258.925に補正。ライブ完全フラット・注文0。 ／ 以下 session 43 (2026-06-04) の経緯: **ライブ trade（SOXL 浅押し $267×3株）が $259 損切り**(gross −$24/net −$30.8/−3.0%)。**当初「froth で入る局面でなかった」と書いたがデータで否定**＝6/3 寄り$281.33→V底$257.34(−8.5%)→引け$280.54全戻し、entry$267 は押し目を正しく捕捉し $258.06 で stop ヒット(V底$1.66上)、swing なら +5.1%。**誤りは entry でなく当日完結の浅stop(K-023ライブn=2)、教訓は dip-call品質とstop品質を分離評価(K-042)・エッジは swing**。**「同日に同一銘柄を即買い直せない」の正体は"同一銘柄ロック"でなく"現金予約不足"と確定**(精査でT+1差金→wash trading→freeriding→同一銘柄ロックの4誤帰属を全撤回)。Saxo公式3記事に同一銘柄ルールは存在せず、実体は**未約定の$228買い注文がオープン中に予約現金として差し引かれ利用可能現金が不足**したこと(insufficient cash 理由②)。受渡T+1はvalue_dateで実証、TQQQが通ったのは小額で残額に収まったから。判断は銘柄でなく「実際に使える現金(=現金残高−未決済−未約定注文の予約−buffer)」で(K-031書き直し)。**AVGO Q2 FY26 通過**(売上$22.2B +48%/AI半導体$10.8B +143%、Q3ガイド$29.4B、ただし**ソフト売上ミス+AIガイドが最強気未達でアフター −3%=sell-the-news K-016型**)→ SOXL アフター $262.37(6/2比 −1.5%、薄商い froth)。**Saxo トークン更新ループが PC スリープで死亡**(00:26→07:37 JST の7hギャップで refresh token失効、ローカル sleep ループは OS サスペンドで停止する=運用教訓)。**宿題対応済**: ①`docs/api/saxo/cash-account-constraints.md` 作成(検証済/未検証を区別) ②knowledge(K-023に#15追記+high、K-042新規、K-031にTQQQ対照実験追記) ③Saxo再認証+口座突合(下記)。**残**: 監視スクリプトのリポジトリ化+エージェント協調設計(PCスリープ耐性含む)=次セッションの独立タスク。**Saxo実態(10:38 JST再認証後・検証済)**: 全口座フラット(建玉0)、余力 T126816 spending_power ¥314,376 / P120136 ¥55,387、working order は **SOXL Buy5株@$228 Limit GTC(OrderId 5409497457)の1件のみ**(=DB #14 `placed` と一致)。**TQQQテスト注文は失効済で存在せず=要キャンセルは誤認だった**(推測訂正)。**6/4 はSOXL同日ロック解除済=再エントリー可**。$228 は現値$261-280 比 −33〜52$ で深く stale(K-041: 期待デプロイ≒0)。
+
+---
+
+## ⚡ Session 48 Handoff (2026-06-12 18:30→ JST、米 6/11 引け後)
+
+### 定期メンテ（トレード・新規知見なし）
+- **データ更新(update_data.py)**: マクロ最新6/12 — VIX **18.70**(6/11 20.65 から鎮静化)/VIX3M21.42/HY2.80/US10Y4.55/Brent **$86.44**(6/11 $92.42 から後退、米イラン緊張ピーク後)/YC0.40/VXN32.68/FEDFUNDS3.63。日足・5分足は6/11。
+- **`/sync-saxo`**: `auth_tokens` 確認で access+refresh とも6/11失効(refresh 期限切れ=リフレッシュ不可)→Claude が oauth_init bg起動・ユーザーは browser ログインのみで再認証(有効 6/12 19:32 JST)。
+  - 台帳全mirror **30行(26 fills+4 cash)**(`import_account_transactions.py --from-date 2026-01-01`)。
+  - `reconcile_positions` **break 0**。ライブ現保有 **0**/未約定注文 **0**/DB `get_open_trades()` **0**/`get_pending_orders()` **0** → 全レイヤー整合・完全フラット。修正不要。
+
+### 次セッションの起点 / 未処理（session 47 から継続）
+1. **ライブ完全フラット・open_trades 0**。再エントリーは higher-low 確認後の逆指値が原則(落ちるナイフ回避)。
+2. **次カタリスト**: **FOMC 6/16-17(Warsh初・SEP/ドット、決定6/18 03:00 JST)** / **7/1 商務省半導体報告(Section232)**。エントリー判断はこれらに紐付ける。**K-044 を次エントリーで適用**(二項イベント跨ぎ3xロングは entry-analysis 手順3.7 で事前部分利確)。
+3. **要検証(ADR-026)**: 余力accessor `unrealized_pnl` フィールド誤読疑い(session 46-47 から継続)、`docs/api/saxo/balance-fields.md` で定義確認。
+4. **為替 projection vs realized 不一致**(0bb1055)の決着＝cost_usd に FX spread を正しく載せる方法。
+5. **ニュース未取得**: 本session は scan-market 未実施。FOMC 前の地合い整理が必要なら `/scan-market`。
+6. **コミット未実施**: condition.md(session 46+47+48分)、K-044/scan-market のDB更新、entry-analysis SKILL.md改修、前session群の未push分。
+
+---
+
+## ⚡ Session 47 Handoff (2026-06-11 18:43→ JST、米 6/10 引け後)
+
+### Trade #16 SOXL クローズ確定（SL発火、−11.1%）
+- データ更新(update_data.py): マクロ最新6/11(VIX20.65/VIX3M21.31/HY2.78/US10Y4.53/Brent$92.42/YC0.42/VXN29.78)、日足・5分足6/10。
+- `/sync-saxo`: token失効→Claude が oauth_init bg起動・ユーザーはブラウザログインのみで再認証(有効19:46 JST)。台帳全mirror **30行(26 fills+4 cash)**。
+- `reconcile_positions` で **break 1件**: SOXL trades=3株(申告) vs ledger net=0。ライブ現保有 **0件**/未約定注文 **0件** → クローズ済を裏付け。
+- 台帳から exit fill 特定: **6/9 sell 3 @ $180.005**(order_id 5412355620、settle 6/10)＝OCO **SL$180 発火**。entry 3@$202.5(order_id 5412341223=broker_ref一致)。
+  - gross **−$67.49** / コミ往復 $2.92 / **USD実現純額 −$70.40 / −11.1%**。
+  - `close_trade(16, exit=$180.005, cost_usd=$2.92)` で反映 → **再reconcile break=0**。物理削除なし(ADR-018)。
+- **規律評価**: 当日BE引き上げなし・構造stop($180=6/5終値$182.54下の無効化ライン)で撤退＝損失だが事前プラン通りのクリーン執行(K-023遵守、K-041「損益でなく規律で評価」)。
+
+### 為替コストの扱い（要検証継続）
+- `cost_usd=$2.92` は **USDコミッション往復のみ**。FX spread は projection vs realized 不一致(0bb1055で記録済の要検証)のため net に未計上。JPY建て口座の真の all-in はこれより大きい。net表示は USD-cash ベースの実現値。
+
+### Trade#16 ポストモーテム → K-044 登録 + entry-analysis 改修
+- データ＋scan-marketで根因特定。**負けは方向でもstop幅でもなく『利確設計の不在』**: 6/9 ET 高値$231.125(MFE+14.1%、TP$233を$1.875差で空振り)→建値往復→**トランプのイラン攻撃示唆**(6/9)で場中フラッシュ($157.83)中にSL$180発火。背景=5月CPI4.2%(エネルギー起因)＋米イラン攻撃実行(6/10)、すべてエントリー時に既知の重なり。
+- **反実仮想の決着**: 「TP+10%($222.75)」は6/9寄り$227で約定し+10%確定＝**正しい**。「SL widen」は6/9安値$157＋未回復で**逆効果**(stop$180は妥当)。
+- **K-044 登録**(risk_management/medium、related K-016/K-023/K-041/K-042): 既知の二項イベント＋地政学を跨ぐ3xロングはMFEで部分利確。方向◎でも全往復で負ける=MFE捕捉はdip-call/stop品質と独立の第3技術。単一天井TPは空振り、stop延命は逆効果。
+- **scan-market 3件登録**: 6/9 ET 半導体場中急落→V字(market/neutral, K-009ホイップソー)、5月CPI4.2%結果(fed/neutral, コア軟調・pared losses)、6/10 米イラン攻撃実行→Dow-900(geopolitical/negative, 実kinetic+ホルムズ供給被害でneutral default不適用)。
+- **entry-analysis 改修**: 手順「3.7 イベント跨ぎ判定→事前部分利確(K-044)」追加＋注文表に部分利確行追加(SKILL.md)。次回エントリーで自動適用。
+
+### 次セッションの起点 / 未処理
+1. **ライブ完全フラット・open_trades 0**。SOXL は 6/9 SL後 6/10引け$180.65近辺。再エントリーは higher-low 確認後の逆指値が原則(落ちるナイフ回避)。
+2. **CPI 6/10(水)は通過済**。次カタリスト: **FOMC 6/16-17(Warsh初・SEP/ドット、決定6/18 03:00 JST)** / **7/1 商務省半導体報告(Section232)**。エントリー判断はこれらに紐付ける。
+3. **要検証(ADR-026)**: 余力accessor `unrealized_pnl` フィールド誤読疑い(session46から継続)、`docs/api/saxo/balance-fields.md` で定義確認。
+4. **為替 projection vs realized 不一致**(0bb1055)の決着＝cost_usd に FX spread を正しく載せる方法。
+5. **K-044 を次エントリーで適用**: 既知の二項イベント(FOMC 6/16-17等)を跨ぐ3xロングは entry-analysis 手順3.7 で事前部分利確を設計する。
+6. **コミット未実施**: condition.md(session 46+47分)、K-044/scan-market のDB更新、entry-analysis SKILL.md改修、前session群の未push分。
+
+---
+
+## ⚡ Session 46 Handoff (2026-06-08 21:00 → 06-09 JST、米 6/08 セッション中)
+
+### SOXL long 約定（押し目指値規律、Trade #16）
+- 6/5 NFP暴落(−30.5%, $182.54)からの半導体リバウンドで SOXL プレ **+15.6%($210)**。MAP3軸: 環境 **risk_on(+0.93)**(ただし金利再プライス[10Y4.53%/利上げ70%]を映さない盲点)、フロー **bearish(−0.60)**(6/5ラウトのstale値で当日リバウンド未反映)、現値 froth(thin)。知見 **K-017(プレ=コイン投げ50.77%)/K-018** で「寄り追撃は低EV」。
+- **froth($210)を追わず SMA20 $201.61の押し目に GTC買い指値**。ユーザーの「成行に変えるか?」に**数値反論**(成行~$206=2株/BE1.04%/stop12.6% vs 指値$202=3株/BE0.87%/stop10.9%、成行は全指標で劣後)→据置。$202.06タッチ後反発、ユーザーが指値$202→$202.5に$0.5微上げ→**6/8 23:04 JST $202.5で3株約定(risk3%, 投入24%)**。
+- **IFD-OCO作動**: TP Limit$233(5412355619)/SL StopIfTraded$180(5412355620)、GTC、relation=Oco。broker_ref=entry OrderId 5412341223、PositionId 7626330007、BE≈0.87%($204.27)。**当日BE引き上げ禁止(K-023)、SL引き上げは higher-low確定後**。
+- 約定後 SOXL **$218.96(+8.1% vs建値)** まで上昇。
+
+### 市場反応の裏取り(reference-first)
+- SOXX **+5.45%**(寄り後維持=froth でなく本物のリバウンド)/SMH +4.50%。主導は**メモリ(MU+7.96%)/MRVL+5.24%**、**NVDA+1.4%/AVGO+1.8%出遅れ**(6/5ラウト主因の戻り鈍い)。QQQ+2.1%/SPY+0.95%(テック集中・広範さ薄)、10Y4.53%横ばい。**新規上カタリストなし=短期カバー/平均回帰主導**→脆さ併存。
+
+### sync-saxo / token / regime / scan
+- /sync-saxo: token完全失効→Claude oauth_init bg起動・ユーザーbrowserログインのみ再認証。台帳28行(24 fills+4 cash) mirror、reconcile **0 break**、約定前は全フラット。**15分keepalive常駐(/tmp/saxo_keepalive.py)でセッション中の失効防止**(ユーザー懸念に対応、LLMトークン非消費・rolling refresh競合回避でリフレッサー1本厳守)。
+- 余力≈$2,476(T126816 ¥340,673/P120136 ¥55,387、USDJPY159.98)→約定後 spending_power **¥298,394≈$1,864(残75%)**。
+- update-regime **risk_on(+0.93)** スナップショット記録(VIX18.78/VIX3M21.82/HY2.74/YC0.38/Brent94.60/USD118.88[5/29 stale]、金利チャネル盲点を明記)。
+- scan-market 2件登録: 6/8半導体リバウンド(positive/direct)、6/7-8イスラエル・イラン応酬→イラン攻撃停止宣言(neutral/indirect, K-024/K-009照合)。
+
+### 次セッションの起点 / 未処理
+1. **Trade #16 outcome**: TP$233 / SL$180 / 保有継続のいずれか。**台帳に約定未反映(Saxo report ラグ)→ /sync-saxo で実約定$202.5を確定し set_trade_fill_price で最終照合**(本session は live position値[OpenPrice$202.5]で暫定 filled 補正済)。
+2. **CPI 6/10(水)21:30 JST = 本丸の二項**。$228-233接近ならCPI前の一部利確を再提案(stopでなくサイズで捌く)。ホットCPIはSL$180方向のギャップリスク。
+3. **add残弾**: 実MAE −3〜5%($192-195)で2発目tranche(残資金の役目、ADR-028)。
+4. **要検証(ADR-026)**: 余力accessor `unrealized_pnl`=¥103,140 が建玉時価とほぼ一致(実P&Lは+¥5,500)。フィールド誤読の可能性、`docs/api/saxo/balance-fields.md` で定義確認。
+5. **コミット未実施**: condition.md更新。前session群の未push分も継続。
+6. 知見候補(承認待ち): 「froth追撃でなくSMA20押し目指値+構造OCOで約定=K-017/K-018のライブ適用」(day1、TP/SL未決着のため起票は結果待ち)。
 
 ---
 
