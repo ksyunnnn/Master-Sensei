@@ -264,6 +264,15 @@ def main() -> int:
 
     try:
         config = SaxoConfig.from_env(environment=args.env)
+        # poll は read_only 接続。DuckDB は read_only で存在しない DB を作れず IOException に
+        # なるため(旧 read-write 版は自動作成し needs_reauth で抜けた)、ここで明示的に弾く。
+        # DB が無い=token も無いので needs_reauth と同じ終了コードで抜ける。
+        if not DB_PATH.exists():
+            logger.warning(
+                "DB が見つからない(%s)。先に認可が必要"
+                "(python scripts/saxo_oauth_init.py)。keepalive 終了", DB_PATH
+            )
+            return 2
         # 接続は tick ごとに開閉する(sleep 中は DB ロックを保持しない、ADR-025)
         factory = make_session_factory(DB_PATH, config)
         logger.info("keepalive 開始(env=%s, margin=%.0fs)", config.environment, args.margin)
