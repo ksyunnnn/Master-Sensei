@@ -162,8 +162,21 @@ Trade #17 の実戦で token 失効が頻発し (1セッション 4回再認証)
 - **判明 (推測でなく公式確認)**: token lifetime に**固定の公式値は存在せず app 依存**。access は公式 20分固定だが、refresh は**公式 doc 例 40分に対し当 LIVE アプリ実測 60分**で食い違う。→ コードは数字をハードコードせず DB の `expires_at` (= Saxo 応答値) を読む設計に統一 (`docs/api/saxo/token-auth.md`、ADR-026 準拠)。
 - **設計**: refresh token を**失効直前 (margin) に1回だけ roll** する backstop。access (20分) は温めず in-session `get_access_token()` の on-demand 更新に任せる = **token 再発行を失効周期に1回へ最小化**。access < refresh なので roll 時 access は失効済→`get_access_token()` が rolling refresh を起こす。
 - **起動方針**: /sync-saxo 実行時 ＋ ユーザー明示指示のみ。**セッション開始時の自動起動はしない** (oauth ログイン画面で初動が遅れるため)。`run_in_background` のセッション子プロセスでセッション終了時に停止 (launchd/disown による永続化はしない)。lockfile でリフレッサー1本厳守。
-- 反映: `scripts/saxo_keepalive.py` (TDD `tests/test_saxo_keepalive.py` 13テスト)、`docs/api/saxo/token-auth.md`、`/sync-saxo` SKILL に起動ステップ、`.gitignore` に `logs/`。
+- 反映: `scripts/saxo_keepalive.py` (TDD `tests/test_saxo_keepalive.py`)、`docs/api/saxo/token-auth.md`、`/sync-saxo` SKILL に起動ステップ、`.gitignore` に `logs/`。
 - 残課題: PC スリープが refresh lifetime を超えると失効は依然不可避 (session 43 教訓)。これは再認証必須で keepalive では回避できない。
+
+#### DB ロックを sleep 中に保持しない (2026-06-15 追記、session 50)
+
+初版 keepalive は `main()` で read-write 接続を1本開き、`run_keepalive` がそれを**ループ全寿命 (最大300秒の sleep 中も含む) 保持**していた。DuckDB の read-write 接続はファイル**排他**ロックを取るため、keepalive 稼働中はずっと他プロセスを弾く。実害:
+
+- セッション終了時の **Stop hook (`session_stop_check.py`、read_only) が毎回失敗** (`IOException: Conflicting lock is held in PID <keepalive>`)。未解決予測の期限チェックがスキップされる。
+- `/sync-saxo` の import や `close_trade()` 等、同セッションの DB 書き込みも同時実行不可。
+
+**修正**: 接続を **tick ごとに開閉**し、**sleep 前に閉じる**。さらに poll (失効残りの確認=読み) は **`read_only` (共有ロック)** で Stop hook 等の読み取りと共存させ、**refresh (token 書き込み) の瞬間だけ read-write (排他ロック)** を短時間取る。これで排他ロックは「実際にトークンを roll する稀な瞬間」だけに縮小される。
+
+- `run_keepalive(client, db, ...)` → `run_keepalive(session_factory, ...)` に変更。`session_factory(read_only=...)` は `(client, db)` を yield する context manager (`make_session_factory(db_path, config)` が生成)。
+- read_only 接続では DuckDB が CREATE を拒否するため `SenseiDB(conn, init_schema=False)` を追加 (スキーマ既存が分かっている読み取り専用接続用、後方互換: 既定 True)。
+- 検証: keepalive 稼働中に read_only 接続・`session_stop_check.py` がエラーなく成功することを実機確認。回帰テスト `test_run_keepalive_holds_no_session_during_sleep` 他で sleep 中の非保持・poll=read_only/refresh=read-write を固定。
 
 ### トレードオフ
 
