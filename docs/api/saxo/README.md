@@ -19,6 +19,9 @@
 | [cost-fields.md](cost-fields.md) | Trade cost response の全 field 公式定義 = break-even 判定 (ADR-029) |
 | [fee-schedule.md](fee-schedule.md) | 公式手数料体系 (commission/為替/カストディ) の普遍的事実 + citation |
 | [endpoints.md](endpoints.md) | 使用 endpoint + 実例レスポンス |
+| [token-auth.md](token-auth.md) | OAuth token lifetime / refresh ローリング / app依存・keepalive (ADR-025/026) |
+| [trade-report-fields.md](trade-report-fields.md) | 約定レポートの全 field 公式定義 (結合キー OrderId、ADR-030) |
+| [booking-fields.md](booking-fields.md) | bookings (入出金/現金移動) の全 field 公式定義 (ADR-030 Phase5) |
 | [rate-limits.md](rate-limits.md) | rate limit 公式値 |
 
 ## 用途別 field 早見表

@@ -155,6 +155,16 @@ OAuth access token は **20 分で失効** し、refresh のたびに refresh to
   - `/entry-analysis` 改修 (NAV ベースの sizing 議論)
   - SessionStart hook で token 期限警告 (例: 残 7日以下で警告)
 
+### token keepalive (2026-06-15 追記、session 50)
+
+Trade #17 の実戦で token 失効が頻発し (1セッション 4回再認証)、約定確認・利確判断の度にブラウザ再認証が初動を中断した。根治として `scripts/saxo_keepalive.py` を追加。
+
+- **判明 (推測でなく公式確認)**: token lifetime に**固定の公式値は存在せず app 依存**。access は公式 20分固定だが、refresh は**公式 doc 例 40分に対し当 LIVE アプリ実測 60分**で食い違う。→ コードは数字をハードコードせず DB の `expires_at` (= Saxo 応答値) を読む設計に統一 (`docs/api/saxo/token-auth.md`、ADR-026 準拠)。
+- **設計**: refresh token を**失効直前 (margin) に1回だけ roll** する backstop。access (20分) は温めず in-session `get_access_token()` の on-demand 更新に任せる = **token 再発行を失効周期に1回へ最小化**。access < refresh なので roll 時 access は失効済→`get_access_token()` が rolling refresh を起こす。
+- **起動方針**: /sync-saxo 実行時 ＋ ユーザー明示指示のみ。**セッション開始時の自動起動はしない** (oauth ログイン画面で初動が遅れるため)。`run_in_background` のセッション子プロセスでセッション終了時に停止 (launchd/disown による永続化はしない)。lockfile でリフレッサー1本厳守。
+- 反映: `scripts/saxo_keepalive.py` (TDD `tests/test_saxo_keepalive.py` 13テスト)、`docs/api/saxo/token-auth.md`、`/sync-saxo` SKILL に起動ステップ、`.gitignore` に `logs/`。
+- 残課題: PC スリープが refresh lifetime を超えると失効は依然不可避 (session 43 教訓)。これは再認証必須で keepalive では回避できない。
+
 ### トレードオフ
 
 - ストレージ: token rotation で `auth_tokens` が成長。1日 ~20 record × 365日 = 7,300 record/年、1record < 1KB なので影響軽微
