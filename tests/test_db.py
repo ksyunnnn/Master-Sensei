@@ -50,6 +50,27 @@ class TestSchema:
         SenseiDB(db_conn)
         SenseiDB(db_conn)
 
+    def test_init_schema_false_skips_table_creation(self, tmp_path):
+        """init_schema=False は CREATE を発行しない(read_only 接続で読み取り専用に使える)。
+
+        ADR-025: keepalive の poll は read_only 共有ロックで Stop hook 等と共存する。
+        SenseiDB を read_only 接続で構築するには schema init を抑止する必要がある。
+        """
+        import duckdb
+        p = tmp_path / "ro.duckdb"
+        # 通常構築でスキーマを作ってから閉じる
+        rw = duckdb.connect(str(p))
+        SenseiDB(rw)
+        rw.close()
+        # read_only 接続 + init_schema=False で CREATE を発行せず構築できる
+        ro = duckdb.connect(str(p), read_only=True)
+        try:
+            db = SenseiDB(ro, init_schema=False)
+            # 読み取りメソッドが動く(既存スキーマを参照)
+            assert db.get_active_token("saxo", "live", "refresh") is None
+        finally:
+            ro.close()
+
 
 class TestEvents:
     def test_add_event(self, db):

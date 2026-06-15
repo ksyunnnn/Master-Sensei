@@ -13,6 +13,11 @@
 - **停止**: `run_in_background` のセッション子プロセスとして起動 → セッション終了でハーネスが kill。
   launchd / nohup-disown は使わない(永続化しない)。
 - **リフレッサー1本厳守**: lockfile で二重起動を防止。
+- **DB ロックを sleep 中は保持しない(ADR-025)**: DuckDB の read-write 接続はファイル排他
+  ロックを取り、稼働中ずっと他プロセス(Stop hook の read_only すら)を弾く。そこで接続は
+  **tick ごとに開閉**し、sleep 前に閉じる。poll(失効残りの確認=読み)は read_only(共有
+  ロック)で Stop hook 等と共存し、refresh(token 書き込み)時のみ read-write で短時間だけ
+  排他ロックを取る。
 
 実行例(通常はバックグラウンド子プロセス):
   python scripts/saxo_keepalive.py
@@ -27,6 +32,7 @@ import os
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -72,9 +78,32 @@ def plan_next(
     return ("sleep", min(remaining - margin_sec, float(max_sleep_sec)))
 
 
+def make_session_factory(db_path: Path | str, config: SaxoConfig):
+    """tick ごとに connect→close する DB セッション factory を返す(ADR-025)。
+
+    sleep 中は接続を保持しない=DuckDB ファイルロックを解放する。`read_only=True` の
+    poll は共有ロックなので Stop hook 等の読み取りと共存でき、refresh(token 書き込み)
+    時のみ `read_only=False` で短時間だけ排他ロックを取る。
+
+    返り値は zero-arg ではなく `factory(read_only=...)` の context manager で、
+    `with factory(read_only=...) as (client, db):` で使う。
+    """
+    @contextmanager
+    def factory(read_only: bool = False):
+        conn = duckdb.connect(str(db_path), read_only=read_only)
+        try:
+            # read_only 接続では CREATE が拒否されるため schema init を抑止する
+            db = SenseiDB(conn, init_schema=not read_only)
+            client = SaxoClient(db, config=config)
+            yield client, db
+        finally:
+            conn.close()
+
+    return factory
+
+
 def run_keepalive(
-    client: SaxoClient,
-    db: SenseiDB,
+    session_factory,
     environment: str,
     *,
     margin_sec: float = DEFAULT_MARGIN_SEC,
@@ -85,6 +114,10 @@ def run_keepalive(
 ) -> str:
     """keepalive ループ本体。終了理由文字列を返す。
 
+    `session_factory(read_only=...)` は `(client, db)` を yield する context manager。
+    DB ロックを sleep 中に保持しないため、各 tick で接続を開閉する(ADR-025):
+    poll は read_only(共有ロック)、refresh 時のみ read-write(排他ロック)。
+
     - "needs_reauth": refresh token 不在/失効 → ブラウザ再認証が必要(saxo_oauth_init)。
     - "refresh_no_progress": refresh 後も expiry が前進しない(access≥refresh の異常構成)。
     - "stopped": stop_after に到達(テスト用)。
@@ -94,20 +127,28 @@ def run_keepalive(
         if stop_after is not None and iterations >= stop_after:
             return "stopped"
 
-        row = db.get_active_token(PROVIDER, environment, "refresh")
-        if row is None:
-            logger.warning(
-                "refresh token 不在/失効 → ブラウザ再認証が必要"
-                "(python scripts/saxo_oauth_init.py)。keepalive 終了"
+        # ── poll: read_only(共有ロック)で失効残りを確認し次アクションを決める ──
+        with session_factory(read_only=True) as (_client, db):
+            row = db.get_active_token(PROVIDER, environment, "refresh")
+            if row is None:
+                logger.warning(
+                    "refresh token 不在/失効 → ブラウザ再認証が必要"
+                    "(python scripts/saxo_oauth_init.py)。keepalive 終了"
+                )
+                return "needs_reauth"
+            action, sleep_for = plan_next(
+                row["expires_at"], now_jst(), margin_sec, max_sleep_sec
             )
-            return "needs_reauth"
-
-        action, sleep_for = plan_next(
-            row["expires_at"], now_jst(), margin_sec, max_sleep_sec
-        )
-
-        if action == "refresh":
             before = row["expires_at"]
+
+        if action == "sleep":
+            # 接続解放後に sleep(ロックを保持しない)
+            sleep_fn(sleep_for)
+            iterations += 1
+            continue
+
+        # ── refresh: read-write(排他ロック)を短時間だけ取り token を roll する ──
+        with session_factory(read_only=False) as (client, db):
             try:
                 # access は失効済(access<refresh)なので rolling refresh が走り、
                 # 新 access + 新 refresh が発行される。
@@ -116,26 +157,24 @@ def run_keepalive(
                 logger.warning(
                     "refresh 一時失敗(%s) → %ds 後に再試行", exc, retry_sleep_sec
                 )
-                sleep_fn(retry_sleep_sec)
-                iterations += 1
-                continue
-
-            after = db.get_active_token(PROVIDER, environment, "refresh")
-            if after is None:
-                logger.warning("refresh 後に token 消失(revoked) → 要再認証。終了")
-                return "needs_reauth"
-            if after["expires_at"] <= before:
-                logger.error(
-                    "refresh 後も refresh expiry が未前進(access≥refresh 構成の疑い)。終了"
+                retry = True
+            else:
+                retry = False
+                after = db.get_active_token(PROVIDER, environment, "refresh")
+                if after is None:
+                    logger.warning("refresh 後に token 消失(revoked) → 要再認証。終了")
+                    return "needs_reauth"
+                if after["expires_at"] <= before:
+                    logger.error(
+                        "refresh 後も refresh expiry が未前進(access≥refresh 構成の疑い)。終了"
+                    )
+                    return "refresh_no_progress"
+                logger.info(
+                    "token roll: refresh expiry %s → %s", before, after["expires_at"]
                 )
-                return "refresh_no_progress"
-            logger.info(
-                "token roll: refresh expiry %s → %s", before, after["expires_at"]
-            )
-            sleep_fn(1.0)
-        else:
-            sleep_fn(sleep_for)
 
+        # 接続解放後に sleep(ロックを保持しない)
+        sleep_fn(retry_sleep_sec if retry else 1.0)
         iterations += 1
 
 
@@ -225,18 +264,14 @@ def main() -> int:
 
     try:
         config = SaxoConfig.from_env(environment=args.env)
-        conn = duckdb.connect(str(DB_PATH))
-        try:
-            db = SenseiDB(conn)
-            client = SaxoClient(db, config=config)
-            logger.info("keepalive 開始(env=%s, margin=%.0fs)", config.environment, args.margin)
-            status = run_keepalive(
-                client, db, config.environment,
-                margin_sec=args.margin, max_sleep_sec=args.max_sleep,
-                stop_after=1 if args.once else None,
-            )
-        finally:
-            conn.close()
+        # 接続は tick ごとに開閉する(sleep 中は DB ロックを保持しない、ADR-025)
+        factory = make_session_factory(DB_PATH, config)
+        logger.info("keepalive 開始(env=%s, margin=%.0fs)", config.environment, args.margin)
+        status = run_keepalive(
+            factory, config.environment,
+            margin_sec=args.margin, max_sleep_sec=args.max_sleep,
+            stop_after=1 if args.once else None,
+        )
     finally:
         lock.release()
 

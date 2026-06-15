@@ -1,20 +1,26 @@
 """saxo_keepalive ユニットテスト (ADR-025/026)。
 
 - plan_next: 失効までの残り時間から refresh/sleep を決める純粋関数。
-- run_keepalive: ループ本体。DB は in-memory DuckDB、client はフェイク(refresh を
-  DB の token 前進で模倣)。time.sleep は no-op に差し替え、stop_after で停止。
+- run_keepalive: ループ本体。DB セッションは tick ごとに開閉する factory 経由
+  (sleep 中はロックを保持しない)。in-memory DuckDB を共有する const factory と、
+  refresh を DB の token 前進で模倣するフェイク client を使う。time.sleep は no-op
+  に差し替え、stop_after で停止。
+- make_session_factory: tick ごとに connect→close する DB セッション factory。
+  sleep 中の DuckDB ファイルロック解放(Stop hook 等との共存)が核心。
 - SingleInstanceLock: 二重起動防止。
 """
 from __future__ import annotations
 
 import importlib.util
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from src.db import SenseiDB, now_jst
-from src.saxo_client import PROVIDER, SaxoAuthError
+from src.saxo_client import BASE_URL_LIVE, PROVIDER, SaxoAuthError, SaxoConfig
 
 # scripts/ は package ではないので明示ロード
 _SPEC = importlib.util.spec_from_file_location(
@@ -70,6 +76,19 @@ def db(db_conn):
     return SenseiDB(db_conn)
 
 
+@pytest.fixture
+def config():
+    return SaxoConfig(
+        app_key="test_key",
+        app_secret="test_secret",
+        auth_url="https://live.logonvalidation.net/authorize",
+        token_url="https://live.logonvalidation.net/token",
+        redirect_uri="http://localhost:8080/callback",
+        environment="live",
+        base_url=BASE_URL_LIVE,
+    )
+
+
 def _save_refresh(db, *, seconds_until_expiry):
     db.save_token(
         provider=PROVIDER,
@@ -78,6 +97,14 @@ def _save_refresh(db, *, seconds_until_expiry):
         token_value="rt",
         expires_at=now_jst() + timedelta(seconds=seconds_until_expiry),
     )
+
+
+def _const_factory(client, db):
+    """毎 tick 同じ in-memory client/db を渡す factory(実接続は開閉しない)。"""
+    @contextmanager
+    def factory(read_only: bool = False):
+        yield client, db
+    return factory
 
 
 class _RollingFakeClient:
@@ -105,7 +132,7 @@ class _RollingFakeClient:
 
 def test_run_keepalive_no_refresh_token_returns_needs_reauth(db):
     client = _RollingFakeClient(db)
-    status = ka.run_keepalive(client, db, "live", sleep_fn=lambda s: None)
+    status = ka.run_keepalive(_const_factory(client, db), "live", sleep_fn=lambda s: None)
     assert status == "needs_reauth"
     assert client.calls == 0  # API は叩かない
 
@@ -115,7 +142,7 @@ def test_run_keepalive_refreshes_when_due(db):
     client = _RollingFakeClient(db)
     slept = []
     status = ka.run_keepalive(
-        client, db, "live", margin_sec=300, sleep_fn=slept.append, stop_after=1,
+        _const_factory(client, db), "live", margin_sec=300, sleep_fn=slept.append, stop_after=1,
     )
     assert status == "stopped"
     assert client.calls == 1  # 1回だけ roll
@@ -127,7 +154,7 @@ def test_run_keepalive_sleeps_when_not_due_without_refresh(db):
     client = _RollingFakeClient(db)
     slept = []
     status = ka.run_keepalive(
-        client, db, "live", margin_sec=300, max_sleep_sec=300,
+        _const_factory(client, db), "live", margin_sec=300, max_sleep_sec=300,
         sleep_fn=slept.append, stop_after=1,
     )
     assert status == "stopped"
@@ -140,7 +167,7 @@ def test_run_keepalive_transient_error_retries_not_reauth(db):
     client = _RollingFakeClient(db, raises=[SaxoAuthError("HTTP 503")])
     slept = []
     status = ka.run_keepalive(
-        client, db, "live", margin_sec=300, retry_sleep_sec=42,
+        _const_factory(client, db), "live", margin_sec=300, retry_sleep_sec=42,
         sleep_fn=slept.append, stop_after=1,
     )
     # 一時障害は再認証扱いにせず、retry 待ちして停止
@@ -158,9 +185,98 @@ def test_run_keepalive_no_progress_when_token_not_rolled(db):
             type(self).calls += 1
             return "access"  # token を前進させない
 
-    status = ka.run_keepalive(_NoopClient(), db, "live", margin_sec=300,
+    status = ka.run_keepalive(_const_factory(_NoopClient(), db), "live", margin_sec=300,
                               sleep_fn=lambda s: None, stop_after=3)
     assert status == "refresh_no_progress"
+
+
+# ── ロック解放(本修正の核心) ──
+
+def test_run_keepalive_holds_no_session_during_sleep(db):
+    """sleep 中は DB セッションを保持しない=ファイルロックを解放している。
+
+    旧設計は接続をループ全寿命で保持し、sleep 中も排他ロックを掴んだままだった
+    (Stop hook の read_only 接続を弾く)。本テストは sleep 時点の open 深さが 0 で
+    あることを検証する。
+    """
+    _save_refresh(db, seconds_until_expiry=3600)  # action=sleep
+    client = _RollingFakeClient(db)
+    depth = {"n": 0, "max_during_sleep": 0}
+
+    @contextmanager
+    def factory(read_only: bool = False):
+        depth["n"] += 1
+        try:
+            yield client, db
+        finally:
+            depth["n"] -= 1
+
+    def sleep_fn(_):
+        depth["max_during_sleep"] = max(depth["max_during_sleep"], depth["n"])
+
+    status = ka.run_keepalive(
+        factory, "live", margin_sec=300, max_sleep_sec=300,
+        sleep_fn=sleep_fn, stop_after=1,
+    )
+    assert status == "stopped"
+    assert depth["max_during_sleep"] == 0  # sleep 中はロック非保持
+
+
+def test_run_keepalive_sleep_tick_opens_read_only_only(db):
+    """refresh 不要な tick は read_only(共有ロック)の poll だけ。書き込みロックを取らない。"""
+    _save_refresh(db, seconds_until_expiry=3600)
+    client = _RollingFakeClient(db)
+    modes = []
+
+    @contextmanager
+    def factory(read_only: bool = False):
+        modes.append(read_only)
+        yield client, db
+
+    ka.run_keepalive(factory, "live", margin_sec=300, max_sleep_sec=300,
+                     sleep_fn=lambda s: None, stop_after=1)
+    assert modes == [True]  # poll(read_only)1回のみ、write 接続なし
+
+
+def test_run_keepalive_refresh_tick_polls_read_only_then_writes(db):
+    """refresh する tick は poll=read_only → refresh=read-write の順。排他は roll 時のみ。"""
+    _save_refresh(db, seconds_until_expiry=10)  # refresh due
+    client = _RollingFakeClient(db)
+    modes = []
+
+    @contextmanager
+    def factory(read_only: bool = False):
+        modes.append(read_only)
+        yield client, db
+
+    ka.run_keepalive(factory, "live", margin_sec=300,
+                     sleep_fn=lambda s: None, stop_after=1)
+    assert modes[0] is True   # poll = read_only(共有)
+    assert False in modes     # refresh = read-write(排他)
+
+
+# ── make_session_factory(実ファイル接続の開閉) ──
+
+def test_make_session_factory_releases_lock_after_close(tmp_path, config):
+    """factory を抜けたら接続が閉じ、別接続が read_only で開ける(ロック解放)。"""
+    db_path = tmp_path / "s.duckdb"
+    factory = ka.make_session_factory(db_path, config)
+
+    with factory(read_only=False) as (client, dbx):
+        assert client is not None
+        dbx.save_token(
+            provider=PROVIDER, environment="live", token_type="refresh",
+            token_value="rt", expires_at=now_jst() + timedelta(seconds=100),
+        )
+
+    # close 後: 別プロセス相当の read_only 接続が成功する(排他ロックが残っていない)
+    other = duckdb.connect(str(db_path), read_only=True)
+    try:
+        row = SenseiDB(other, init_schema=False).get_active_token(PROVIDER, "live", "refresh")
+    finally:
+        other.close()
+    assert row is not None
+    assert row["token_value"] == "rt"
 
 
 # ── SingleInstanceLock ──

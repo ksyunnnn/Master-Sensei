@@ -39,10 +39,17 @@ def _require_aware(dt: datetime, param_name: str = "dt") -> datetime:
 
 
 class SenseiDB:
-    def __init__(self, conn: duckdb.DuckDBPyConnection):
+    def __init__(self, conn: duckdb.DuckDBPyConnection, init_schema: bool = True):
+        """conn を包む。
+
+        init_schema=False: CREATE TABLE を発行しない。スキーマが既存と分かっている
+        read_only 接続(例: keepalive の poll、ADR-025)で読み取り専用に使う場合に指定する。
+        DuckDB は read_only 接続で CREATE を拒否するため、既定の True では構築できない。
+        """
         self.conn = conn
         self.conn.execute("SET TIMEZONE = 'Asia/Tokyo'")
-        self._init_schema()
+        if init_schema:
+            self._init_schema()
 
     def _init_schema(self):
         self.conn.execute("""
