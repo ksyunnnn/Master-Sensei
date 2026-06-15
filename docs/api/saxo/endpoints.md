@@ -136,6 +136,8 @@ open positions のリスト。
 
 - 用途: code 交換 + token refresh
 - code 実装: `SaxoClient.exchange_code_for_tokens()`, `SaxoClient._refresh_access_token()`
+- **token lifetime / refresh ローリング / app依存の詳細は `token-auth.md`**(ADR-025/026)
+- keepalive(失効直前 backstop): `scripts/saxo_keepalive.py`
 - ADR-025 参照
 
 ## Historical Report Data (ADR-030, 執行事実層の供給源)

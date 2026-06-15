@@ -16,6 +16,16 @@ Saxo 照合ワークフローを実行してください (ADR-030)。判断層 `
 `scripts/saxo_oauth_init.py` をバックグラウンド起動する(ユーザーが担うのはブラウザ
 ログインのみ。`! python ...` をユーザーに丸投げしない。CLAUDE.md / ADR-025)。
 
+**token 有効化後、keepalive を起動する**(失効頻発の根治、ADR-025/026)。`run_in_background`
+のセッション子プロセスとして起動 → セッション終了で自動停止(永続化しない)。lockfile で
+二重起動を防ぐので毎回呼んでよい(既に起動中なら即終了):
+```bash
+python scripts/saxo_keepalive.py   # run_in_background=true で起動
+```
+refresh token を失効直前に1回だけ roll し、以降の access 更新を無人化する(`docs/api/saxo/token-auth.md`)。
+**セッション開始時の自動起動はしない**(ログイン画面で初動が遅れるため)。起動契機は /sync-saxo
+実行時 or ユーザーの明示指示のみ。
+
 ## 手順
 
 1. **執行事実層を全 mirror 取得** (Saxo reports/trades → Parquet 上書き):
