@@ -9,6 +9,7 @@
 data/parquet/
 data/*.duckdb
 data/*.duckdb.wal
+data/*.duckdb.bak
 learning/data/*.duckdb
 learning/data/*.duckdb.wal
 *.parquet.bak

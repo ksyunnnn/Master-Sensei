@@ -12,12 +12,35 @@
 """
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import duckdb
 
 JST = timezone(offset=__import__("datetime").timedelta(hours=9))
+
+# git バックアップ対象の蓄積層テーブル (ADR-033)。
+# auth_tokens は機密 (OAuth トークン) のため意図的に除外 — public repo 漏洩防止。
+BACKUP_TABLES = [
+    "events",
+    "predictions",
+    "knowledge",
+    "regime_assessments",
+    "event_reviews",
+    "trades",
+    "skill_executions",
+]
+
+# 復元時に max(id)+1 へ戻す sequence (ADR-033)。CSV は採番状態を持たないため。
+# knowledge.id は文字列 "K-044"、regime_assessments/event_reviews は id 無しで対象外。
+_BACKUP_SEQUENCES = {
+    "events": "events_id_seq",
+    "predictions": "predictions_id_seq",
+    "skill_executions": "skill_executions_id_seq",
+    "trades": "trades_id_seq",
+}
 
 
 def now_jst() -> datetime:
@@ -958,3 +981,71 @@ class SenseiDB:
             "overall_brier": overall_brier,
             "recency_bias_flag": abs((recent_brier or 0) - (overall_brier or 0)) > 0.1 if recent_brier and overall_brier else None,
         }
+
+    # ── git バックアップ export/restore (ADR-033) ──
+
+    def export_for_backup(self, export_dir, tables: Optional[list[str]] = None) -> dict:
+        """蓄積層を CSV で決定的に export する (ADR-033)。
+
+        - auth_tokens は機密のため指定不可 (public repo 漏洩防止)。
+        - 行順は ORDER BY ALL で固定 → 内容不変なら byte 同一で git 差分ゼロ。
+        - スキーマ DDL を `_schema.sql` に書き、復元可能にする。
+        """
+        tables = list(tables) if tables is not None else list(BACKUP_TABLES)
+        if "auth_tokens" in tables:
+            raise ValueError(
+                "auth_tokens は機密 (OAuth トークン) のため export 不可 (ADR-033)"
+            )
+        export_dir = Path(export_dir)
+        export_dir.mkdir(parents=True, exist_ok=True)
+
+        placeholders = ",".join(["?"] * len(tables))
+        schema_rows = self.conn.execute(
+            f"SELECT table_name, sql FROM duckdb_tables() "
+            f"WHERE table_name IN ({placeholders}) ORDER BY table_name",
+            tables,
+        ).fetchall()
+        schema_path = export_dir / "_schema.sql"
+        with open(schema_path, "w") as f:
+            for _name, sql in schema_rows:
+                f.write(sql.rstrip(";") + ";\n")
+
+        counts: dict[str, int] = {}
+        for t in tables:
+            out = (export_dir / f"{t}.csv").as_posix()
+            self.conn.execute(
+                f"COPY (SELECT * FROM {t} ORDER BY ALL) TO '{out}' (HEADER, FORMAT csv)"
+            )
+            counts[t] = self.conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+
+        return {"dir": str(export_dir), "tables": counts, "schema": str(schema_path)}
+
+    def restore_from_backup(self, export_dir, tables: Optional[list[str]] = None) -> dict:
+        """export_for_backup の CSV から蓄積層を復元する (ADR-033)。
+
+        CSV を投入後、sequence を max(id)+1 に戻し復元後の採番衝突を防ぐ。
+        既存データのある DB への上書き復元は想定しない (空の SenseiDB に対して呼ぶ)。
+        """
+        tables = list(tables) if tables is not None else list(BACKUP_TABLES)
+        export_dir = Path(export_dir)
+        counts: dict[str, int] = {}
+        for t in tables:
+            csv_file = export_dir / f"{t}.csv"
+            # CSV ヘッダの列順で明示的に COPY する。テーブルの物理列順 (ALTER 由来で
+            # export 元と異なりうる) に依存せず、列名でマッピング・対象列の型を使う。
+            header = csv_file.read_text().splitlines()[0]
+            col_list = ", ".join(header.split(","))
+            self.conn.execute(
+                f"COPY {t} ({col_list}) FROM '{csv_file.as_posix()}' (HEADER, FORMAT csv)"
+            )
+            counts[t] = self.conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+
+        for t, seq in _BACKUP_SEQUENCES.items():
+            if t not in tables:
+                continue
+            max_id = self.conn.execute(f"SELECT max(id) FROM {t}").fetchone()[0]
+            if max_id is not None:
+                self.conn.execute(f"DROP SEQUENCE IF EXISTS {seq}")
+                self.conn.execute(f"CREATE SEQUENCE {seq} START {int(max_id) + 1}")
+
+        return {"dir": str(export_dir), "tables": counts}
