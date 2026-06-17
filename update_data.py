@@ -25,7 +25,7 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from src.fred_client import FredClient
 from src.providers import ProviderChain, FredAdapter, YFinanceAdapter, NasdaqAdapter
-from src.tiingo_client import TiingoFetcher, TiingoConfig, TRADING_SYMBOLS, REFERENCE_SYMBOLS
+from src.tiingo_client import TiingoFetcher, TiingoConfig, TRADING_SYMBOLS, REFERENCE_SYMBOLS, INTRADAY_SYMBOLS
 from src.cache_manager import CacheManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -125,7 +125,7 @@ def update_intraday(cache: CacheManager):
     fetcher = TiingoFetcher(config)
     today = today_jst()
 
-    for symbol in TRADING_SYMBOLS:
+    for symbol in INTRADAY_SYMBOLS:
         meta = cache.get_intraday_metadata(symbol)
         # 5分足は常に差分取得を試みる（日中更新があるため）
         start = (meta.end_date) if meta else None
@@ -302,6 +302,7 @@ def main():
     parser.add_argument("--intraday-only", action="store_true")
     parser.add_argument("--status", action="store_true")
     parser.add_argument("--symbol", type=str, help="Single symbol to update (e.g. SOXL)")
+    parser.add_argument("--no-backup", action="store_true", help="DB の git バックアップを抑止 (ADR-033)")
     args = parser.parse_args()
 
     cache = CacheManager(DATA_DIR)
@@ -343,6 +344,15 @@ def main():
         update_intraday(cache)
 
     show_summary(cache)
+
+    # DB 蓄積層の git バックアップ (ADR-033)。best-effort: 失敗してもデータ更新は成功扱い。
+    if not args.no_backup:
+        try:
+            from scripts.backup_db import backup as backup_db
+            logger.info("=== Backing up DB accumulation layer (ADR-033) ===")
+            backup_db()
+        except Exception as e:
+            logger.warning(f"DB backup skipped: {e}")
 
 
 if __name__ == "__main__":

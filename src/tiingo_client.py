@@ -45,8 +45,16 @@ class TiingoConfig:
 
 
 TRADING_SYMBOLS = ["TQQQ", "SQQQ", "SOXL", "SOXS", "TECL", "SPXL", "TNA", "TZA"]
-REFERENCE_SYMBOLS = ["VIXY", "TECS"]  # 日足のみ
+# 参照指数 (取引しない 1x ETF)。蓄積方針は ADR-032。
+#   VIXY/TECS         : 低流動性 → 日足のみ。
+#   SOXX/SPY/QQQ/IWM  : 高流動性の de-levered 参照 → 日足 + 5分足を蓄積。
+#                       3x の path-decay を外した原指数の強弱を日中解像度で後追いするため。
+REFERENCE_SYMBOLS_DAILY_ONLY = ["VIXY", "TECS"]
+REFERENCE_SYMBOLS_INTRADAY = ["SOXX", "SPY", "QQQ", "IWM"]
+REFERENCE_SYMBOLS = REFERENCE_SYMBOLS_DAILY_ONLY + REFERENCE_SYMBOLS_INTRADAY
 ALL_SYMBOLS = TRADING_SYMBOLS + REFERENCE_SYMBOLS
+# 5分足取得対象 = 取引銘柄 + 高流動性参照指数 (update_data.update_intraday が走査)
+INTRADAY_SYMBOLS = TRADING_SYMBOLS + REFERENCE_SYMBOLS_INTRADAY
 
 
 class TiingoFetcher:
