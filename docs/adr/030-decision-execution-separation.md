@@ -143,6 +143,20 @@ Phase 3 で「別エンドポイント未特定」として保留していた入
 - 変更ファイル: `src/saxo_client.py`（`CashBooking` + `get_bookings`）, `src/account_ledger.py`（`cash_bookings_to_rows`）, `scripts/import_account_transactions.py`（bookings も mirror）, `docs/api/saxo/booking-fields.md`（新規）, `endpoints.md`/`trade-report-fields.md`（未解決の解消）, 各テスト。
 - **非スコープ（明示）**: TWR/MWR 等の運用力指標の算出はやらない（ユーザー選択。必要になったら別途）。本 Phase は「現金移動を台帳に記録し、残高変動を損益＋資金移動で説明可能にする」までに限定。
 
+### Phase 6: テール窓 mirror + id マージ + 機械的エントリポイント（2026-06-19）
+
+きっかけは「差分が無くても `/sync-saxo` が毎回長時間走る」「認証で token のやり取りが長い」というユーザー要望。Phase 3 の **全置換 mirror（`--from-date 2026-01-01` を毎回）** が、差分ゼロでも全年の reports/trades + bookings を生成系エンドポイントから引き直していたのが主因。認証側は、`get_access_token()` が既に自動 refresh するのに SKILL が手動 token 点検（`auth_tokens.expires_at` を読む実況）を指示しており、コードが自己修復できる場面で往復を足していた。
+
+- **mirror をテール窓 + id マージに変更**: 全置換をやめ、既存 parquet の最大 `trade_date`（anchor）から overlap 日だけ遡って取得し、`broker_ref` で upsert マージする。
+  - **anchor の正しさ**: anchor = 最新 trade_date が「前回 sync 以降」を保証するので、窓幅ゼロでも複数日のギャップは取りこぼさない。
+  - **overlap = 7日（既定）**: 窓が拾うのは「既に取り込んだ行への遡及訂正（T+1 決済 + 週末 + 祝日の遅延記帳・手数料訂正）」のみ。決済サイクル + 余裕で 7 日。`broker_ref`（TradeId/BkAmountId = 不変主キー）upsert は冪等なので、窓を広めに取って既出行を再取得しても重複も破損もしない＝**広く引くのは無料**。速度の旨味は「全年→窓」でほぼ取り切れ、窓を最小化しても速度差は誤差で取りこぼしリスクだけ増える（だから最小化しない）。
+  - **`--full` の逃げ道**: overlap より前の遡及訂正という稀ケースは `--full` で全年 mirror に倒せる。取りこぼしを黙って隠さない。
+  - **実測（2026-06-19 live、履歴=半年/29約定）**: 全年 0.92s（29 fills+4 cash）vs 7日窓 0.57s（4 fills）= **1.62x**。固定オーバーヘッド支配なら ~1.0x のはずで、そうなっていない＝窓は効く。絶対差は今は小さい（履歴が小）が、全年は履歴とともに伸び、窓は週数行で横ばいなので差は時間とともに開く。
+- **機械的エントリポイント `scripts/sync_saxo.py`**: 「無言 token 確保 → テール窓 mirror → reconcile → 簡潔判定」を1本に畳む。`get_access_token()` を呼ぶだけで refresh 生存時は無言通過。失効時のみ `AUTH_REQUIRED`（exit 2）を出して呼び出し側が `saxo_oauth_init.py` を起動。差分ゼロは `✓ 差分なし`（exit 0）で即終了。break は ADR-030 カテゴリに分類して提示（exit 1）。**SKILL から手動 token 点検手順を撤去**。
+  - 認証の構造問題（LIVE refresh token 実測 ~60分、セッション間ギャップで失効 → ブラウザ OAuth）は残る（意図通り）。keepalive がセッション内の失効頻発を抑えるが、永続化しない方針（ADR-025）は不変。
+- **ライブ未約定注文の照合は本体スコープ外**: placed 注文の改定/不発は fill が無く台帳照合に出ない。意味的アクセサ（`get_open_orders`）が未整備で、ADR-026 上 raw dict access を本体に入れられないため、SKILL の別ステップに残す（将来 semantic accessor を field 検証付きで追加したら統合）。
+- 変更ファイル: `src/account_ledger.py`（`latest_trade_date`/`window_from_date`/`merge_transactions_parquet`/`DEFAULT_*` 定数）, `scripts/sync_saxo.py`（新規）, `.claude/skills/sync-saxo/SKILL.md`（簡素化）, `tests/test_account_ledger.py`/`tests/test_sync_saxo.py`。`scripts/import_account_transactions.py` は全年 mirror の単体ツールとして存置（`--full` 相当のバックフィル用）。
+
 ### 変更ファイル（想定）
 - `src/db.py`, `src/saxo_client.py`, `tests/test_db.py`, `tests/test_saxo_client.py`
 - `scripts/import_account_transactions.py`（新規）, SessionStart フック

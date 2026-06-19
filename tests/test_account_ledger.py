@@ -12,7 +12,11 @@ import pytest
 from src.account_ledger import (
     ACCOUNT_TX_COLUMNS,
     cash_bookings_to_rows,
+    latest_trade_date,
+    merge_transactions_parquet,
     trade_reports_to_rows,
+    window_from_date,
+    write_transactions_parquet,
 )
 from src.saxo_client import CashBooking, TradeReport
 
@@ -189,3 +193,92 @@ def test_cash_realized_pnl_none():
 
 def test_cash_empty_input():
     assert cash_bookings_to_rows([], source="s", updated_at=UPDATED) == []
+
+
+# --- テール窓 mirror: window_from_date (純関数) (ADR-030) ---
+
+
+def test_window_from_date_no_parquet_uses_default():
+    """parquet が無い (latest=None) → full mirror の default_from を返す。"""
+    assert window_from_date(None, overlap_days=7, default_from="2026-01-01") == "2026-01-01"
+
+
+def test_window_from_date_subtracts_overlap():
+    """anchor=最新trade_date から overlap 日を引いた日付を返す。"""
+    assert window_from_date(date(2026, 6, 16), overlap_days=7, default_from="2026-01-01") == "2026-06-09"
+
+
+def test_window_from_date_zero_overlap():
+    assert window_from_date(date(2026, 6, 16), overlap_days=0, default_from="2026-01-01") == "2026-06-16"
+
+
+def test_window_from_date_overlap_crosses_month():
+    assert window_from_date(date(2026, 6, 3), overlap_days=7, default_from="2026-01-01") == "2026-05-27"
+
+
+# --- テール窓 mirror: latest_trade_date / merge (ファイルIO) (ADR-030) ---
+
+
+def test_latest_trade_date_missing_file(tmp_path):
+    assert latest_trade_date(tmp_path / "nope.parquet") is None
+
+
+def test_latest_trade_date_returns_max(tmp_path):
+    path = tmp_path / "tx.parquet"
+    rows = trade_reports_to_rows([_buy(), _sell()], source="s", updated_at=UPDATED)
+    write_transactions_parquet(rows, path)
+    assert latest_trade_date(path) == date(2026, 6, 2)  # _sell の trade_date が最新
+
+
+def test_merge_into_empty_writes_all(tmp_path):
+    path = tmp_path / "tx.parquet"
+    rows = trade_reports_to_rows([_buy()], source="s", updated_at=UPDATED)
+    n = merge_transactions_parquet(rows, path)
+    assert n == 1
+    assert latest_trade_date(path) == date(2026, 6, 1)
+
+
+def test_merge_appends_new_broker_ref(tmp_path):
+    path = tmp_path / "tx.parquet"
+    write_transactions_parquet(trade_reports_to_rows([_buy()], source="s", updated_at=UPDATED), path)
+    n = merge_transactions_parquet(
+        trade_reports_to_rows([_sell()], source="s", updated_at=UPDATED), path
+    )
+    assert n == 2  # 別 broker_ref → 追加
+
+
+def test_merge_is_idempotent_on_same_broker_ref(tmp_path):
+    """同一 broker_ref を再取得しても重複しない (窓を広げても無料の根拠)。"""
+    path = tmp_path / "tx.parquet"
+    rows = trade_reports_to_rows([_buy()], source="s", updated_at=UPDATED)
+    merge_transactions_parquet(rows, path)
+    n = merge_transactions_parquet(rows, path)  # 同じ行を再投入
+    assert n == 1  # 重複せず1行のまま
+
+
+def test_merge_upserts_corrected_row(tmp_path):
+    """同 broker_ref で値が変わった行 (遡及訂正) は新しい値で上書きされる。"""
+    import duckdb
+
+    path = tmp_path / "tx.parquet"
+    merge_transactions_parquet(
+        trade_reports_to_rows([_buy()], source="s", updated_at=UPDATED), path
+    )
+    corrected = _buy()
+    corrected.price = 999.0  # Saxo 側で訂正されたとみなす (broker_ref は不変)
+    n = merge_transactions_parquet(
+        trade_reports_to_rows([corrected], source="s", updated_at=UPDATED), path
+    )
+    assert n == 1
+    price = duckdb.sql(
+        f"SELECT price_per_unit FROM read_parquet('{path}')"
+    ).fetchone()[0]
+    assert price == 999.0  # 旧 218.0 でなく訂正後
+
+
+def test_merge_empty_rows_preserves_existing(tmp_path):
+    """窓内に新規ゼロ件 (差分なし) でも既存を壊さない。"""
+    path = tmp_path / "tx.parquet"
+    write_transactions_parquet(trade_reports_to_rows([_buy()], source="s", updated_at=UPDATED), path)
+    n = merge_transactions_parquet([], path)
+    assert n == 1

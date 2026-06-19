@@ -14,7 +14,7 @@ ID 体系 (docs/api/saxo/trade-report-fields.md):
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -128,3 +128,72 @@ def write_transactions_parquet(rows: list[dict], path: Path) -> int:
         shutil.copy2(path, path.with_suffix(".parquet.bak"))
     df.to_parquet(path, engine="pyarrow", index=False)
     return len(df)
+
+
+# 口座開設以降を広く取る (Saxo の遡及制限内)。テール窓が使えない初回 mirror の起点。
+DEFAULT_FROM_DATE = "2026-01-01"
+# 遡及訂正・遅延記帳 (T+1 決済 + 週末 + 祝日) を拾う窓の余裕 (ADR-030)。
+DEFAULT_OVERLAP_DAYS = 7
+
+
+def latest_trade_date(path: Path) -> Optional[date]:
+    """既存 parquet の最大 trade_date を返す。ファイルが無ければ None。
+
+    テール窓 mirror の anchor。None なら full mirror に倒す (window_from_date)。
+    """
+    if not path.exists():
+        return None
+    import duckdb
+
+    row = duckdb.sql(
+        f"SELECT max(trade_date) FROM read_parquet('{path}')"
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    value = row[0]
+    return value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
+
+
+def window_from_date(
+    latest: Optional[date], *, overlap_days: int, default_from: str
+) -> str:
+    """テール窓 mirror の from_date ("YYYY-MM-DD") を決める純関数 (ADR-030)。
+
+    - latest=None (parquet 無し) → full mirror の default_from。
+    - latest あり → anchor(=最新trade_date) から overlap_days 引いた日付。
+      anchor 自体が「前回 sync 以降」を保証し、overlap は既取り込み行への
+      遡及訂正 (決済サイクル等) を拾う保険。upsert なので広めでも無料。
+    """
+    if latest is None:
+        return default_from
+    return (latest - timedelta(days=overlap_days)).isoformat()
+
+
+def merge_transactions_parquet(rows: list[dict], path: Path) -> int:
+    """台帳行を **broker_ref で upsert マージ** し、総行数を返す (ADR-030)。
+
+    全置換 (write_transactions_parquet) と違い、既存 parquet を保持したまま
+    新規行を足し、同一 broker_ref (TradeId/BkAmountId=不変主キー) は新しい値で
+    上書きする。テール窓で既出行を再取得しても冪等 = 重複も破損もしない。
+    既存ファイルは .bak に退避する。
+    """
+    import shutil
+
+    import pandas as pd
+
+    new_df = pd.DataFrame(rows, columns=ACCOUNT_TX_COLUMNS)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        shutil.copy2(path, path.with_suffix(".parquet.bak"))
+        existing = pd.read_parquet(path, engine="pyarrow")
+        if new_df.empty:
+            combined = existing  # 窓内に新規ゼロ件: 既存をそのまま保持
+        else:
+            combined = pd.concat([existing, new_df], ignore_index=True)
+    else:
+        combined = new_df
+    # 新しい方を残す: concat で new_df を後ろに置き keep='last'。
+    combined = combined.drop_duplicates(subset="broker_ref", keep="last")
+    combined = combined.sort_values("trade_date").reset_index(drop=True)
+    combined.to_parquet(path, engine="pyarrow", index=False)
+    return len(combined)
