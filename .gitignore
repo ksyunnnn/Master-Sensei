@@ -31,3 +31,6 @@ CLAUDE.local.md
 
 # saxo keepalive ログ (ローカル運用、ADR-025/026)
 logs/
+
+# Playwright MCP セッション成果物 (スナップショット/コンソールログ)
+.playwright-mcp/

@@ -23,10 +23,11 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 logger = logging.getLogger(__name__)
 
-# API制約定数
-RATE_LIMIT_PER_HOUR = 50
-RATE_LIMIT_INTERVAL = 3600 / RATE_LIMIT_PER_HOUR  # 72秒/リクエスト（最悪ケース）
-SAFE_INTERVAL = 2.0  # 通常運用: 11リクエスト/実行なので2秒で十分
+# API制約定数 (公式値: docs/api/tiingo/rate-limits.md)
+# STARTER(無料)=50 req/時・1000 req/日。POWER=10,000 req/時・100,000 req/日。
+# 公式に「秒・分単位の制限なし／同時実行制限なし」(overview §1.1.3) → 並列バースト可。
+RATE_LIMIT_PER_HOUR = 50  # STARTER 既定。POWER 契約時は実質無制限
+SAFE_INTERVAL = 0.0  # 自前の逐次 throttle。並列 fetch では使わない(秒/分制限が公式に無いため)
 IEX_MAX_DATAPOINTS = 10000  # 5分足の1リクエストあたり上限（2026-03-26実測）
 
 

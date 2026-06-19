@@ -13,7 +13,7 @@ Master Sensei が依存する外部 API の公式仕様を集約。
 |----------|-------------|------|----------|
 | [saxo/](saxo/README.md) | `src/saxo_client.py` | 口座残高・ポジション (OAuth, ADR-025) | ✅ 完全文書化 |
 | fred/ (未作成) | `src/fred_client.py` | マクロ指標 9 シリーズ (FOMC, CPI 等) | ⏳ 別タスク |
-| tiingo/ (未作成) | `src/tiingo_client.py` | 株価 daily / intraday | ⏳ 別タスク |
+| [tiingo/](tiingo/rate-limits.md) | `src/tiingo_client.py` | 株価 daily / intraday | 🔶 rate-limits のみ |
 | yfinance/ (未作成) | `src/providers.py` (chain) | VIX, VIX3M, Brent 即時取得 | ⏳ 別タスク |
 
 ## 新規 provider 追加手順

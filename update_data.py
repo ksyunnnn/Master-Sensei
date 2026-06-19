@@ -12,7 +12,9 @@ import argparse
 import logging
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
+from typing import Any, Callable, List, Tuple
 
 from src.db import today_jst
 from pathlib import Path
@@ -33,6 +35,36 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).parent / "data" / "parquet"
 DAILY_LOOKBACK_YEARS = 5
+# Tiingo は秒/分制限・同時実行制限なし (docs/api/tiingo/rate-limits.md)。
+# fetch は I/O 待ちなので ThreadPool で並列化する。総リクエスト数は逐次と同じ
+# (=時間/日クォータ消費は不変)、wall-clock だけ縮む。控えめな並列度に留める。
+MAX_FETCH_WORKERS = 8
+
+
+def _parallel_fetch(
+    items: List[Any], fetch_one: Callable[[Any], Any], max_workers: int = MAX_FETCH_WORKERS,
+) -> List[Tuple[Any, Any]]:
+    """items を並列に fetch_one(item) し、[(item, result), ...] を items 順で返す。
+
+    1件の失敗で全体を止めない: 例外は item 単位でログし result=None にする。
+    save は呼び出し側が逐次で行う (共有 metadata/json の競合回避)。
+    """
+    if not items:
+        return []
+
+    def work(indexed):
+        i, item = indexed
+        try:
+            return i, fetch_one(item)
+        except Exception as e:  # noqa: BLE001 — 1銘柄の失敗を全体に波及させない
+            logger.warning(f"fetch failed for {item!r}: {e}")
+            return i, None
+
+    results: List[Tuple[Any, Any]] = [(item, None) for item in items]
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for i, res in ex.map(work, list(enumerate(items))):
+            results[i] = (items[i], res)
+    return results
 
 
 def _build_provider_chain() -> ProviderChain:
@@ -60,24 +92,29 @@ def update_macro(cache: CacheManager):
     chain = _build_provider_chain()
     today = today_jst()
 
+    # fetch 計画: 各シリーズの取得開始日を決める。
+    plan = []
     for name in sorted(chain.available_series()):
         meta = cache.get_macro_metadata(name)
-        if meta:
-            start = meta.end_date
-        else:
-            start = today - timedelta(days=365)
+        start = meta.end_date if meta else (today - timedelta(days=365))
+        plan.append((name, start))
 
+    # 並列 fetch (ProviderChain は series ごとに独立した HTTP 呼び出し)。
+    def fetch_one(item):
+        name, start = item
         logger.info(f"{name}: fetching {start} → {today}")
-        try:
-            records, source = chain.fetch(name, start, today)
-        except RuntimeError as e:
-            logger.warning(f"{name}: all providers failed: {e}")
-            continue
+        return chain.fetch(name, start, today)  # (records, source) or raises RuntimeError
 
+    fetched = _parallel_fetch(plan, fetch_one)
+
+    # 逐次 save (共有 metadata/json の競合回避)。
+    for (name, _start), result in fetched:
+        if result is None:
+            continue  # all providers failed (ログ済み)
+        records, source = result
         if not records:
             logger.info(f"{name}: no new data")
             continue
-
         df = pd.DataFrame(records)
         df["date"] = pd.to_datetime(df["date"])
         df = df.set_index("date")
@@ -96,6 +133,8 @@ def update_daily(cache: CacheManager):
     today = today_jst()
     all_symbols = TRADING_SYMBOLS + REFERENCE_SYMBOLS
 
+    # fetch 計画: up-to-date はスキップ、それ以外は差分開始日を決める。
+    plan = []
     for symbol in all_symbols:
         meta = cache._metadata.get(symbol)
         if meta:
@@ -105,11 +144,17 @@ def update_daily(cache: CacheManager):
             fetch_start = meta.end_date + timedelta(days=1)
         else:
             fetch_start = today - timedelta(days=365 * DAILY_LOOKBACK_YEARS)
+        plan.append((symbol, fetch_start))
 
+    def fetch_one(item):
+        symbol, fetch_start = item
         logger.info(f"{symbol}: fetching daily {fetch_start} → {today}")
-        df = fetcher.fetch(symbol, fetch_start, today)
+        return fetcher.fetch(symbol, fetch_start, today)
 
-        if not df.empty:
+    fetched = _parallel_fetch(plan, fetch_one)
+
+    for (symbol, _start), df in fetched:
+        if df is not None and not df.empty:
             cache.save_daily(symbol, df, source="tiingo")
             logger.info(f"{symbol}: saved {len(df)} daily bars")
 
@@ -125,14 +170,22 @@ def update_intraday(cache: CacheManager):
     fetcher = TiingoFetcher(config)
     today = today_jst()
 
+    # 5分足は常に差分取得を試みる（日中更新があるため）。
+    plan = []
     for symbol in INTRADAY_SYMBOLS:
         meta = cache.get_intraday_metadata(symbol)
-        # 5分足は常に差分取得を試みる（日中更新があるため）
         start = (meta.end_date) if meta else None
-        logger.info(f"{symbol}: fetching intraday from {start or 'earliest'}")
-        df = fetcher.fetch_intraday(symbol, start_date=start, end_date=today)
+        plan.append((symbol, start))
 
-        if not df.empty:
+    def fetch_one(item):
+        symbol, start = item
+        logger.info(f"{symbol}: fetching intraday from {start or 'earliest'}")
+        return fetcher.fetch_intraday(symbol, start_date=start, end_date=today)
+
+    fetched = _parallel_fetch(plan, fetch_one)
+
+    for (symbol, _start), df in fetched:
+        if df is not None and not df.empty:
             cache.save_intraday(symbol, df, source="tiingo")
             logger.info(f"{symbol}: saved {len(df)} intraday bars")
 
