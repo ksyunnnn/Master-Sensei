@@ -12,7 +12,8 @@
 |------|------|
 | docs/direction.md | 不変の方向性 |
 | docs/ideal.md | あるべき姿（現Phase） |
-| docs/condition.md | 現在地 |
+| docs/condition.md | 現在地（直近セッションのみ。~22k tok/1回Read上限に近づいたら古いhandoffをarchiveへ移動。要約圧縮でなく移動・append-only禁止、GDR-002） |
+| docs/condition-archive.md | condition.mdから退避した古いhandoff・旧構造（GDR-002） |
 | docs/charter.md | Master Senseiの原則・自己評価 |
 | docs/adr/ | ソフトウェア構造の判断記録 |
 | docs/gdr/ | 成長メカニズムの判断記録 |
