@@ -129,7 +129,7 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - 調査・アイデア生成タスクでは「収穫逓減」を理由に途中で止めない。手法自体の調査も行い、網羅的に試してからユーザーに判断を委ねる
 - 統計検定・金融データ処理・並行処理のコードを書く/レビューする際は `docs/code-review-checklist.md` を参照する (ADR-022)
 - 研究の方向性変更・目標変更・打ち止め判断の前に `docs/bias-audit-checklist.md` を実施する（Premortem + Kahneman 12問）
-- リモートリポジトリ（GitHub Public）あり。セッション中にコミットした場合、pushを提案してよい
+- リモートリポジトリ（GitHub Public）あり。**コミット・pushはユーザー確認なしに自律実行してよい**（提案・許可待ちは不要）。区切りのよい単位でコミットし、作業完了時に origin へ push する。コミットメッセージは既存の規約（`type(scope): 要約` 日本語）に合わせる。**ただし公開リポジトリのため秘匿情報を絶対にコミットしない**: `data/sensei.duckdb`（ADR-025: token平文を含む）・`auth_tokens`・`.env`・`*.duckdb.bak` 等は `.gitignore` 済みであることを push 前に確認する。蓄積層は CSV export（`data/db_export/`、auth_tokens 除外済・ADR-033）のみコミット対象。破壊的操作（force push・履歴改変）は引き続きユーザー確認を要する。
 
 ## Memory運用ルール
 
