@@ -27,6 +27,7 @@ data/research/signal_ideas.csv.bak
 # Claude Code (personal/local)
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+.claude/.session_ending
 CLAUDE.local.md
 
 # saxo keepalive ログ (ローカル運用、ADR-025/026)

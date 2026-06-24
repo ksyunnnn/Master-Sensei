@@ -20,6 +20,11 @@ from src.db import today_jst
 CONDITION_MD = PROJECT_ROOT / "docs" / "condition.md"
 DB_PATH = PROJECT_ROOT / "data" / "sensei.duckdb"
 
+# セッション終了の明示シグナル。ユーザーが「終了/今日はここまで」等を明示した時に
+# Claude が作成する。これが無ければ終了前チェックを一切走らせない(毎ターンのブロック防止)。
+# CLAUDE.md トリガールール参照。SessionStart で leftover を掃除する。
+SENTINEL = PROJECT_ROOT / ".claude" / ".session_ending"
+
 
 def check_condition_md() -> str | None:
     """condition.mdの最終更新日が今日かチェック"""
@@ -67,6 +72,11 @@ def main():
     if hook_input.get("stop_hook_active"):
         sys.exit(0)
 
+    # セッション終了をユーザーが明示した時だけチェックする(sentinel ゲート)。
+    # 普段のターン終了では sentinel が無いので即 exit 0 = ブロックしない。
+    if not SENTINEL.exists():
+        sys.exit(0)
+
     # 確認事項チェック
     issues = []
 
@@ -85,6 +95,12 @@ def main():
             + "\n".join(f"- {issue}" for issue in issues),
         }
         print(json.dumps(output, ensure_ascii=False))
+    else:
+        # 全クリア → sentinel を削除し次セッションに持ち越さない
+        try:
+            SENTINEL.unlink()
+        except FileNotFoundError:
+            pass
 
     # issues なし → 出力なしで exit 0 → 停止許可
 

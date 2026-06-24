@@ -2,7 +2,8 @@
 """Master Sensei SessionStart Hook
 
 セッション開始時に実行され、stdoutがClaudeのコンテキストに注入される。
-副作用なし（読み取りのみ）。SQLはSenseiDBに委譲（ADR-008）。
+読み取りのみ（例外: 前セッションの終了 sentinel が残っていれば掃除する）。
+SQLはSenseiDBに委譲（ADR-008）。
 """
 import json
 import sys
@@ -18,6 +19,9 @@ from src.db import today_jst, now_jst
 DATA_DIR = PROJECT_ROOT / "data"
 DB_PATH = DATA_DIR / "sensei.duckdb"
 PARQUET_DIR = DATA_DIR / "parquet"
+# Stop hook の終了チェックを発火させる sentinel（session_stop_check.py と対）。
+# 前セッションが異常終了して残っていた場合に備え、開始時に掃除する。
+SENTINEL = PROJECT_ROOT / ".claude" / ".session_ending"
 
 
 def to_date(val) -> date:
@@ -113,6 +117,12 @@ def check_data_freshness() -> list[str]:
 
 
 def main():
+    # 前セッションの leftover 終了 sentinel を掃除（次の Stop で誤発火させない）
+    try:
+        SENTINEL.unlink()
+    except FileNotFoundError:
+        pass
+
     now = now_jst()
     lines = [
         "[Master Sensei 状態チェック]",

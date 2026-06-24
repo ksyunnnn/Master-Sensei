@@ -92,9 +92,10 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - `/signal-check` — 確認済みシグナルの発火チェック。発火時は`[ACTION]`通知→`/entry-analysis`提案
 - `/sync-saxo` — Saxo実約定を執行事実層(Parquet)に全mirror→判断層tradesと照合しbreak検出・修正（ADR-030）
 
-### セッション終了前（Stop Hook）
-- condition.mdの最終更新日が今日でなければ更新する
-- 重要な判断や発見があれば知見として記録する
+### セッション終了前（Stop Hook、sentinel ゲート方式）
+- **Stop hook は普段のターン終了ではブロックしない**。`.claude/.session_ending`（sentinel）が存在する時だけ終了前チェック（condition.md 鮮度・期限切れ予測）を実行する。毎ターンのナグを止めるための設計（ユーザー要望）。
+- **ユーザーがセッション終了を明示した時**（「終了」「今日はここまで」「お疲れ」「/exit する」等）に **Claude が**: ①condition.md を更新 ②期限切れ予測を resolve ③重要な判断・発見を知見として記録 — を済ませてから `touch .claude/.session_ending` で sentinel を作成する。直後の Stop で hook がチェックし、未処理が残れば block（安全網）、全クリアなら sentinel を自動削除する。
+- 明示シグナルが無いまま終わる場合は何も強制されない（ユーザーが終了を制御する）。leftover sentinel は SessionStart が掃除する。
 
 ## Position Sizing (ADR-028)
 
