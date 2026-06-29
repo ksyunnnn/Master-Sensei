@@ -157,6 +157,18 @@ Phase 3 で「別エンドポイント未特定」として保留していた入
 - **ライブ未約定注文の照合は本体スコープ外**: placed 注文の改定/不発は fill が無く台帳照合に出ない。意味的アクセサ（`get_open_orders`）が未整備で、ADR-026 上 raw dict access を本体に入れられないため、SKILL の別ステップに残す（将来 semantic accessor を field 検証付きで追加したら統合）。
 - 変更ファイル: `src/account_ledger.py`（`latest_trade_date`/`window_from_date`/`merge_transactions_parquet`/`DEFAULT_*` 定数）, `scripts/sync_saxo.py`（新規）, `.claude/skills/sync-saxo/SKILL.md`（簡素化）, `tests/test_account_ledger.py`/`tests/test_sync_saxo.py`。`scripts/import_account_transactions.py` は全年 mirror の単体ツールとして存置（`--full` 相当のバックフィル用）。
 
+### Phase 7: ライブ口座を照合に取り込む — 2者照合 → 3層照合（2026-06-29）
+
+きっかけはユーザー指摘「`/sync-saxo` は口座状況とDBの注文も一致を確認すべき」。Phase 6 までの `sync_saxo.py` は **台帳(parquet) ↔ trades の2者照合**しかせず、(a) ライブ Saxo の現保有が台帳と合っているか（mirror 漏れ）、(b) ライブ未約定注文が `trades` の placed 申告と合っているか、を**機械では見ていなかった**。今回 `/sync-saxo` でフラットを確認した直後にユーザーが「注文も見た？」と抜けに気づいた＝スクリプトの責務漏れ。手で引いて突き合わせる作業が残っている状態は誤り（連鎖誤判定の温床）。
+
+- **照合を3層に拡張**: ①ライブ建玉 ↔ 台帳 net（mirror 漏れ検出）②台帳 net ↔ trades 申告（従来）③ライブ未約定注文 ↔ trades placed（台帳に出ない層）。どれかに差分があれば層ごとに分類して報告、全層クリアで `✓`。
+- **Phase 6 で「本体スコープ外」とした注文照合を本体に取り込む**: 当時の保留理由（`get_open_orders` の意味的アクセサ未整備 → ADR-026 上 raw dict を本体に入れられない）を、`LivePosition`/`OpenOrder` dataclass + `get_live_positions()`/`get_open_orders()` を field 検証付きで新設して解消。両 accessor は required field 欠落時に `SaxoAuthError` を投げ、shape 相違を**静かに飲み込まない**（balance accessor と同方針）。公式 field は `docs/api/saxo/position-fields.md`/`order-fields.md` に集約（ADR-026）。
+- **mirror 漏れ時の自動修復 = 段階的再mirror（escalating window）**: ライブ≠台帳を検出したら、いきなり全年(`--full`)でなく窓を `tail→30d→90d→全年` と段階拡大し、各段階で再照合して**解消した時点で止める**。重いライブ取得はライブ snapshot（建玉/注文の各1コール）だけで安く、重いのは台帳の再mirror なので、その範囲を最小化する設計。ユーザー判断「修正して報告。重ければ全件でなく直近を参照」をそのまま実装。`trades` の自動書き換えは依然しない（Phase4 の方針不変＝判断ログの自動汚染を避ける、ADR-018）。修復するのは事実層(台帳)のみ。
+- **symbol 解決**: 照合は instrument 単位なので Uic→symbol が要る。`DisplayAndFormat.Symbol`（`?FieldGroups=` で取得、`SOXL:arcx`→`SOXL` 正規化）を主、`SAXO_UIC` 逆引きを副、未知は `UIC:<n>` で可視化（黙殺しない）。
+- **検証状態の正直さ**: positions は 2026-05-26 live サンプルで field 確認済。orders は read-only で発注しないため live サンプルが**注文存置時のみ**捕捉可能。accessor の loud failure と doc の検証状態記載で、未検証 field を「確認済」と詐称しない。
+- **観測（2026-06-29 live）**: 全口座フラット（建玉0/注文0）、3層一致を確認。`✓ 差分なし (ライブ建玉↔台帳↔trades 一致 / 注文も一致)`。
+- 変更ファイル: `src/saxo_client.py`（`LivePosition`/`OpenOrder`/`_normalize_symbol`/`get_live_positions`/`get_open_orders`）, `src/db.py`（`reconcile_live_positions`/`reconcile_open_orders`/`_ledger_net_by_instrument` 抽出）, `scripts/sync_saxo.py`（3層照合 + escalation）, `docs/api/saxo/position-fields.md`/`order-fields.md`（新規）, 各テスト（`test_reconcile.py`/`test_saxo_client.py`/`test_sync_saxo.py`）。
+
 ### 変更ファイル（想定）
 - `src/db.py`, `src/saxo_client.py`, `tests/test_db.py`, `tests/test_saxo_client.py`
 - `scripts/import_account_transactions.py`（新規）, SessionStart フック

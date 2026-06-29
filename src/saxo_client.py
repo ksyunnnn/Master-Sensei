@@ -89,6 +89,60 @@ SAXO_UIC = {
     "SOXL": (46780, "Etf"),
 }
 
+# Uic → symbol 逆引き (DisplayAndFormat.Symbol が取れない時の fallback)。
+_SYMBOL_BY_UIC = {uic: sym for sym, (uic, _atype) in SAXO_UIC.items()}
+
+
+def _normalize_symbol(raw_symbol, uic: int) -> str:
+    """`DisplayAndFormat.Symbol` ("SOXL:arcx") を照合用 symbol ("SOXL") に正規化。
+
+    1. raw_symbol があれば ":" 前を採用 (取引所サフィックス除去)
+    2. なければ SAXO_UIC 逆引き
+    3. それも無ければ "UIC:<n>" (未知 instrument として照合で可視化)
+
+    See docs/api/saxo/position-fields.md, order-fields.md。
+    """
+    if raw_symbol:
+        return str(raw_symbol).split(":")[0]
+    if uic in _SYMBOL_BY_UIC:
+        return _SYMBOL_BY_UIC[uic]
+    return f"UIC:{uic}"
+
+
+@dataclass
+class LivePosition:
+    """ライブ open position の意味的 snapshot (ADR-026)。
+
+    raw dict access を防ぐ。公式 field 定義は docs/api/saxo/position-fields.md。
+    `/sync-saxo` の live↔台帳照合に使う。照合は **net 数量 (`amount`)** のみで行い、
+    価格は使わない。
+    """
+    account_id: str
+    uic: int
+    symbol: str
+    amount: float            # 正=long, 負=short
+    open_price: float
+    unrealized_pnl_base: float   # ProfitLossOnTradeInBaseCurrency (base=JPY)
+
+
+@dataclass
+class OpenOrder:
+    """ライブ未約定注文 (working order) の意味的 snapshot (ADR-026)。
+
+    公式 field 定義は docs/api/saxo/order-fields.md。結合キーは `order_id`
+    (↔ trades.broker_ref)。placed 注文は fill が無く台帳照合では出ないため、
+    この snapshot が注文ドリフト検出の唯一の源。
+    """
+    order_id: str
+    account_id: str
+    uic: int
+    symbol: str
+    amount: float
+    buy_sell: str            # "Buy"/"Sell"
+    order_type: str          # OpenOrderType (Limit/Stop/...)
+    price: float | None      # 指値/逆指値価格 (Market は None)
+    status: str
+
 
 @dataclass
 class TradeCost:
@@ -513,6 +567,77 @@ class SaxoClient:
         See docs/api/saxo/endpoints.md#4-get-portv1positionsme
         """
         return self._api_get("/port/v1/positions/me").get("Data", [])
+
+    def get_live_positions(self) -> list["LivePosition"]:
+        """ライブ open positions を意味的 snapshot のリストで返す (ADR-026)。
+
+        `/sync-saxo` の live↔台帳照合 (`SenseiDB.reconcile_live_positions`) に使う。
+        `?FieldGroups=DisplayAndFormat,PositionView` で symbol/含み損益を取得する。
+        required field 欠落時は `SaxoAuthError` (静かな誤照合を防ぐ)。
+
+        See docs/api/saxo/position-fields.md
+        """
+        resp = self._api_get(
+            "/port/v1/positions/me?FieldGroups=DisplayAndFormat,PositionView"
+        )
+        out: list[LivePosition] = []
+        for p in resp.get("Data", []):
+            base = p.get("PositionBase", {})
+            required = ("AccountId", "Uic", "Amount", "OpenPrice")
+            missing = [k for k in required if k not in base]
+            if missing:
+                raise SaxoAuthError(
+                    f"Position response missing PositionBase fields {missing}. "
+                    "Saxo API may have changed; verify docs/api/saxo/position-fields.md"
+                )
+            view = p.get("PositionView", {})
+            daf = p.get("DisplayAndFormat", {})
+            uic = int(base["Uic"])
+            out.append(LivePosition(
+                account_id=base["AccountId"],  # see position-fields.md
+                uic=uic,
+                symbol=_normalize_symbol(daf.get("Symbol"), uic),
+                amount=float(base["Amount"]),
+                open_price=float(base["OpenPrice"]),
+                unrealized_pnl_base=float(
+                    view.get("ProfitLossOnTradeInBaseCurrency", 0.0) or 0.0),
+            ))
+        return out
+
+    def get_open_orders(self) -> list["OpenOrder"]:
+        """ライブ未約定注文を意味的 snapshot のリストで返す (ADR-026)。
+
+        `/sync-saxo` の注文ドリフト照合 (`SenseiDB.reconcile_open_orders`) に使う。
+        placed 注文は fill が無く台帳照合では出ないため、この snapshot が唯一の検出源。
+        required field 欠落時は `SaxoAuthError`。
+
+        See docs/api/saxo/order-fields.md
+        """
+        resp = self._api_get("/port/v1/orders/me?FieldGroups=DisplayAndFormat")
+        out: list[OpenOrder] = []
+        for o in resp.get("Data", []):
+            required = ("OrderId", "AccountId", "Uic", "Amount", "BuySell",
+                        "OpenOrderType", "Status")
+            missing = [k for k in required if k not in o]
+            if missing:
+                raise SaxoAuthError(
+                    f"Order response missing required fields {missing}. "
+                    "Saxo API may have changed; verify docs/api/saxo/order-fields.md"
+                )
+            daf = o.get("DisplayAndFormat", {})
+            uic = int(o["Uic"])
+            out.append(OpenOrder(
+                order_id=str(o["OrderId"]),  # see order-fields.md
+                account_id=o["AccountId"],
+                uic=uic,
+                symbol=_normalize_symbol(daf.get("Symbol"), uic),
+                amount=float(o["Amount"]),
+                buy_sell=o["BuySell"],
+                order_type=o["OpenOrderType"],
+                price=float(o["Price"]) if o.get("Price") is not None else None,
+                status=o["Status"],
+            ))
+        return out
 
     def get_accounts(self) -> list[dict]:
         """全 sub-account 一覧 (Data 配列、raw dict)。

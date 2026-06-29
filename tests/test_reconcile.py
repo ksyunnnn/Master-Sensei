@@ -89,3 +89,90 @@ def test_placed_trade_not_counted_as_open(db, tmp_path):
                  status="placed", broker_ref="5409497457")
     breaks = db.reconcile_positions(str(p))
     assert breaks == []
+
+
+# ── reconcile_live_positions: ライブ建玉 ↔ 台帳 (mirror 漏れ検出, ADR-030) ──
+
+class TestReconcileLivePositions:
+    def test_no_break_when_live_matches_ledger(self, db, tmp_path):
+        """ライブ建玉 8株 と台帳 net 8株 が一致 → break なし。"""
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([_ledger_row("SOXL", "buy", 8.0, "OA", "TA")], p)
+        breaks = db.reconcile_live_positions({"SOXL": 8.0}, str(p))
+        assert breaks == []
+
+    def test_break_when_ledger_undershoots_live(self, db, tmp_path):
+        """ライブ建玉8株あるのに台帳 net=5株 → mirror 漏れ (台帳の取りこぼし)。"""
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([_ledger_row("SOXL", "buy", 5.0, "OA", "TA")], p)
+        breaks = db.reconcile_live_positions({"SOXL": 8.0}, str(p))
+        assert len(breaks) == 1
+        assert breaks[0]["instrument"] == "SOXL"
+        assert breaks[0]["live_net_qty"] == 8.0
+        assert breaks[0]["ledger_net_qty"] == 5.0
+
+    def test_break_when_ledger_has_extra(self, db, tmp_path):
+        """ライブはフラットだが台帳 net=3株 → 台帳に余分 (クローズ未mirror)。"""
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([_ledger_row("SOXL", "buy", 3.0, "OA", "TA")], p)
+        breaks = db.reconcile_live_positions({}, str(p))
+        assert len(breaks) == 1
+        assert breaks[0]["live_net_qty"] == 0.0
+        assert breaks[0]["ledger_net_qty"] == 3.0
+
+    def test_no_break_when_both_flat(self, db, tmp_path):
+        """ライブ0・台帳 net0 (buy+sell 相殺) → break なし。"""
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([
+            _ledger_row("SOXL", "buy", 3.0, "OA", "TA"),
+            _ledger_row("SOXL", "sell", 3.0, "OB", "TB"),
+        ], p)
+        breaks = db.reconcile_live_positions({}, str(p))
+        assert breaks == []
+
+    def test_missing_parquet_treated_as_empty_ledger(self, db, tmp_path):
+        """台帳ファイルが無くてもライブ建玉があれば break として可視化する。"""
+        breaks = db.reconcile_live_positions({"SOXL": 8.0}, str(tmp_path / "none.parquet"))
+        assert len(breaks) == 1
+        assert breaks[0]["ledger_net_qty"] == 0.0
+
+
+# ── reconcile_open_orders: ライブ注文 ↔ trades placed (ADR-030) ──
+
+class TestReconcileOpenOrders:
+    def test_no_break_when_orders_match(self, db):
+        """ライブ注文 OrderId とdb placed の broker_ref が一致 → break なし。"""
+        db.add_trade(instrument="SOXL", direction="long",
+                     entry_date=date(2026, 6, 2), entry_price=228.0, quantity=5,
+                     status="placed", broker_ref="5409497457")
+        breaks = db.reconcile_open_orders({"5409497457"})
+        assert breaks == []
+
+    def test_live_only_order(self, db):
+        """ライブに注文があるが trades に未記録 → live_only。"""
+        breaks = db.reconcile_open_orders({"999"})
+        assert len(breaks) == 1
+        assert breaks[0]["side"] == "live_only"
+        assert breaks[0]["order_id"] == "999"
+
+    def test_trades_only_order(self, db):
+        """trades は placed だがライブに無い → trades_only (約定/失効/取消)。"""
+        db.add_trade(instrument="SOXL", direction="long",
+                     entry_date=date(2026, 6, 2), entry_price=228.0, quantity=5,
+                     status="placed", broker_ref="5409497457")
+        breaks = db.reconcile_open_orders(set())
+        assert len(breaks) == 1
+        assert breaks[0]["side"] == "trades_only"
+        assert breaks[0]["order_id"] == "5409497457"
+        assert breaks[0]["instrument"] == "SOXL"
+        assert breaks[0]["quantity"] == 5.0
+
+    def test_placed_without_broker_ref(self, db):
+        """placed だが broker_ref 未設定 → 照合不能を placed_no_ref として報告。"""
+        db.add_trade(instrument="SOXL", direction="long",
+                     entry_date=date(2026, 6, 2), entry_price=228.0, quantity=5,
+                     status="placed")
+        breaks = db.reconcile_open_orders(set())
+        assert len(breaks) == 1
+        assert breaks[0]["side"] == "placed_no_ref"
+        assert breaks[0]["order_id"] is None

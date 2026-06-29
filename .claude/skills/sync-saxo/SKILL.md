@@ -7,7 +7,9 @@ Saxo 照合ワークフローを実行してください (ADR-030)。判断層 `
 執行事実層 `account_transactions`(Saxo 由来の実約定) を突合し、乖離(break)を直す。
 
 差分がなければ数秒・1ステップで終わる。重い全 mirror は走らせず、
-`scripts/sync_saxo.py` が「無言 token → テール窓 mirror → reconcile」を機械的に実行する。
+`scripts/sync_saxo.py` が「無言 token → テール窓 mirror → **3層照合**」を機械的に実行する。
+3層 = ①ライブ建玉↔台帳 ②台帳↔trades ③ライブ注文↔trades placed（ADR-030 Phase 7）。
+**口座状況も注文も全部スクリプトが照合する**（人間が手でライブを引いて突き合わせる作業は無い）。
 
 ## タイムゾーン
 
@@ -27,7 +29,13 @@ python scripts/sync_saxo.py
 - **テール窓 mirror**: 既存 parquet の最新 trade_date から overlap 7日だけ遡って
   reports/trades + bookings を再取得し、`broker_ref` で upsert マージ(全年は回さない)。
   窓より前の遡及訂正を拾い直したい時だけ `--full` を付ける。
-- **reconcile**: trades vs 台帳の純ポジションを突合。一致なら `✓ 差分なし` で終了。
+- **ライブ snapshot 取得**: `get_live_positions()` + `get_open_orders()`(各1コール、安い)。
+- **3層照合**:
+  1. **ライブ建玉 ↔ 台帳 net** — mirror 漏れ検出。乖離時は窓を `tail→30d→90d→全年` と
+     段階拡大して**自動で再mirror→再照合**し、解消した時点で止める(重い全年は最後の手段)。
+  2. **台帳 net ↔ trades 申告** — クローズ済未反映/未記録エントリーの検出(従来)。
+  3. **ライブ注文 ↔ trades placed** — placed の改定/不発/未記録の検出(台帳に出ない層)。
+  全層一致なら `✓ 差分なし (ライブ建玉↔台帳↔trades 一致 / 注文も一致)` で終了。
 
 終了コード: `0`=差分なし / `1`=break あり / `2`=token 失効(`AUTH_REQUIRED`)。
 
@@ -47,31 +55,25 @@ keepalive は refresh token を失効直前に1回だけ roll し以降の acces
 
 ### 3. break(exit 1)が出たら — 人間が1件ずつ確認して修正
 
-スクリプトが各 break を ADR-030 のカテゴリに分類して出力する。曖昧でない遷移のみ修正、
-曖昧は1件ずつ確認する:
+スクリプトが各 break を層タグ付き(`[live↔台帳]`/`[台帳↔trades]`/`[注文]`)で分類して
+出力する。曖昧でない遷移のみ修正、曖昧は1件ずつ確認する:
 
-| break | 意味 | 修正 |
-|-------|------|------|
-| trades=建玉中 だが ledger net=0 | クローズ済未反映 | `close_trade()`(exit を台帳の sell fill から) |
-| ledger net>0 だが trades 申告なし | 未記録エントリー | `add_trade(status='filled', broker_ref=OrderId)` |
-| 数量不一致(両方非ゼロ) | 注文改定/部分約定の未反映 | `set_trade_broker_ref()` / 値更新 or 旧 expired+新規起票 |
-| placed だが対応注文も fill も無い | 不発/失効 | `update_trade_status('expired'/'cancelled')` |
+| 層 | break | 意味 | 修正 |
+|----|-------|------|------|
+| 台帳↔trades | trades=建玉中 だが ledger net=0 | クローズ済未反映 | `close_trade()`(exit を台帳の sell fill から) |
+| 台帳↔trades | ledger net>0 だが trades 申告なし | 未記録エントリー | `add_trade(status='filled', broker_ref=OrderId)` |
+| 台帳↔trades | 数量不一致(両方非ゼロ) | 注文改定/部分約定の未反映 | `set_trade_broker_ref()` / 値更新 or 旧 expired+新規起票 |
+| 注文 | live_only(ライブに注文・trades未記録) | placed 未起票 | `add_trade(status='placed', broker_ref=OrderId)` |
+| 注文 | trades_only(placed だがライブに無し) | 約定/失効/取消 | filled は再mirror で約定反映 / `update_trade_status('expired'/'cancelled')` |
+| 注文 | placed_no_ref(broker_ref 未設定) | OrderId 欠落 | `set_trade_broker_ref()` で補完 |
+| live↔台帳 | ライブ建玉≠台帳(再mirror後も残存) | **真の乖離** | 全年mirror でも埋まらない＝reports/trades 欠落 or instrument 解決失敗を要調査 |
+
+**live↔台帳 の乖離はスクリプトが自動で窓拡大→再mirror して埋めようとする**。それでも残った
+ものだけが上表の「真の乖離」として出る(手で台帳を書かない。事実層は Saxo が SoT)。
 
 **修正は SenseiDB メソッド経由のみ**。物理削除はしない(ADR-018 後知恵バイアス排除)。
+修正対象は判断層 `trades` のみ(事実層 `account_transactions` は手書きしない)。
 修正後にもう一度 `python scripts/sync_saxo.py` を実行し、`✓ 差分なし` を確認する。
-
-### 4. ライブ未約定注文の照合(必要時のみ・別ステップ)
-
-スクリプトは台帳(fill)ベースで照合する。**placed 注文の改定/不発**は fill が無いため
-台帳照合では出ない。注文まわりが疑わしい時だけ手動で突合する(意味的アクセサ未整備=
-raw dict access につき本体に入れない。ADR-026):
-```python
-from src.saxo_client import SaxoClient
-client = SaxoClient(db)
-orders = client._api_get("/port/v1/orders/me").get("Data", [])  # 未約定注文
-```
-DB の `get_pending_orders()` と突合し、`OrderId` が `trades.broker_ref`(placed行) と
-一致するか確認する。
 
 ## 注意
 

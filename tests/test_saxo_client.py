@@ -18,6 +18,8 @@ from src.saxo_client import (
     PROVIDER,
     AccountBalance,
     CashBooking,
+    LivePosition,
+    OpenOrder,
     SaxoAuthError,
     SaxoClient,
     SaxoConfig,
@@ -445,6 +447,114 @@ class TestSemanticAccessors:
         results = client.get_all_account_balances()
         assert len(results) == 2  # Inactive 1つを除外
         assert {r.account_id for r in results} == {"77800/P120136", "77800/T126816"}
+
+
+class TestLivePositionsAccessor:
+    """ADR-026: ライブ建玉の意味的アクセサ (live↔台帳照合用)"""
+
+    def _setup_valid_access(self, db):
+        db.save_token(
+            provider=PROVIDER, environment="live", token_type="access",
+            token_value="AT_valid", expires_at=now_jst() + timedelta(seconds=1200),
+        )
+
+    @staticmethod
+    def _position(uic=46780, amount=8.0, symbol="SOXL:arcx"):
+        return {
+            "PositionBase": {"AccountId": "77800/P120136", "Uic": uic,
+                             "Amount": amount, "OpenPrice": 227.59},
+            "PositionView": {"ProfitLossOnTradeInBaseCurrency": 2342.0},
+            "DisplayAndFormat": {"Symbol": symbol},
+        }
+
+    def test_returns_semantic_dataclass(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"Data": [self._position()]})
+        positions = client.get_live_positions()
+        assert len(positions) == 1
+        p = positions[0]
+        assert isinstance(p, LivePosition)
+        assert p.symbol == "SOXL"          # "SOXL:arcx" の ":" 前に正規化
+        assert p.amount == 8.0
+        assert p.uic == 46780
+
+    def test_symbol_falls_back_to_uic_map(self, client, db, mock_session):
+        """DisplayAndFormat.Symbol が null でも SAXO_UIC 逆引きで SOXL に解決。"""
+        self._setup_valid_access(db)
+        resp = {"Data": [self._position(symbol=None)]}
+        mock_session.get.return_value = _mock_response(200, resp)
+        positions = client.get_live_positions()
+        assert positions[0].symbol == "SOXL"
+
+    def test_unknown_uic_visible_as_placeholder(self, client, db, mock_session):
+        """未知 Uic かつ symbol null → UIC:<n> で照合に可視化 (黙殺しない)。"""
+        self._setup_valid_access(db)
+        resp = {"Data": [self._position(uic=99999, symbol=None)]}
+        mock_session.get.return_value = _mock_response(200, resp)
+        positions = client.get_live_positions()
+        assert positions[0].symbol == "UIC:99999"
+
+    def test_empty_when_no_positions(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"Data": []})
+        assert client.get_live_positions() == []
+
+    def test_missing_field_raises(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        bad = {"Data": [{"PositionBase": {"Uic": 46780, "Amount": 8.0}}]}  # AccountId/OpenPrice 欠落
+        mock_session.get.return_value = _mock_response(200, bad)
+        with pytest.raises(SaxoAuthError, match="missing"):
+            client.get_live_positions()
+
+
+class TestOpenOrdersAccessor:
+    """ADR-026: ライブ未約定注文の意味的アクセサ (注文ドリフト照合用)"""
+
+    def _setup_valid_access(self, db):
+        db.save_token(
+            provider=PROVIDER, environment="live", token_type="access",
+            token_value="AT_valid", expires_at=now_jst() + timedelta(seconds=1200),
+        )
+
+    @staticmethod
+    def _order(order_id="5409497457", price=214.0):
+        return {
+            "OrderId": order_id, "AccountId": "77800/P120136", "Uic": 46780,
+            "Amount": 8.0, "BuySell": "Sell", "OpenOrderType": "Stop",
+            "Price": price, "Status": "Working",
+            "DisplayAndFormat": {"Symbol": "SOXL:arcx"},
+        }
+
+    def test_returns_semantic_dataclass(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"Data": [self._order()]})
+        orders = client.get_open_orders()
+        assert len(orders) == 1
+        o = orders[0]
+        assert isinstance(o, OpenOrder)
+        assert o.order_id == "5409497457"
+        assert o.symbol == "SOXL"
+        assert o.buy_sell == "Sell"
+        assert o.order_type == "Stop"
+        assert o.price == 214.0
+
+    def test_market_order_price_none(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        resp = {"Data": [self._order(price=None)]}
+        mock_session.get.return_value = _mock_response(200, resp)
+        assert client.get_open_orders()[0].price is None
+
+    def test_empty_when_no_orders(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"Data": []})
+        assert client.get_open_orders() == []
+
+    def test_missing_field_raises(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        bad = {"Data": [{"OrderId": "1", "Uic": 46780}]}  # 必須多数欠落
+        mock_session.get.return_value = _mock_response(200, bad)
+        with pytest.raises(SaxoAuthError, match="missing"):
+            client.get_open_orders()
 
 
 class TestTradeCost:

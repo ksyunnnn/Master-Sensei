@@ -838,17 +838,7 @@ class SenseiDB:
         台帳は Saxo 由来の全 mirror（`scripts/import_account_transactions.py`）。
         ファイルが無い/空でも例外にせず、trades 側の保有申告のみで判定する。
         """
-        ledger = (
-            "SELECT instrument, "
-            "SUM(CASE type WHEN 'buy' THEN quantity WHEN 'sell' THEN -quantity "
-            "ELSE 0 END) AS net_qty "
-            f"FROM read_parquet('{transactions_parquet}') GROUP BY instrument"
-        )
-        try:
-            ledger_rows = self.conn.execute(ledger).fetchall()
-        except (duckdb.IOException, duckdb.CatalogException):
-            ledger_rows = []
-        ledger_net = {sym: float(q) for sym, q in ledger_rows}
+        ledger_net = self._ledger_net_by_instrument(transactions_parquet)
 
         open_rows = self.conn.execute(
             "SELECT instrument, SUM(quantity) FROM trades "
@@ -866,6 +856,76 @@ class SenseiDB:
                     "trades_open_qty": tq,
                     "ledger_net_qty": lq,
                 })
+        return breaks
+
+    def _ledger_net_by_instrument(self, transactions_parquet: str) -> dict[str, float]:
+        """執行事実層(Parquet)の buy(+)/sell(−) 純数量を instrument ごとに返す。
+
+        ファイルが無い/空でも例外にせず空 dict を返す (reconcile 各種で共用)。
+        """
+        ledger = (
+            "SELECT instrument, "
+            "SUM(CASE type WHEN 'buy' THEN quantity WHEN 'sell' THEN -quantity "
+            "ELSE 0 END) AS net_qty "
+            f"FROM read_parquet('{transactions_parquet}') GROUP BY instrument"
+        )
+        try:
+            rows = self.conn.execute(ledger).fetchall()
+        except (duckdb.IOException, duckdb.CatalogException):
+            rows = []
+        return {sym: float(q) for sym, q in rows}
+
+    def reconcile_live_positions(
+        self, live_net: dict[str, float], transactions_parquet: str
+    ) -> list[dict]:
+        """ライブ建玉 net vs 執行事実層(Parquet) net を突合 (ADR-030)。
+
+        `live_net` は `SaxoClient.get_live_positions()` を symbol で集計した
+        {symbol: net_qty}。一致しない instrument を break として返す。
+        **mirror 漏れ** (台帳が Saxo の真実を取りこぼし) を検出する層。
+        `live > ledger` は台帳の取りこぼし (再mirror で解消するはず)、
+        `live < ledger` は台帳に余分 (クローズの未mirror 等) を示唆する。
+        """
+        ledger_net = self._ledger_net_by_instrument(transactions_parquet)
+        breaks: list[dict] = []
+        for sym in sorted(set(live_net) | set(ledger_net)):
+            lq = live_net.get(sym, 0.0)
+            gq = ledger_net.get(sym, 0.0)
+            if abs(lq - gq) > 1e-9:
+                breaks.append({
+                    "instrument": sym,
+                    "live_net_qty": lq,
+                    "ledger_net_qty": gq,
+                })
+        return breaks
+
+    def reconcile_open_orders(self, live_order_ids: set[str]) -> list[dict]:
+        """ライブ未約定注文 (OrderId 集合) vs trades の placed 申告を突合 (ADR-030)。
+
+        結合キーは OrderId ↔ `trades.broker_ref` (status='placed' 行)。
+        - `live_only`:  Saxo に注文があるが trades に未記録 (placed を add すべき)
+        - `trades_only`: trades は placed だがライブに無い (約定/失効/取消 → status 更新)
+        - `placed_no_ref`: placed だが broker_ref 未設定で照合不能 (OrderId を埋めるべき)
+
+        placed 注文は fill が無いため台帳照合 (`reconcile_positions`) では出ない。
+        """
+        placed = self.conn.execute(
+            "SELECT broker_ref, instrument, quantity FROM trades "
+            "WHERE status = 'placed'"
+        ).fetchall()
+        declared = {str(ref): (sym, q) for ref, sym, q in placed if ref is not None}
+        no_ref = [(sym, q) for ref, sym, q in placed if ref is None]
+
+        breaks: list[dict] = []
+        for oid in sorted(live_order_ids - set(declared)):
+            breaks.append({"order_id": oid, "side": "live_only"})
+        for oid in sorted(set(declared) - live_order_ids):
+            sym, q = declared[oid]
+            breaks.append({"order_id": oid, "side": "trades_only",
+                           "instrument": sym, "quantity": float(q)})
+        for sym, q in no_ref:
+            breaks.append({"order_id": None, "side": "placed_no_ref",
+                           "instrument": sym, "quantity": float(q)})
         return breaks
 
     # ── auth_tokens (ADR-025) ──

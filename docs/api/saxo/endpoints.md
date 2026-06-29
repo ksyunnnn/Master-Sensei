@@ -127,7 +127,7 @@ open positions のリスト。
 ```
 
 **注意**:
-- `DisplayAndFormat` の中身を取得するには `?FieldGroups=DisplayAndFormat,PositionView` 等の query parameter が必要。本プロジェクトはまだ未対応 (Uic から symbol 逆引きが必要なら別途実装)
+- `DisplayAndFormat` の中身を取得するには `?FieldGroups=DisplayAndFormat,PositionView` 等の query parameter が必要。意味的アクセサ `SaxoClient.get_live_positions()` 実装済（ADR-030 Phase 7、FieldGroups 付きで取得し `_normalize_symbol` で Uic→symbol 解決、[position-fields.md](position-fields.md)）
 - 米市場休場中の `CurrentPrice` = 0 問題: Parquet の close price で代替
 
 ## token endpoint (OAuth 用、Portfolio とは別)
@@ -166,7 +166,8 @@ open positions のリスト。
 
 - `/trade/v1/orders/me`: 発注 (本プロジェクトは read-only、未使用)
 - `/trade/v1/prices/`: リアルタイム価格 (米市場休場対策で将来検討)
-- `/port/v1/orders/me`: 未約定注文一覧（照合で使用、意味的アクセサ未整備）
+- `/port/v1/orders/me`: 未約定注文一覧。意味的アクセサ `SaxoClient.get_open_orders()`
+  実装済（ADR-030 Phase 7、[order-fields.md](order-fields.md)）。`/sync-saxo` の注文ドリフト照合で使用
 - `/port/v1/closedpositions/me`: クローズ済 position 履歴（照合で使用）
 - `/cs/v1/audit/orderactivities/me`: 取引履歴 audit
 - `/cs/v1/reports/accountStatement/{ClientKey}`: 404（PDF/XLS 用レポートで JSON 不可）。入出金は **`/cs/v1/reports/bookings/` で解決済**（上記、ADR-030 Phase 5）
