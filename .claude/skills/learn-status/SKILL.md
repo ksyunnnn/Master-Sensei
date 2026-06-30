@@ -104,4 +104,4 @@ PYEOF
 - カリキュラム変更は `learning/docs/curriculum.md` に反映
 - 新規質問追加時は prereqs を必ず明示（Stage 1 を踏んでから Stage 2、のような依存を崩さない）
 - 質問修正は**解説の精緻化**中心。Prompt の根本変更は ID 採番し直して別問として追加する方が mastery データが clean
-- スキル実行後は `condition.md` に学習進捗メモを 1-2 行追加する
+- スキル実行後、未完のフォローアップ（次回の質問追加・調整等）があれば作業トラッカー（Project #2, `docs/worktracker.md`）に起票する。カリキュラムの確定変更は `learning/docs/curriculum.md` へ（上記）。condition.md には書かない（非推奨・GDR-003）
