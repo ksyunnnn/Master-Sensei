@@ -1,5 +1,7 @@
 # Condition
 
+> ⚠️ **非推奨・履歴用（2026-06-30, GDR-003）**: このファイルは handoff の正本ではなくなりました。現在の「開いている作業」は **GitHub Project #2**（運用: `docs/worktracker.md`）、揮発的なスタンスは **CLAUDE.md スタンス節** を参照。以下は過去ログとして保持（更新しない）。
+
 > **▶ 次回最優先（2026-06-25 session 58 末で更新）**: **ライブ建玉 SOXL 8株@$227.59（T126816, Trade #22, broker_ref 7647821556）を Micron 決算で跨ぎ中**。**★session 58 末 02:34 JST(13:34 ET) 時点で SOXL は $217.36 まで下落＝SL$214 へ −1.5%・決算前ドリフトで接近中（含み −4.5%/−$82/口座−3.8%）。ニュースでなく Micron 前 de-risk（MU 自身 day-low ~$1,057・半導体だけ漏れ SPY−0.2%/SOXX−1.84%）。決定面提示(A.ホールド/B.即手仕舞い−4.5%/C.半分降ろし)→ユーザー判断=「監視のみ継続・判断急かさず」。SLいじりはK-023で除外・OCOはSaxoサーバ側GTCでtoken無関係に保護。★次セッション最優先=起床後 `/sync-saxo` で買いfill台帳反映＆OCO 4本Working実機確認＆break=0、その後 Micron結果→OCO発火/B2-浅手動。**決算リリース≈6/25 **05:00** JST（米引け16:00 ET）/ コール≈**05:30** JST、織込み~14%。**OCO=SL$214/TP1$245×4/TP2$257×4（GTC・2本の4株ブラケット・server-side保護）**。手順=①起床後 `/sync-saxo`（token失効なら私がoauth_init起動）で買いfill台帳反映＆break=0確認（現状は買い報告遅延の一過性break＝close_trade適用しない）②Micron結果→OCO発火状況を確認③**B2-浅（SOXL小幅ギャップ$220-224）はOCO両レッグの間＝6/25寄りで手動判断**。スキュー=B1上30%/B2-B3下55%（sell-the-news, 期待が極端に織込み済み）。**未織込みは2027 HBM配分/価格**＝「2027の絵を上方に書けるか」がbinaryの本質。詳細は直下 session 57。
 
 Last updated: 2026-06-25 (session 58、JST 6/25 01:16→02:40 未明、米 6/24 セッション中・ライブ監視)。 詳細は下記 ## Session 58 Handoff。それ以前は docs/condition-archive.md。

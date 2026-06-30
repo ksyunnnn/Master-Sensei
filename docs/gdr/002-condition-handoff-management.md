@@ -1,6 +1,6 @@
 # GDR-002: condition.md ハンドオフの肥大化対策（アーカイブ分割 + バナー構造統一）
 
-Status: accepted
+Status: accepted（**handoff 役は 2026-06-30 GDR-003 が置換**。condition.md は非推奨・履歴用に移行。本GDRの肥大化対策は当時の応急処置として歴史的に有効だが、現在の現在地は GitHub Project #2＋CLAUDE.md スタンス節）
 Date: 2026-06-25
 
 ## Context

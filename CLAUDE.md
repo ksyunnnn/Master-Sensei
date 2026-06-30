@@ -12,14 +12,23 @@
 |------|------|
 | docs/direction.md | 不変の方向性 |
 | docs/ideal.md | あるべき姿（現Phase） |
-| docs/condition.md | 現在地（直近セッションのみ。~22k tok/1回Read上限に近づいたら古いhandoffをarchiveへ移動。要約圧縮でなく移動・append-only禁止、GDR-002） |
+| GitHub Project #2 | **現在地（開いている作業）の正本。次の一手・仮説をIssueで管理（GDR-003）**。運用手順は docs/worktracker.md |
+| docs/worktracker.md | 作業トラッカーの運用手順・フィールド・IDキャッシュ（GDR-003） |
+| docs/condition.md | **非推奨・履歴用（GDR-003 で handoff 役を作業トラッカー＋下記スタンス節へ移管）**。過去ログとして保持し更新しない |
 | docs/condition-archive.md | condition.mdから退避した古いhandoff・旧構造（GDR-002） |
 | docs/charter.md | Master Senseiの原則・自己評価 |
 | docs/adr/ | ソフトウェア構造の判断記録 |
 | docs/gdr/ | 成長メカニズムの判断記録 |
+| docs/trading-notes.md | トレード検討ノート（中立・追記型。確定決定なし、KPI設計の暫定方針のみ。[事実]/[観察]/[論点]/[訂正]タグで断定を急がない） |
 | docs/code-review-checklist.md | 統計・金融コードのレビュー基準（ADR-022） |
 | docs/testing-guidelines.md | 統計・金融コードのテスト設計原則（ADR-022） |
 | docs/api/ | 外部API公式仕様の集約（ADR-026、provider別） |
+
+## スタンス（揮発的な現在地、GDR-003）
+
+その場限りの判断・スタンスで、どのテーブルにも入らないが次セッションの前提になるものを、ここに**数行で上書き**する（肥大化禁止・履歴は残さない・append-only禁止）。永続化すべきものは knowledge/ADR へ昇格し、ここから消す。開いた作業そのものは作業トラッカー（Project #2、docs/worktracker.md）へ。
+
+- （現在なし）
 
 ## Data Architecture (ADR-001)
 
@@ -71,6 +80,11 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 
 各スキルは独立して実行可能。全ステップが必須ではなく、セッションの目的に応じて取捨する。
 
+### 作業トラッカー（GDR-003）
+- **セッション開始時**、開いている作業（次の一手・仮説）を作業トラッカーから読む: `gh project item-list 2 --owner @me`（最小読み取りの jq・書き込み手順・ID は docs/worktracker.md）。**condition.md は読まない（非推奨・履歴用）**。
+- 会話中に新しい「次の一手」「生きた仮説」が出たら作業トラッカーに Issue で起票する。**既に DB/フックが渡すもの（予測・regime・trades・knowledge）は二重起票しない**。期限切れ予測の resolve は SessionStart が surface するのでトラッカーに入れない。
+- 優先度フィールドは置かない（陳腐化するため）。緊急度は「再評価日」と件数の少なさで捌く。
+
 ### 会話中の行動ルール
 - エントリー分析を行う前に → 日足・5分足が古ければ `update_data.py` を実行する
 - **プレ/アフター時間帯に価格・タイミングが絡む分析をする時 → parquet（レギュラー終値・stale）を黙って現値扱いしない。`src/realtime.py` の `fetch_realtime_quote()` で実勢を取得し「現値・乖離%・取得時刻・session」を提示してから判断に入る**（stale現値での推測継続を禁止、ADR-031）。現値は yfinance prepost 主＋Tiingo IEX afterHours 裏取り（Saxoは未購読で価格には使わない）。`is_thin=True`（pre/post）は froth＝寄りまで持たない可能性として sizing に注記し、瞬間値を stop/エントリー基準にしない（S37/K-041）
@@ -94,8 +108,8 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - `/sync-saxo` — Saxo実約定を執行事実層(Parquet)に全mirror→判断層tradesと照合しbreak検出・修正（ADR-030）
 
 ### セッション終了前（Stop Hook、sentinel ゲート方式）
-- **Stop hook は普段のターン終了ではブロックしない**。`.claude/.session_ending`（sentinel）が存在する時だけ終了前チェック（condition.md 鮮度・期限切れ予測）を実行する。毎ターンのナグを止めるための設計（ユーザー要望）。
-- **ユーザーがセッション終了を明示した時**（「終了」「今日はここまで」「お疲れ」「/exit する」等）に **Claude が**: ①condition.md を更新 ②期限切れ予測を resolve ③重要な判断・発見を知見として記録 — を済ませてから `touch .claude/.session_ending` で sentinel を作成する。直後の Stop で hook がチェックし、未処理が残れば block（安全網）、全クリアなら sentinel を自動削除する。
+- **Stop hook は普段のターン終了ではブロックしない**。`.claude/.session_ending`（sentinel）が存在する時だけ終了前チェック（期限切れ予測）を実行する。毎ターンのナグを止めるための設計（ユーザー要望）。condition.md 鮮度判定は GDR-003 で撤去済。
+- **ユーザーがセッション終了を明示した時**（「終了」「今日はここまで」「お疲れ」「/exit する」等）に **Claude が**: ①**作業トラッカー（Project #2）の未完了アイテムを更新**（完了/取り下げ、新しい次の一手の起票）②**スタンス節（CLAUDE.md）を上書き**（揮発的な現在地、数行）③期限切れ予測を resolve ④重要な判断・発見を知見として記録 — を済ませてから `touch .claude/.session_ending` で sentinel を作成する。直後の Stop で hook がチェックし、未処理が残れば block（安全網）、全クリアなら sentinel を自動削除する。
 - 明示シグナルが無いまま終わる場合は何も強制されない（ユーザーが終了を制御する）。leftover sentinel は SessionStart が掃除する。
 
 ## Position Sizing (ADR-028)
@@ -156,7 +170,7 @@ Memoryは「見逃し防止キャッシュ」として使う。情報のSource o
 
 | イベント | 正しい書き先 |
 |---------|------------|
-| 市場環境の変化 | condition.md |
+| 市場環境の変化 | regime_assessments（DB）。揮発的な現在地スタンスは CLAUDE.md スタンス節 |
 | 設計判断 | ADR/GDR |
 | 知見の発見 | DuckDB knowledgeテーブル |
 | スキルの出力改善 | SKILL.md |

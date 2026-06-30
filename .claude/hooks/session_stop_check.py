@@ -8,38 +8,19 @@ stdinからhook入力JSONを受け取り、セッション終了前の確認事�
 副作用なし（読み取りのみ）。
 """
 import json
-import re
 import sys
-from datetime import date
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 from src.db import today_jst
 
-CONDITION_MD = PROJECT_ROOT / "docs" / "condition.md"
 DB_PATH = PROJECT_ROOT / "data" / "sensei.duckdb"
 
 # セッション終了の明示シグナル。ユーザーが「終了/今日はここまで」等を明示した時に
 # Claude が作成する。これが無ければ終了前チェックを一切走らせない(毎ターンのブロック防止)。
 # CLAUDE.md トリガールール参照。SessionStart で leftover を掃除する。
 SENTINEL = PROJECT_ROOT / ".claude" / ".session_ending"
-
-
-def check_condition_md() -> str | None:
-    """condition.mdの最終更新日が今日かチェック"""
-    if not CONDITION_MD.exists():
-        return "condition.mdが存在しません"
-
-    text = CONDITION_MD.read_text()
-    match = re.search(r"Last updated:\s*(\d{4}-\d{2}-\d{2})", text)
-    if not match:
-        return "condition.mdにLast updatedが見つかりません"
-
-    last_updated = date.fromisoformat(match.group(1))
-    if last_updated < today_jst():
-        return f"condition.mdの最終更新日が{last_updated}（今日は{today_jst()}）"
-    return None
 
 
 def check_unresolved_predictions() -> str | None:
@@ -79,10 +60,6 @@ def main():
 
     # 確認事項チェック
     issues = []
-
-    result = check_condition_md()
-    if result:
-        issues.append(result)
 
     result = check_unresolved_predictions()
     if result:
