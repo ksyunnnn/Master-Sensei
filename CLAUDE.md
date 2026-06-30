@@ -14,7 +14,7 @@
 | docs/ideal.md | あるべき姿（現Phase） |
 | GitHub Project #2 | **現在地（開いている作業）の正本。次の一手・仮説をIssueで管理（GDR-003）**。運用手順は docs/worktracker.md |
 | docs/worktracker.md | 作業トラッカーの運用手順・フィールド・IDキャッシュ（GDR-003） |
-| docs/condition.md | **非推奨・履歴用（GDR-003 で handoff 役を作業トラッカー＋下記スタンス節へ移管）**。過去ログとして保持し更新しない |
+| ~~docs/condition.md~~ | 削除済み（GDR-003, 2026-06-30）。全文は git 履歴に保全。handoff は作業トラッカー＋下記スタンス節 |
 | docs/condition-archive.md | condition.mdから退避した古いhandoff・旧構造（GDR-002） |
 | docs/charter.md | Master Senseiの原則・自己評価 |
 | docs/adr/ | ソフトウェア構造の判断記録 |
