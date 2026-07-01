@@ -52,7 +52,10 @@ Date        Symbol      AmountUSD   AmountAccountCurrency  Description
 2026-03-31  CASHINTRTP    +945.38         +150,000 JPY    （同上）
 2026-05-21  CASHINTRTP    +314.49          +50,000 JPY    （同上）
 2026-05-29  CASHINTRTP   +1255.67         +200,000 JPY    （同上）
+2026-06-30  CASHINTRTP    +615.07         +100,000 JPY    （同上、2026-07-01 sync で捕捉）
 ```
+
+（2026-06-30 の1件は `/sync-saxo` で EOD bookings 記帳後に台帳へ反映。`type='deposit'` へ写像され過去4件と一貫。振替捕捉の確度は据え置き。この行も**口座間振替**であり、外部銀行 deposit ではない点に注意。）
 
 ## 既知の未確認（事実検証の留保）
 
