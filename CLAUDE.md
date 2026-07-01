@@ -28,7 +28,9 @@
 
 その場限りの判断・スタンスで、どのテーブルにも入らないが次セッションの前提になるものを、ここに**数行で上書き**する（肥大化禁止・履歴は残さない・append-only禁止）。永続化すべきものは knowledge/ADR へ昇格し、ここから消す。開いた作業そのものは作業トラッカー（Project #2、docs/worktracker.md）へ。
 
-- （現在なし）
+- **Saxo token 失効中**（keepalive が 7/1 05:58 JST に終了。refresh token ~55分ローリング寿命が起床遅延で窓を逃した）。次に Saxo を使う操作（今日の `/sync-saxo`）で oauth_init 再認証 + keepalive 再起動が必要。keepalive の margin 拡大（300→600s）は**未決**（ユーザー判断待ち。ADR-025「永続化しない」下では無人 keepalive は本質的に非保証）。
+- **外部銀行入金（6/30）が台帳 `account_transactions` 未反映**＝Saxo `reports/bookings`（EODバッチ）が未記帳のため。次回 `/sync-saxo` で `deposit` 写像が正しく入るか確認 →`docs/api/saxo/booking-fields.md:57-59` の「外部入金 未確認(70%)」を初の実データで解消する。手書き禁止（事実層は Saxo が SoT）。
+- **SOXL 6/30 終値 $266.71（+12.8%）で新高値圏**。7/1 Section 232 半導体レビュー・7/2 NFP の二大バイナリ前で高値追いは見送り推奨（確信度70%、最初の実需押し目は $249-250 ブレイク踏み台）。予測#7 は反証で解決済（6/30 $266.71 が $252.61 回復、root=pattern_extrapolation_premature）。regime risk_on(0.64) は 6/30 既保存・日中ドリフトのみで再保存せず。
 
 ## Data Architecture (ADR-001)
 
