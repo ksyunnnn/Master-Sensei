@@ -21,6 +21,7 @@
 | docs/gdr/ | 成長メカニズムの判断記録 |
 | docs/trading-notes.md | トレード検討ノート（中立・追記型。確定決定なし、KPI設計の暫定方針のみ。[事実]/[観察]/[論点]/[訂正]タグで断定を急がない） |
 | docs/code-review-checklist.md | 統計・金融コードのレビュー基準（ADR-022） |
+| docs/record-writing-checklist.md | 永続記録の自己完結基準（会話依存の指示詞を書かない、GDR-004） |
 | docs/testing-guidelines.md | 統計・金融コードのテスト設計原則（ADR-022） |
 | docs/api/ | 外部API公式仕様の集約（ADR-026、provider別） |
 
@@ -146,6 +147,7 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 - 調査・アイデア生成タスクでは「収穫逓減」を理由に途中で止めない。手法自体の調査も行い、網羅的に試してからユーザーに判断を委ねる
 - 統計検定・金融データ処理・並行処理のコードを書く/レビューする際は `docs/code-review-checklist.md` を参照する (ADR-022)
 - 研究の方向性変更・目標変更・打ち止め判断の前に `docs/bias-audit-checklist.md` を実施する（Premortem + Kahneman 12問）
+- 永続化する記録（トラッカー issue/コメント・commit・ADR/GDR・knowledge・doc・コード注釈）を書く時は、それを書いた会話を見ていない読者が単体で読めるよう `docs/record-writing-checklist.md` に従う（会話依存の指示詞を書かない、GDR-004）
 - リモートリポジトリ（GitHub Public）あり。**コミット・pushはユーザー確認なしに自律実行してよい**（提案・許可待ちは不要）。区切りのよい単位でコミットし、作業完了時に origin へ push する。コミットメッセージは既存の規約（`type(scope): 要約` 日本語）に合わせる。**ただし公開リポジトリのため秘匿情報を絶対にコミットしない**: `data/sensei.duckdb`（ADR-025: token平文を含む）・`auth_tokens`・`.env`・`*.duckdb.bak` 等は `.gitignore` 済みであることを push 前に確認する。蓄積層は CSV export（`data/db_export/`、auth_tokens 除外済・ADR-033）のみコミット対象。破壊的操作（force push・履歴改変）は引き続きユーザー確認を要する。
 
 ## Memory運用ルール
