@@ -29,9 +29,10 @@
 
 その場限りの判断・スタンスで、どのテーブルにも入らないが次セッションの前提になるものを、ここに**数行で上書き**する（肥大化禁止・履歴は残さない・append-only禁止）。永続化すべきものは knowledge/ADR へ昇格し、ここから消す。開いた作業そのものは作業トラッカー（Project #2、docs/worktracker.md）へ。
 
-- **Saxo token 失効中**（keepalive が 2026-07-01 05:58 JST に終了。refresh token ~55分ローリング寿命が起床遅延で窓を逃した）。**2026-07-01 は記録規律の整備のみで `/sync-saxo` 未実施** → 次セッションで oauth_init 再認証 + keepalive 再起動（作業は Issue #9/#10 で追跡）。keepalive の margin 拡大（300→600s）は**未決**（ユーザー判断待ち。ADR-025「永続化しない」下では無人 keepalive は本質的に非保証）。
-- **外部銀行入金（2026-06-30）が台帳 `account_transactions` 未反映**＝Saxo `reports/bookings`（EODバッチ）が未記帳のため。次回 `/sync-saxo` で `deposit` 写像が正しく入るか確認 →`docs/api/saxo/booking-fields.md:57-59` の「外部入金 未確認(70%)」を初の実データで解消する。手書き禁止（事実層は Saxo が SoT）。
-- **SOXL 2026-06-30 終値 $266.71（+12.8%）で新高値圏**。7/1 Section 232 半導体レビュー・7/2 NFP の二大バイナリ前で高値追いは見送り推奨（確信度70%、最初の実需押し目は $249-250 ブレイク踏み台）。**この市場観は 2026-06-30 データ基準**（2026-07-01 は新データ未取得、次セッションで update_data 後に再評価）。予測#7 は反証で解決済（2026-06-30 $266.71 が $252.61 回復、root=pattern_extrapolation_premature）。regime risk_on(0.64) は 2026-06-30 既保存。
+- **Saxo token は 2026-07-01 14:35 JST に再認証済（oauth_init 実行）**。`/sync-saxo` 実施 → 3層照合 break ゼロ（ライブ建玉0＝フラット、台帳44行、trades一致）。**注意: keepalive はこの環境で約45〜55分ごとに外部終了される**（今日2回、いずれもクリーンに token ロール後に kill）。再起動のいたちごっこは非現実的で、ADR-025「無人 keepalive は本質的に非保証」を実地で裏付けた。token は都度 oauth_init で確保する前提。margin 拡大（300→600s）は依然**未決**。
+- **6/30 の入金 ¥100,000 は「外部銀行入金」でなく口座間振替（CASHINTRTP）**だった（`/sync-saxo` で EOD bookings 記帳→台帳反映、`deposit` 写像を確認・5件目の観測）。`docs/api/saxo/booking-fields.md` の「外部銀行 deposit の符号/symbol 表現 未確認(70%)」は**未解消のまま維持**（本口座にまだ真の外部入金履歴が無い）。
+- **SOXL 2026-06-30 終値 $266.71（+12.8%）で新高値圏**。7/1 Section 232 半導体レビュー・7/2 NFP の二大バイナリ前で高値追いは見送り推奨（確信度70%、最初の実需押し目は $249-250 ブレイク踏み台）。**この市場観は 2026-06-30 データ基準**（2026-07-01 は新データ未取得、日次ワークフローで update_data 後に再評価）。regime risk_on は 2026-06-30 既保存。
+- **次アクション: 日次ワークフロー**（update_data → /scan-market → /update-regime → /sync-saxo[step5 新設]）。トラッカーは #11（KPI設計、実トレード蓄積待ちで保留）のみ。
 
 ## Data Architecture (ADR-001)
 
