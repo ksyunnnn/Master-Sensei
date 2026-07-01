@@ -71,6 +71,8 @@ SessionStartフックが注入する状態に基づき、CLAUDE.mdに以下の�
 
 これにより `/scan-market` → `update_data.py` → `/update-regime` の順序がCLAUDE.mdの行動ルールとして明文化される。スキル自体は変更しない。
 
+**追記（2026-07-01, GDR-003 フォローアップ / Issue #7）**: 日次ワークフローに `/sync-saxo` を step 5 として追加した。GDR-003 で「進行中の保有状態」の置き場を判断層 `trades`（判断時キャッシュ）に確定した際、その鮮度を担保するトリガーが「DBがずれてる気がする」オンデマンドのみで、毎セッション引き直す運用が未 codify だった。日次ワークフローに載せることで「保有状態を毎セッション Saxo（実約定 SoT）から引き直す」意図を仕組み化する。token 有効時のみ（失効時は再認証を経てから）。詳細は `docs/gdr/003-cross-session-state-redesign.md`。
+
 ## Rationale
 
 - Claude Code公式: スキルは独立したライフサイクルを持つなら分割を維持する
