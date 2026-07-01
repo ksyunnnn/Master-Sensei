@@ -572,13 +572,17 @@ class SaxoClient:
         """ライブ open positions を意味的 snapshot のリストで返す (ADR-026)。
 
         `/sync-saxo` の live↔台帳照合 (`SenseiDB.reconcile_live_positions`) に使う。
-        `?FieldGroups=DisplayAndFormat,PositionView` で symbol/含み損益を取得する。
+        `?FieldGroups=PositionBase,DisplayAndFormat,PositionView` で
+        建玉コア(Amount/OpenPrice)・symbol・含み損益を取得する。PositionBase を
+        要求しないとパーサが読む AccountId/Uic/Amount/OpenPrice が欠落し、建玉が
+        1件でもあれば下記 required チェックで `SaxoAuthError` になる。
         required field 欠落時は `SaxoAuthError` (静かな誤照合を防ぐ)。
 
         See docs/api/saxo/position-fields.md
         """
         resp = self._api_get(
-            "/port/v1/positions/me?FieldGroups=DisplayAndFormat,PositionView"
+            "/port/v1/positions/me"
+            "?FieldGroups=PositionBase,DisplayAndFormat,PositionView"
         )
         out: list[LivePosition] = []
         for p in resp.get("Data", []):
