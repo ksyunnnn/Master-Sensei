@@ -29,11 +29,12 @@
 
 その場限りの判断・スタンスで、どのテーブルにも入らないが次セッションの前提になるものを、ここに**数行で上書き**する（肥大化禁止・履歴は残さない・append-only禁止）。永続化すべきものは knowledge/ADR へ昇格し、ここから消す。開いた作業そのものは作業トラッカー（Project #2、docs/worktracker.md）へ。
 
-- **7/1-7/2 SOXL/SOXX 極端ラウト確定（前スタンスの途中経過を引け値で確定）**: SOXX 連日 −2σ級（7/1 −6.41%/−2.2σ, 7/2 −5.57%/−1.9σ、2日 −11.6%）、SOXL 7/2 終値 **$181.47**・ザラ場安値 **$168.87**（6/30 $266.71比 −37%）。事前設定の **floor $224・下値目標192を貫通**。`/scan-market`（7/3）で **discrete 外部触媒なし＝Great Rotation**（H1 +80%・SK Hynix+248%/Micron+210% YTD のクラウデッド解消、メモリ主導＝Micron/Sandisk −10%、Nvidia/Broadcom は相対浅い）。**NFP 6月 57K（予想110K大幅ミス）の dovish/ドル安でも半導体は反発せず**。VIX 15.97低/VXN 27.69＝セクター固有デカップリング。→ **K-046（無触媒クラウデッド巻き戻し）・K-048（機能する stop 無く 3x 押し目見送り）を実地再確認、口座フラット継続＝正解方向**。dip-buy 未エントリー、成行追随・$168割れ買い増し禁止、反転確認（VXN低下/メモリ下げ止まり/出来高減衰）待ち。タイミングは K-049 適用。
-- **論点: K-046「翌日反発しやすい」は今回 7/1→7/2 で反発せず連日安値更新＝反例/境界の可能性**。7/6 米セッションで反発するか要観察、しなければ /verify-knowledge で K-046 に境界条件を付す候補。
-- **Saxo**: 7/3 `/sync-saxo` 済（フラット・3層照合 break ゼロ、台帳44行）。**token 現在失効**（keepalive 7/3 18:14→翌03:47 JST 約9.5h 稼働後 refresh 失効で `needs_reauth` クリーン終了＝改善傾向を再確認、ADR-025 非保証性は維持）。次に Saxo 要時に oauth_init 起動。margin 拡大（300→600s）未決。
-- **インフラ追加（7/6）**: SessionStart が当日の米株休場/早引けを自動提示するようになった（`calendar/market_calendar.py` が NYSE 公式検証済フィード `calendar/us_market_holidays.ics` を repo内SoTとして直読・認証不要・2026-2028収録・範囲外は更新を通知）。Google カレンダーも同フィードを購読（人間閲覧用）。
-- **次アクション: 7/6 米寄り（22:30 JST）で SOXL 反転/継続の初確認**。日次（update_data→/scan-market→/update-regime→/sync-saxo）。**regime は risk_on（6日前・stale）、マクロは7/3更新済だが /update-regime 未実行** → 次セッションで再判定。トラッカーは #11（KPI設計・保留）のみ。
+- **7/1-7/2 SOXL/SOXX 極端ラウト（確定）**: SOXX 2日 −11.6%（7/1 −6.41%, 7/2 −5.57%）、SOXL 7/2 終値 **$181.47**・ザラ場安値 $168.87（6/30 $266.71比 −37%）。**7/6に下落の因果を深掘り確定**: 単なる無触媒ポジション巻き戻しでなく **demand-fundamental の触媒 driven de-rating** ＝(1)**Meta 余剰AI compute の cloud再販報道(7/1)**＝SOXX −6.41%の直接契機・hyperscaler需要天井シグナル (2)Broadcom AI売上ガイド miss/見通し据置(6/4, Nasdaq −4.18%) (3)SK Hynix HBM増産鈍化(7/2) (4)Warsh下Fed hawkish。これに 3x レバが SOXX −11.6% を SOXL −32% に機械増幅。H1 +80% crowded 解消が下地、NFP 57K の dovish でも反発せず。VIX 15.81低/VXN 27.69高＝半導体固有デカップリング。→ 口座フラット継続＝正解方向、dip-buy 未エントリー、成行追随・$168割れ買い増し禁止、反転確認(VXN低下/メモリ下げ止まり/出来高減衰)待ち。K-048・K-049 適用。
+- **論点(更新): K-046「無触媒クラウデッド巻き戻し→翌日反発しやすい」は今回そもそも *無触媒でない*（上記触媒あり）＝前提不成立で適用対象外の可能性が高い**。だから 7/1→7/2 で反発しなかった。7/6 米寄りで反発有無を確認し、K-046 に「触媒有無を先に判定」の境界条件を付す候補（/verify-knowledge）。
+- **SOXL 現値 7/6 13:01 = $182.9（post/thin, 7/2比 +0.8%≈フラット）**。次の価格更新＝今夜 22:30 JST 米寄付＝ラウト後初セッション。
+- **Saxo**: 7/3 sync 済（フラット・break ゼロ・台帳44行）、token 失効中。次に Saxo 要時 oauth_init 起動。margin 拡大未決（今セッション未タッチ）。
+- **インフラ(7/6)**: (a) SessionStart が米株休場/早引けを自動提示（`calendar/market_calendar.py` が NYSE 公式検証済 ics を repo内SoT直読）。**(b) events 登録基準を刷新（ADR-034）**: 「影響しうるか」の直感でなく **チャネル台帳 `docs/event-channels.md` への lookup ＋ 曖昧ケースの構造化判断・neutral捕捉** の2層プロトコル。realized impact は inclusion に使わず review-events の出口採点で台帳を昇格/降格（look-ahead回避）。ADR運用ルール(accepted不変/新ADRでsupersede)も TEMPLATE/CLAUDE に明文化。scan-market/quick/review-events 反映済。
+- **次アクション**: ① 今夜 22:30 JST 米寄りで SOXL 反転/継続＋K-046前提の初確認 ② **/update-regime 未実行**（マクロ7/5更新済・regime risk_on 6日stale）→ 次セッション再判定 ③ 次 /scan-market で **Meta(7/1)・Broadcom(6/4) をチャネル台帳 lookup で neutral 登録**し2層プロトコルを実地テスト。トラッカーは #11(KPI設計・保留)のみ。
 
 ## Data Architecture (ADR-001)
 
