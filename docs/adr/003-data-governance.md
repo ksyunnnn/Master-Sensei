@@ -57,6 +57,8 @@ Master SenseiのDuckDB（sensei.duckdb）に何を書き込み、何を書き込
 
 #### events — イベント記録
 
+> **一部 supersede（ADR-034, 2026-07-06）**: 下表の inclusion 基準（「価格に影響しうるイベント → Yes」）は **ADR-034** により置き換えられた。現行の登録判定は ADR-034 の2層プロトコル（チャネル台帳 `docs/event-channels.md` への lookup ＋ 曖昧ケースの構造化判断・中立捕捉）に従う。dedup 基準（timestamp+category+summary）と impact neutral 既定（ADR-010）は継承。以下の substance は履歴として残す（Nygard 慣行: 旧 ADR は書き換えない）。
+
 | 条件 | Write? | 理由 |
 |------|--------|------|
 | 対象シンボルの価格に影響しうるイベント | Yes | レジーム判定の入力 |
