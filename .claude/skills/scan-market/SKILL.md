@@ -119,14 +119,23 @@ PYEOF
 - 当てはまる場合はneutralに変更し、impact_reasoningに「lesson照合: [lesson要約]」を含める
 - 当てはまらない場合はnegativeを維持し、impact_reasoningに「lesson照合済み: [なぜ今回は異なるか]」を明記する
 
-#### 3b. 登録
+#### 3b. 登録判定 ── 2層プロトコル（ADR-034）
 
-調査結果から、対象シンボル（TQQQ/SOXL/TECL/SPXL等）の価格に影響しうるイベントを登録する。
+登録可否は「価格に影響しうるか」の直感でなく、**チャネル台帳（`docs/event-channels.md`）への照合**で判定する。判定前に台帳の現行チャネルを一読すること。
 
-ADR-003 Write基準:
-- 対象シンボルの価格に影響しうるイベントのみ登録
-- スコープ外（個別株、仮想通貨等）は登録しない
-- 既存イベントと重複する場合は登録しない
+**Rule層（中核）**: イベントは台帳のいずれかのチャネルへのショックか？
+- Yes → 登録する。該当チャネル名を impact_reasoning に明記する。
+- どのチャネルにも当たらず新規経路の兆候もない → 登録しない（スコープ外）。
+
+**Standard層（周縁・曖昧ケース）**: 台帳に綺麗に当たらないが伝播が疑われる場合、以下を各々確認してから判断し、**迷えば `impact=neutral`・低 relevance で捕捉する**（非捕捉＝復元不能、捕捉＝dismiss で可逆）:
+1. 伝播チャネルが想定できるか（新規経路の疑いは台帳「候補チャネル」節への追記を提案）
+2. どの銘柄へ波及するか（direct / indirect / background）
+3. 価格系列から再導出できる事実に過ぎないか（Yes → 除外。値動きそのものは Parquet の領域）
+4. 既存イベントと重複しないか（timestamp + category + summary で dedup）
+
+**inclusion に「実際に動いたか（realized impact）」を使わない**（look-ahead 禁止）。動いたかの検証は `/review-events` の事後採点で行い、チャネル台帳の昇格/降格に反映する。
+
+注: `category`（geopolitical/fed/… の6ニュース分類）と channel（因果経路）は別軸。category は保存ラベル、channel は inclusion 判定に使う。例えば oil 単独のニュースはどのチャネルにも当たらないことが多く、その場合は登録しない（risk-off や Fed 経由で波及する場合のみ該当チャネルで登録）。
 
 カラム仕様:
 - `event_timestamp`: datetime with tzinfo=JST（必須）
