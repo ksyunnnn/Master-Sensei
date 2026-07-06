@@ -87,6 +87,27 @@ def check_brier(db) -> list[str]:
     return []
 
 
+def check_market_calendar() -> list[str]:
+    """米株(NYSE/Nasdaq)の当日ステータス。休場/早引け/週末のみ注意喚起（通常日は無音）。
+
+    SoT は calendar/us_market_holidays.ics（NYSE公式由来・検証済、認証不要）。
+    フックを壊さないため、範囲外(未更新)・読込失敗は握りつぶして空を返す。
+    """
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT / "calendar"))
+        import market_calendar as mc
+
+        today = today_jst()
+        if mc.market_status(today) == "open":
+            return []  # 通常営業日はノイズを出さない
+        return [f"  米株: {mc.describe(today)}"]
+    except ValueError:
+        # カバレッジ範囲外＝フィード未更新
+        return ["  米株カレンダー: 当日がデータ範囲外 → calendar/generate_holidays_ics.py に年を追加して再生成を"]
+    except Exception:
+        return []  # 判定失敗でも状態チェック全体は落とさない
+
+
 def check_data_freshness() -> list[str]:
     """Parquetデータの鮮度を確認"""
     messages = []
@@ -127,8 +148,11 @@ def main():
     lines = [
         "[Master Sensei 状態チェック]",
         f"  現在: {now.strftime('%Y-%m-%d %H:%M JST')}",
-        "",
     ]
+    market_lines = check_market_calendar()
+    if market_lines:
+        lines.extend(market_lines)
+    lines.append("")
 
     if DB_PATH.exists():
         import duckdb
