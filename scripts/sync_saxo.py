@@ -153,6 +153,9 @@ def run_sync(*, full: bool, overlap_days: int) -> int:
         else:
             _mirror_tail(client, to_date, overlap_days)
 
+        # 2b. 執行事実層を duckdb ビュー化 (ADR-035, read-only MCP から名前で照会可)。
+        db.ensure_ledger_views(str(PARQUET_PATH))
+
         # 3. ライブ snapshot 取得 (安い: 建玉+注文の各1コール)。
         live_net = _net_by_symbol(client.get_live_positions())
         live_order_ids = {o.order_id for o in client.get_open_orders()}

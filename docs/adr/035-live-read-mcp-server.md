@@ -1,6 +1,6 @@
 # ADR-035: live 読み取り用 MCP サーバ（型付き Saxo/realtime アクセサ）
 
-Status: proposed
+Status: accepted
 Date: 2026-07-08
 
 > **ADR運用ルール（Nygard慣行）**: accepted な ADR の substance は後から書き換えない（immutable）。結論を変える必要が出たら新しい ADR を起こして古い方を supersede する。
@@ -75,7 +75,14 @@ Claude が API 由来の問い（残高・建玉・注文・約定履歴・含�
 
 > 実装は accepted 後。テスト先行（CLAUDE.md / ADR-022）。
 
-- **Phase 0（受益者非依存・先行可）**: (1) `docs/api/saxo/README.md` の非存在アクセサ削除、(2) parquet に duckdb VIEW、(3) permissions で ad-hoc `python -c` を deny。案C を待たず着手できる。
+- **Phase 0（受益者非依存・先行可）**: (1) `docs/api/saxo/README.md` の非存在アクセサ削除、(2) parquet に duckdb VIEW、(3) permissions で正道へ誘導。案C を待たず着手できる。
+  - (3) の実装判断: Claude Code の Bash 権限パターンは**前方一致**で「コマンドが saxo/duckdb を含む」を表現できず、広い `python -c` deny は正当な利用も潰すため**採用しない**。誘導は「新 MCP ツールを allow ＋ CLAUDE.md 導線 ＋ doc-drift 解消」で達成する。
 - **Phase 1（サーバ骨組み）**: stdio MCP サーバの雛形。短命 DB 接続（既定 read_only、refresh 時のみ RW 昇格＋バックオフリトライ）。active token 不在/失効時の `AUTH_REQUIRED` 構造化エラー。ここまでをテストで固定。
 - **Phase 2（ツール実装）**: `get_account_balances` / `get_positions` / `get_open_orders` / `get_trade_cost` / `get_realtime_quote` を既存アクセサのラップとして実装。各ツールは dataclass → named-field JSON へ整形。`sizing` 用は `spending_power`（`settled_cash_balance` は使わない、ADR-026）。
 - **Phase 3（配線・検証）**: `.mcp.json` 登録、permissions allow、CLAUDE.md 導線。`/mcp` で `✓ Connected` を確認し、「残高は？」で Claude が ad-hoc python でなく MCP ツールを使うことを実地確認。
+
+## 検証（2026-07-08）
+
+- **ユニット**: `tests/test_live_reads.py`(18) + `tests/test_mcp_saxo.py`(7) + `tests/test_ledger_views.py`(2)。全 serializer の field 写像・`decide_mode` 3分岐・`_retry_on_lock`・payload の AUTH_REQUIRED 変換・ツール登録/委譲・ビュー生成/存在ガードを固定。フルスイート 902 passed(回帰なし)。
+- **end-to-end(実 live)**: `.mcp.json` と同一の `python src/mcp_saxo.py` を stdio MCP クライアントで起動し、5ツール全てを実 Saxo/ yfinance で実行。`get_account_balances`→ 実残高(spending_power 79957)、`get_positions`→ 実建玉13株(3@165.4+10@196)、`get_open_orders`→ 実 OCO 脚(Stop$100/TP$250)、`get_realtime_quote(SOXL)`→ pre 実値・`is_thin` 注記、`get_trade_cost`→ break-even 実算出、未登録銘柄は `UNKNOWN_SYMBOL`。
+- **並行性経路の実発火**: 検証中に access が buffer 内で `read_live` が read_write へ昇格し on-demand refresh(`Saxo access token refreshed count=7`)が走ることを確認。稼働中の keepalive とロック競合せず(リトライ吸収)、ADR の並行性設計が実地で成立。

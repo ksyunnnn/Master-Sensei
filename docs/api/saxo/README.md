@@ -38,15 +38,31 @@
 
 ## 意味的アクセサ (src/saxo_client.py)
 
-| アクセサ | 返す field | 用途 |
-|---------|----------|------|
-| `get_spending_power(account_key)` | `SpendingPower` | sizing 判断 (これを使う) |
-| `get_cash_available_for_trading(account_key)` | `CashAvailableForTrading` | sizing 判断 (SpendingPower と同じ値、互換性のため) |
-| `get_settled_cash_balance(account_key)` | `CashBalance` | 会計表示用 (sizing には使わない) |
-| `get_total_value(account_key)` | `TotalValue` | NAV |
-| `get_unrealized_pnl(account_key)` | `UnrealizedPositionsValue` | 含み損益 |
-| `get_transactions_not_booked(account_key)` | `TransactionsNotBooked` | T+2 未決済額 (debug 用) |
-| `get_balances()` (raw) | 全 field | 調査用途のみ |
+残高は **per-field のメソッドではなく、`AccountBalance` dataclass を返す1メソッド**で取る
+(ADR-026)。field は dataclass の属性としてアクセスする (raw dict access 禁止)。
+
+| メソッド | 返り値 | 用途 |
+|---------|--------|------|
+| `get_all_account_balances()` | `list[AccountBalance]` (active 口座のみ) | 全口座の残高を一括取得 |
+| `get_account_balance(*, account_key, client_key, account_id="")` | `AccountBalance` | 単一口座の残高 |
+| `get_balances()` (raw dict) | 集計 balance | 調査用途のみ (sizing に使わない) |
+
+`AccountBalance` の属性 (公式定義は balance-fields.md):
+
+| 属性 | 元 Saxo field | 用途 |
+|------|--------------|------|
+| `spending_power` | `SpendingPower` | **sizing 判断 (これを使う)** |
+| `cash_available_for_trading` | `CashAvailableForTrading` | sizing 判断 (SpendingPower と同値、互換) |
+| `settled_cash_balance` | `CashBalance` | 会計表示用 (**sizing には使わない**、未決済除外で過小評価) |
+| `total_value` | `TotalValue` | NAV |
+| `unrealized_pnl` | `UnrealizedPositionsValue` | 含み損益 |
+| `transactions_not_booked` | `TransactionsNotBooked` | T+2 未決済額 (debug 用) |
+| `open_positions_count` / `net_positions_count` | 同名 | open / (open+settling) 建玉数 |
+| `non_margin_positions_value` | `NonMarginPositionsValue` | cash instrument 評価額合計 |
+| `calculation_reliability` | `CalculationReliability` | "Ok" 以外は要調査 |
+
+> **MCP 経由 (ADR-035)**: Claude は上記を手書きせず、`master-sensei-live` MCP サーバの
+> `get_account_balances` ツールで named-field JSON として取得する。sizing は `spending_power`。
 
 ## 既知の落とし穴
 

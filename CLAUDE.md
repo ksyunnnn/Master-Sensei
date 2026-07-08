@@ -55,6 +55,7 @@
 - **API field の意味を変数名から推測しない**。`docs/api/<provider>/` を必ず参照
 - `src/*_client.py` 外部での raw dict キー access 禁止。意味的アクセサ経由のみ
 - 新規 provider 追加時は `docs/api/TEMPLATE.md` に従う
+- **live 情報（残高/建玉/注文/取引コスト/延長時間の現値）は ad-hoc python を書かず `master-sensei-live` MCP ツール経由で取る（ADR-035）**。`get_account_balances`（sizing は `spending_power`）/ `get_positions` / `get_open_orders` / `get_trade_cost` / `get_realtime_quote`。パス・カラム・アクセサ名を推測せず型付き JSON で受け取る。蓄積層の SQL 照会は `duckdb` MCP（read-only）、執行事実層 parquet は `account_transactions` ビュー（ADR-035, `SenseiDB.ensure_ledger_views`）で名前照会する
 
 ## DB Write基準 (ADR-003)
 

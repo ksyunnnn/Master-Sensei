@@ -875,6 +875,27 @@ class SenseiDB:
             rows = []
         return {sym: float(q) for sym, q in rows}
 
+    def ensure_ledger_views(self, parquet_path: Optional[str] = None) -> bool:
+        """執行事実層 parquet を `account_transactions` ビューとして公開する (ADR-035)。
+
+        read-only の duckdb MCP から、パス/カラム名を知らずに
+        `SELECT * FROM account_transactions` で照会できるようにする。**RW 接続で呼ぶこと**
+        (read_only 接続では CREATE VIEW が拒否される)。parquet が無ければ何もせず False を
+        返す (fresh clone で全 RW 接続が壊れるのを防ぐ)。ビューは毎回 CREATE OR REPLACE で
+        貼り直すのでパス変更に自己追従する。
+        """
+        path = parquet_path or str(
+            Path(__file__).parent.parent
+            / "data" / "parquet" / "account" / "transactions.parquet"
+        )
+        if not Path(path).exists():
+            return False
+        self.conn.execute(
+            "CREATE OR REPLACE VIEW account_transactions AS "
+            f"SELECT * FROM read_parquet('{path}')"
+        )
+        return True
+
     def reconcile_live_positions(
         self, live_net: dict[str, float], transactions_parquet: str
     ) -> list[dict]:

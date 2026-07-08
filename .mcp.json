@@ -10,6 +10,14 @@
         "--read-only"
       ],
       "env": {}
+    },
+    "master-sensei-live": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "src/mcp_saxo.py"
+      ],
+      "env": {}
     }
   }
 }
