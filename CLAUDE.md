@@ -29,12 +29,12 @@
 
 その場限りの判断・スタンスで、どのテーブルにも入らないが次セッションの前提になるものを、ここに**数行で上書き**する（肥大化禁止・履歴は残さない・append-only禁止）。永続化すべきものは knowledge/ADR へ昇格し、ここから消す。開いた作業そのものは作業トラッカー（Project #2、docs/worktracker.md）へ。
 
-- **7/7 半導体 de-rating 継続（確定）**: 7/6 は AI楽観で SOXL +7.3%→$194.65 反発したが、**7/7 に Samsung Q2 記録ブローアウト(営業益+19倍/DRAM+44%)が sell-the-news の引き金**となり続落。SOXL **7/7 引け $165.28（7/6比 −15.1%）**、SOXX −5.1%→$551.69。pre $174 は底でなく続落＝**「急落翌日は即反発せず1-2日continuation」が実証**（K-046反証、K-050記録）。性質: **memory集中**(Kioxia -12%/Samsung・SK Hynix -9~10%主導、logic/装置は不参加~逆行高)・**sentiment/positioning主導でファンダ無傷**(hyperscaler capex +77%全社据置・memory sold-out・Broadcom AI+180%)・**SPYフラット/IWM緑の半導体→小型株ローテーション(systemic risk-offでない)**。downside SOXL$100はtail(SOXX $480-510=-12~16%要)。3xはSOXX実ボラ80%下でdecay -13~16pt/月=swing保有は減価トラップ。
-- **ポジション(要確認)**: SOXL ロング **10株@$196**(trade#24, 7/6filled)＋add指値 **$184×3株**(trade#25 placed)＋OCO(stop$168.88/TP$250)。**7/7引け$165.28<stop$168.88 ⟹ stop発火が濃厚**(7/2ラウト安値割れ=ノイズでなく構造的thesis否定の正しいstop-out)。add$184約定なら3株が無保護残存の可能性。**実約定はtoken失効で未確認→次セッション冒頭 /sync-saxo で確定(トラッカー起票済)**。
-- **取引傾向評価(この深掘りで確定)**: SOXL単独62%勝率/累計+91.7%＝核エッジは本物、但し **SOXS 0/3勝(-80%)=逆張り破滅・SOXS禁止はデータ正当化**、**保有中央値1日=宣言swing/実態day-trade**。現建玉は **K-048ドンピシャ**(高VXN・半導体劣後でのSOXL 3x dip-buy=機能stop無し→本来sizingで見送る型)。→ 3xをswingで握って$100回避を祈るのは instrument減価×自己の実行力の両方に反する=非推奨。勝ち筋=構造stopで規律退出→下で低レバ再構築。
-- **regime**: 7/8保存 risk_on(score1.21, VIX16.13)。半導体クレーターを macro吸収=**デカップリング確認**(VIXでなくVXN/SOXX-QQQ比で半導体固有ストレス捕捉)。予測#8 resolved TRUE(brier0.2025、但し7/7続落で広義反転は無効化)。
-- **Saxo**: 7/7 18時に再認証+keepalive起動(8h稼働後 02:32 JST 7/8 に refresh失効で終了、想定内)。**token今失効中**→次にSaxo要時 oauth_init から。scan-market 7/7実行=1event登録(7/7 sell-the-news de-rating)。
-- **次アクション**: ① **次セッション冒頭 /sync-saxo**(7/7実約定・無保護3株確認、要再認証) ② **/verify-knowledge K-046**(K-050反証反映) ③ de-rating継続 vs 下げ止まり監視(VXN低下/memory下げ止まり/SOXX $480-510接近が$100圏シグナル)。トラッカー: 上記2件+既存Todo(KPI設計/available_funds.py)。
+- **半導体 de-rating 継続**: 7/7 Samsung Q2記録ブローアウトが sell-the-news の引き金→SOXL 7/7引け $165.28(7/6比 −15.1%)。**7/8 pre もさらに続落 $153.63(引け比 −7.0%, is_thin)**＝「急落翌日は即反発せず1-2日continuation」実証(**K-046反証**・K-050記録、検証は未実施でトラッカーに残す)。性質: memory集中・sentiment/positioning主導でファンダ無傷(capex据置・memory sold-out)・SPY/IWM堅調の半導体固有ストレス(systemic risk-offでない)。downside SOXL$100はtail。3xはswing保有で減価トラップ。
+- **ポジション(2026-07-08 /sync-saxo で実約定確定)**: SOXL ロング **13株**=10株@$196(trade#24)＋**add 3株@$165.40(trade#25, 指値$184が7/7続落で約定・filled反映済)**。**OCO実態=stop $100(OrderId 5421812528)/TP $250(…527)で10株のみ**。⚠️**ハンドオフの「stop$168.88発火濃厚」は誤り→実stopは$100で未発火・13株フル生存**。**add分3株は無保護**(現値$153.63で既に水面下)。10株は@$196から約−22%。
+- **取引傾向評価(既確定)**: SOXL単独62%勝率/累計+91.7%=核エッジは本物、但しSOXS 0/3勝=逆張り破滅(SOXS禁止はデータ正当化)、保有中央値1日=実態day-trade。現建玉はK-048型(機能stop無しの3x dip-buy)。勝ち筋=構造stopで規律退出→下で低レバ再構築。$100回避を祈る握りは非推奨。
+- **regime**: risk_on 継続(7/8朝 VIX16.1)。半導体クレーターを macro吸収=デカップリング(VXN/SOXX-QQQ比で半導体固有ストレス捕捉)。予測8/8 resolved。
+- **Saxo/インフラ**: **ADR-035 完了=`master-sensei-live` MCP サーバ稼働(5ツール: 残高/建玉/注文/コスト/現値)**。live 情報は ad-hoc python でなくこの MCP で取る。token は MCP 内で自動 refresh(keepalive はセッション終了で停止・次に /sync-saxo 等で明示起動)。#12 クローズ済。
+- **次アクション**: ① **/verify-knowledge K-046**(K-050反証反映、未実施) ② de-rating継続 vs 下げ止まり監視(VXN低下/memory下げ止まり/SOXX $480-510接近が$100圏シグナル) ③ 無保護3株の扱い判断。トラッカーTodo: K-046検証・KPI設計(#11)・OCO脚reconcile改修(新規)。
 
 ## Data Architecture (ADR-001)
 
