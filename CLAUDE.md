@@ -29,12 +29,12 @@
 
 その場限りの判断・スタンスで、どのテーブルにも入らないが次セッションの前提になるものを、ここに**数行で上書き**する（肥大化禁止・履歴は残さない・append-only禁止）。永続化すべきものは knowledge/ADR へ昇格し、ここから消す。開いた作業そのものは作業トラッカー（Project #2、docs/worktracker.md）へ。
 
-- **7/1-7/2 SOXL/SOXX 極端ラウト（確定）**: SOXX 2日 −11.6%（7/1 −6.41%, 7/2 −5.57%）、SOXL 7/2 終値 **$181.47**・ザラ場安値 $168.87（6/30 $266.71比 −37%）。**7/6に下落の因果を深掘り確定**: 単なる無触媒ポジション巻き戻しでなく **demand-fundamental の触媒 driven de-rating** ＝(1)**Meta 余剰AI compute の cloud再販報道(7/1)**＝SOXX −6.41%の直接契機・hyperscaler需要天井シグナル (2)Broadcom AI売上ガイド miss/見通し据置(6/4, Nasdaq −4.18%) (3)SK Hynix HBM増産鈍化(7/2) (4)Warsh下Fed hawkish。これに 3x レバが SOXX −11.6% を SOXL −32% に機械増幅。H1 +80% crowded 解消が下地、NFP 57K の dovish でも反発せず。VIX 15.81低/VXN 27.69高＝半導体固有デカップリング。→ 口座フラット継続＝正解方向、dip-buy 未エントリー、成行追随・$168割れ買い増し禁止、反転確認(VXN低下/メモリ下げ止まり/出来高減衰)待ち。K-048・K-049 適用。
-- **論点(更新): K-046「無触媒クラウデッド巻き戻し→翌日反発しやすい」は今回そもそも *無触媒でない*（上記触媒あり）＝前提不成立で適用対象外の可能性が高い**。だから 7/1→7/2 で反発しなかった。7/6 米寄りで反発有無を確認し、K-046 に「触媒有無を先に判定」の境界条件を付す候補（/verify-knowledge）。
-- **SOXL 現値 7/6 13:01 = $182.9（post/thin, 7/2比 +0.8%≈フラット）**。次の価格更新＝今夜 22:30 JST 米寄付＝ラウト後初セッション。
-- **Saxo**: 7/3 sync 済（フラット・break ゼロ・台帳44行）、token 失効中。次に Saxo 要時 oauth_init 起動。margin 拡大未決（今セッション未タッチ）。
-- **インフラ(7/6)**: (a) SessionStart が米株休場/早引けを自動提示（`calendar/market_calendar.py` が NYSE 公式検証済 ics を repo内SoT直読）。**(b) events 登録基準を刷新（ADR-034）**: 「影響しうるか」の直感でなく **チャネル台帳 `docs/event-channels.md` への lookup ＋ 曖昧ケースの構造化判断・neutral捕捉** の2層プロトコル。realized impact は inclusion に使わず review-events の出口採点で台帳を昇格/降格（look-ahead回避）。ADR運用ルール(accepted不変/新ADRでsupersede)も TEMPLATE/CLAUDE に明文化。scan-market/quick/review-events 反映済。
-- **次アクション**: ① 今夜 22:30 JST 米寄りで SOXL 反転/継続＋K-046前提の初確認 ② **/update-regime 未実行**（マクロ7/5更新済・regime risk_on 6日stale）→ 次セッション再判定 ③ 次 /scan-market で **Meta(7/1)・Broadcom(6/4) をチャネル台帳 lookup で neutral 登録**し2層プロトコルを実地テスト。トラッカーは #11(KPI設計・保留)のみ。
+- **7/7 半導体 de-rating 継続（確定）**: 7/6 は AI楽観で SOXL +7.3%→$194.65 反発したが、**7/7 に Samsung Q2 記録ブローアウト(営業益+19倍/DRAM+44%)が sell-the-news の引き金**となり続落。SOXL **7/7 引け $165.28（7/6比 −15.1%）**、SOXX −5.1%→$551.69。pre $174 は底でなく続落＝**「急落翌日は即反発せず1-2日continuation」が実証**（K-046反証、K-050記録）。性質: **memory集中**(Kioxia -12%/Samsung・SK Hynix -9~10%主導、logic/装置は不参加~逆行高)・**sentiment/positioning主導でファンダ無傷**(hyperscaler capex +77%全社据置・memory sold-out・Broadcom AI+180%)・**SPYフラット/IWM緑の半導体→小型株ローテーション(systemic risk-offでない)**。downside SOXL$100はtail(SOXX $480-510=-12~16%要)。3xはSOXX実ボラ80%下でdecay -13~16pt/月=swing保有は減価トラップ。
+- **ポジション(要確認)**: SOXL ロング **10株@$196**(trade#24, 7/6filled)＋add指値 **$184×3株**(trade#25 placed)＋OCO(stop$168.88/TP$250)。**7/7引け$165.28<stop$168.88 ⟹ stop発火が濃厚**(7/2ラウト安値割れ=ノイズでなく構造的thesis否定の正しいstop-out)。add$184約定なら3株が無保護残存の可能性。**実約定はtoken失効で未確認→次セッション冒頭 /sync-saxo で確定(トラッカー起票済)**。
+- **取引傾向評価(この深掘りで確定)**: SOXL単独62%勝率/累計+91.7%＝核エッジは本物、但し **SOXS 0/3勝(-80%)=逆張り破滅・SOXS禁止はデータ正当化**、**保有中央値1日=宣言swing/実態day-trade**。現建玉は **K-048ドンピシャ**(高VXN・半導体劣後でのSOXL 3x dip-buy=機能stop無し→本来sizingで見送る型)。→ 3xをswingで握って$100回避を祈るのは instrument減価×自己の実行力の両方に反する=非推奨。勝ち筋=構造stopで規律退出→下で低レバ再構築。
+- **regime**: 7/8保存 risk_on(score1.21, VIX16.13)。半導体クレーターを macro吸収=**デカップリング確認**(VIXでなくVXN/SOXX-QQQ比で半導体固有ストレス捕捉)。予測#8 resolved TRUE(brier0.2025、但し7/7続落で広義反転は無効化)。
+- **Saxo**: 7/7 18時に再認証+keepalive起動(8h稼働後 02:32 JST 7/8 に refresh失効で終了、想定内)。**token今失効中**→次にSaxo要時 oauth_init から。scan-market 7/7実行=1event登録(7/7 sell-the-news de-rating)。
+- **次アクション**: ① **次セッション冒頭 /sync-saxo**(7/7実約定・無保護3株確認、要再認証) ② **/verify-knowledge K-046**(K-050反証反映) ③ de-rating継続 vs 下げ止まり監視(VXN低下/memory下げ止まり/SOXX $480-510接近が$100圏シグナル)。トラッカー: 上記2件+既存Todo(KPI設計/available_funds.py)。
 
 ## Data Architecture (ADR-001)
 
