@@ -29,12 +29,10 @@
 
 その場限りの判断・スタンスで、どのテーブルにも入らないが次セッションの前提になるものを、ここに**数行で上書き**する（肥大化禁止・履歴は残さない・append-only禁止）。永続化すべきものは knowledge/ADR へ昇格し、ここから消す。開いた作業そのものは作業トラッカー（Project #2、docs/worktracker.md）へ。
 
-- **半導体 de-rating 継続**: 7/7 Samsung Q2記録ブローアウトが sell-the-news の引き金→SOXL 7/7引け $165.28(7/6比 −15.1%)。**7/8 pre もさらに続落 $153.63(引け比 −7.0%, is_thin)**＝「急落翌日は即反発せず1-2日continuation」実証(**K-046反証**・K-050記録、検証は未実施でトラッカーに残す)。性質: memory集中・sentiment/positioning主導でファンダ無傷(capex据置・memory sold-out)・SPY/IWM堅調の半導体固有ストレス(systemic risk-offでない)。downside SOXL$100はtail。3xはswing保有で減価トラップ。
-- **ポジション(2026-07-08 /sync-saxo で実約定確定)**: SOXL ロング **13株**=10株@$196(trade#24)＋**add 3株@$165.40(trade#25, 指値$184が7/7続落で約定・filled反映済)**。**OCO実態=stop $100(OrderId 5421812528)/TP $250(…527)で10株のみ**。⚠️**ハンドオフの「stop$168.88発火濃厚」は誤り→実stopは$100で未発火・13株フル生存**。**add分3株は無保護**(現値$153.63で既に水面下)。10株は@$196から約−22%。
-- **取引傾向評価(既確定)**: SOXL単独62%勝率/累計+91.7%=核エッジは本物、但しSOXS 0/3勝=逆張り破滅(SOXS禁止はデータ正当化)、保有中央値1日=実態day-trade。現建玉はK-048型(機能stop無しの3x dip-buy)。勝ち筋=構造stopで規律退出→下で低レバ再構築。$100回避を祈る握りは非推奨。
-- **regime**: risk_on 継続(7/8朝 VIX16.1)。半導体クレーターを macro吸収=デカップリング(VXN/SOXX-QQQ比で半導体固有ストレス捕捉)。予測8/8 resolved。
-- **Saxo/インフラ**: **ADR-035 完了=`master-sensei-live` MCP サーバ稼働(5ツール: 残高/建玉/注文/コスト/現値)**。live 情報は ad-hoc python でなくこの MCP で取る。token は MCP 内で自動 refresh(keepalive はセッション終了で停止・次に /sync-saxo 等で明示起動)。#12 クローズ済。
-- **次アクション**: ① **/verify-knowledge K-046**(K-050反証反映、未実施) ② de-rating継続 vs 下げ止まり監視(VXN低下/memory下げ止まり/SOXX $480-510接近が$100圏シグナル) ③ 無保護3株の扱い判断。トラッカーTodo: K-046検証・KPI設計(#11)・OCO脚reconcile改修(新規)。
+- **半導体 de-rating→7/8反発(薄い)**: 7/6-7 de-rating後、**7/8 +5.77%反発**(SOXL引け$174.82、半導体主導SOXX>QQQ>SPY>IWM)。「翌日continuation」は反証済(→K-050 invalidated・K-047 validated・K-046 tested)。エッジ薄(翌日反発57.2%/σ8.6%)、SOXX/QQQ 0.79でローテーション未逆流。**7/9引けが決着ライン**(SOXX $551.69分水嶺/$544.65反応安値/$484=$100 tail圏)。
+- **ポジション(7/8引け$174.82)**: SOXL 13株=10@$196(−10.8%,OCO stop$100/TP$250)＋3@$165.40(+5.7%,無保護)。stop$100=口座36%risk=機能せず。**要是正: 7/9米寄り(22:30 JST)で$156-158構造stop化 or 7株トリム**、無保護3株統合(K-042/K-023/K-043: stop設置≠成行退出、K-023で確定higher low後にタイト化)。
+- **regime**: risk_on(7/8引けVIX16.90・コンタンゴ復元)。半導体ストレスはマクロ非波及だがVXN/VIX 1.65でテック固有stress未解消(反発≠解消)。
+- **参照**: 詳細は knowledge(K-047/K-050/K-048/K-041)・GDR-005(多視点ディベート型)・トラッカー(#14 regime.py改修/#11 KPI)。SOXS禁止・保有中央値1日(day-trade実態)・$100回避の祈り握り非推奨は既確定。次決着=7/9米引け(7/10 05:00 JST)、7/14 JPM等Q2決算でローテーション再燃確認。
 
 ## Data Architecture (ADR-001)
 
