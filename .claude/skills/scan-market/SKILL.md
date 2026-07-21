@@ -121,6 +121,26 @@ PYEOF
 
 各カテゴリで最低1回はWebSearchを実行する。
 
+### クエリ構築規約（K-056、必須）
+
+このスキルは**結果を知った後**に走る（価格は既にparquetにあり、含み損も見えている）。
+そのため検索クエリの語彙が探索範囲を決めてしまう。以下を守る。
+
+- **結果語をクエリに入れない**: `selloff` / `plunge` / `crash` / `fell` / `miss` / `spike` /
+  `bear market` / `correction` / `concerns` / `escalation` など、調べる前から方向を固定する語。
+  「なぜ下がったか」を聞くと、検索エンジンは下がった理由の記事だけを返す。
+- **同一対象に中立枠と逆方向枠を各1本**: 下げを調べるなら `outlook` / `results` /
+  `what happened` に加えて `price targets` / `upgrade` / `buy` 側も投げる。
+  実測では、結果語で固めた28本の検索が、企業の自社イベント（AMD Advancing AI）と
+  業界団体の出荷実績（SIA月次売上）という**予定カタリストと一次データを構造的に取りこぼした**。
+- **impact判定に realized price を書かない**: impact_reasoning に「初動後に戻した」
+  「翌日反発した」等を根拠として書いた時点で look-ahead 混入とみなし、判定をやり直す。
+  ADR-034 が禁じるのは inclusion の look-ahead だが、impact に混入すると
+  `/review-events` の事後採点が自己成就になり、より有害。
+- **帰属の断面テスト（K-055）**: セクター固有か広範 risk-off かは、
+  SOXX / QQQ / SPY / IWM の1倍指数リターンの序列で判定する。
+  **株安局面の金利低下を「割引率チャネル未発火」の根拠に使わない**（質への逃避と区別不能）。
+
 ### 3. イベント登録
 
 #### 3a. impact判定前のlesson照合（K-027）
