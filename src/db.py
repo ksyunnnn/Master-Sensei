@@ -304,6 +304,19 @@ class SenseiDB:
     def update_event_status(self, event_id: int, status: str):
         self.conn.execute("UPDATE events SET status = ? WHERE id = ?", [status, event_id])
 
+    def set_event_source_url(self, event_id: int, source_url: str):
+        """出典URLのみを訂正する。
+
+        add_event の dedup は status を見ないので dismiss→再登録では新規行にならない
+        (tests/test_db.py::TestEvents::test_add_event_dedup_ignores_status)。
+        訂正対象を出典URLに限定するのは、impact/reasoning の事後書き換え＝後知恵バイアス
+        の混入を防ぐため(ADR-018)。判定を変えたい時はレビュー経路を使う。
+        """
+        found = self.conn.execute("SELECT id FROM events WHERE id = ?", [event_id]).fetchone()
+        if not found:
+            raise ValueError(f"event not found: id={event_id}")
+        self.conn.execute("UPDATE events SET source_url = ? WHERE id = ?", [source_url, event_id])
+
     # ── predictions ──
 
     def add_prediction(

@@ -97,6 +97,26 @@ class TestEvents:
         assert len(active) == 1
         assert active[0]["category"] == "fed"
 
+    def test_add_event_dedup_ignores_status(self, db):
+        """dismissed 行も dedup 対象。dismiss→同内容で再登録しても新規行はできず
+        既存 id が返るだけなので、内容の訂正には set_event_source_url 等を使う。"""
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        eid = db.add_event(ts, "tariff", "Same event", source_url="https://wrong.example.com")
+        db.update_event_status(eid, "dismissed")
+        eid2 = db.add_event(ts, "tariff", "Same event", source_url="https://right.example.com")
+        assert eid2 == eid
+        assert db.get_active_events() == []
+
+    def test_set_event_source_url(self, db):
+        ts = datetime(2026, 3, 26, 10, 0, tzinfo=JST)
+        eid = db.add_event(ts, "tariff", "Test event", source_url="https://wrong.example.com")
+        db.set_event_source_url(eid, "https://right.example.com")
+        assert db.get_active_events()[0]["source_url"] == "https://right.example.com"
+
+    def test_set_event_source_url_unknown_id_raises(self, db):
+        with pytest.raises(ValueError, match="event not found"):
+            db.set_event_source_url(9999, "https://right.example.com")
+
 
 class TestPredictions:
     def test_add_prediction(self, db):
@@ -335,7 +355,7 @@ class TestRegime:
         assert regime["vix3m_value"] is None or math.isnan(regime["vix3m_value"])
 
 
-class TestEvents:
+class TestEventSource:
     def test_add_event_with_source(self, db):
         """events.source列で登録経路を記録"""
         ts = datetime(2026, 3, 28, 10, 0, tzinfo=JST)
