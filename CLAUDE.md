@@ -35,7 +35,7 @@
 - **7月の下げの主因(a)AI capexのROI懐疑は反証された**: 需要側(Microsoft Azure +43%、Amazon capex **$200B→$220B**・理由はメモリ価格上昇・AWS backlog $496B)と装置側(Lam Research **CY2026 WFE $140B→低位$150B台**、NAND売上前期比倍増)の双方が上方修正。K-054の need(数量)層は複数の独立ソースで更新。ただし **return(収益性)層は未解決**(Metaは売上+28%でも純利益-14%)。副因(b)中国国産DUVは相場が反応せず。
 - **予測は全10件解決済み(pending 0)**。#10(SOXLが7/31までに終値$128.15超え、conf 0.35)は **false** で確定 — 終値$114.72。ただし**日中高値$133.88は閾値を超えており「タッチ」条件なら true だった**(二値条件の書き方が結果を分けた事例、outcome_notes に記録)。Brier 0.338→**0.3164**。
 - **regime**: 7/31記録 **risk_on(0.64)**。VIX17.26/VIX3M19.50/HY2.87/YC0.45/Brent90.22(OILのみマイナス)。**VIX3Mのstaleは解消**(7/28-30着弾。ただし7/20-27の6営業日は metadata_macro.json の end_date 先行で恒久欠損)。翌日確定値は VIX **15.99**/VIX3M 19.02/VXN 27.55(7/30)。**VXN-VIXスプレッドは7/30時点でも約10.5と98%ile圏が継続**(中央値4.21)＝マクロrisk_onとセクター固有ストレスの乖離は解消していない。
-- **参照**: 既存 K-041/K-044/K-052/K-054/K-055/K-057/K-058/K-059、K-040(往復break-even 0.72-0.87%、Saxo実測は0.776%)。scan-market は 7/31 に6件登録済み(Lam Research・PCE/GDP・Amazon・Apple・米Iran相互攻撃・Abqaiq)。Saxo関連注文の**距離制限実測**(+43.2%通過/+52.6%拒否、安全域+40%以内)は`docs/api/saxo/order-fields.md`。SOXS禁止は既確定。再開時は**token失効しているのでブラウザ再認証から**(issue#13)。
+- **参照**: 既存 K-041/K-044/K-052/K-054/K-055/K-057/K-058/K-059、K-040(往復break-even 0.72-0.87%、Saxo実測は0.776%)。scan-market は 7/31 に6件登録済み(Lam Research・PCE/GDP・Amazon・Apple・米Iran相互攻撃・Abqaiq)。Saxo関連注文の**距離制限実測**(+43.2%通過/+52.6%拒否、安全域+40%以内)は`docs/api/saxo/order-fields.md`。SOXS禁止は既確定。再開時は**token失効しているのでブラウザ再認証から**。keepaliveは8/1 22:13起動→3回正常roll後、**00:58→02:09の71分の空白(マシンスリープ)で refresh 期限を11分超過して死亡**(02:10)。**許容スリープは roll 直後を除き数分しかない**(refresh寿命60分・margin5分)構造的欠陥と判明し、**issue#13を再オープン**(3度目の再発)。
 
 ## Data Architecture (ADR-001)
 
