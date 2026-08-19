@@ -97,6 +97,30 @@ class TestEvents:
         assert len(active) == 1
         assert active[0]["category"] == "fed"
 
+
+    def test_update_event_status_rejects_unknown_value(self, db):
+        """想定外の status を弾く。
+
+        バリデーションが無かった頃に events.id=330 が status='active' で登録され、
+        unreviewed でも reviewed でもない状態になってレビュー待ち行列から消えた
+        (2026-08-20 の DB 監査で検出)。列挙を強制して再発を防ぐ。
+        """
+        eid = db.add_event(
+            event_timestamp=now_jst(), category="market", summary="s",
+            impact="neutral", impact_reasoning="r", relevance="direct")
+        with pytest.raises(ValueError, match="status must be one of"):
+            db.update_event_status(eid, "active")
+
+    def test_update_event_status_accepts_known_values(self, db):
+        eid = db.add_event(
+            event_timestamp=now_jst(), category="market", summary="s2",
+            impact="neutral", impact_reasoning="r", relevance="direct")
+        for st in ("unreviewed", "reviewed", "dismissed"):
+            db.update_event_status(eid, st)
+            got = db.conn.execute(
+                "SELECT status FROM events WHERE id = ?", [eid]).fetchone()[0]
+            assert got == st
+
     def test_add_event_dedup_ignores_status(self, db):
         """dismissed 行も dedup 対象。dismiss→同内容で再登録しても新規行はできず
         既存 id が返るだけなので、内容の訂正には set_event_source_url 等を使う。"""

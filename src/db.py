@@ -301,7 +301,18 @@ class SenseiDB:
             "SELECT * FROM events WHERE status != 'dismissed' ORDER BY event_timestamp DESC"
         ).fetchdf().to_dict("records")
 
+    EVENT_STATUSES = {"unreviewed", "reviewed", "dismissed"}
+
     def update_event_status(self, event_id: int, status: str):
+        """イベントのレビュー状態を更新する。
+
+        列挙外の値を弾く。バリデーションが無かった頃に status='active' の行が
+        1件生まれ、unreviewed でも reviewed でもないためレビュー待ち行列から
+        消えていた (2026-08-20 の DB 監査で検出)。trades/knowledge の
+        status 更新と同じく、書き込み口で列挙を強制する。
+        """
+        if status not in self.EVENT_STATUSES:
+            raise ValueError(f"status must be one of {self.EVENT_STATUSES}")
         self.conn.execute("UPDATE events SET status = ? WHERE id = ?", [status, event_id])
 
     def set_event_source_url(self, event_id: int, source_url: str):
