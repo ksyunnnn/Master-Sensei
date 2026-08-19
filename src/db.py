@@ -282,6 +282,9 @@ class SenseiDB:
         source: str = "manual",
     ) -> int:
         _require_aware(event_timestamp, "event_timestamp")
+        if category not in self.EVENT_CATEGORIES:
+            raise ValueError(
+                f"category must be one of {sorted(self.EVENT_CATEGORIES)}")
         existing = self.conn.execute(
             "SELECT id FROM events WHERE event_timestamp = ? AND category = ? AND summary = ?",
             [event_timestamp, category, summary],
@@ -300,6 +303,13 @@ class SenseiDB:
         return self.conn.execute(
             "SELECT * FROM events WHERE status != 'dismissed' ORDER BY event_timestamp DESC"
         ).fetchdf().to_dict("records")
+
+    # イベント分類 (ADR-037)。scan-market が生成する6分類 + 手動登録用
+    # corporate_action (例: SOXS 1:20 リバーススプリット、events.id=1)。
+    EVENT_CATEGORIES = {
+        "geopolitical", "fed", "semiconductor", "oil", "tariff", "market",
+        "corporate_action",
+    }
 
     EVENT_STATUSES = {"unreviewed", "reviewed", "dismissed"}
 
@@ -498,6 +508,18 @@ class SenseiDB:
 
     # ── knowledge ──
 
+    # 知見の分類 (ADR-037)。検証が無かった頃に market/market_pattern/market_structure/
+    # pattern/microstructure 等 15 種へ drift したため列挙で固定する。
+    KNOWLEDGE_CATEGORIES = {
+        "market_pattern",    # X が Y を予測するか等、市場の反復挙動・統計的性質
+        "microstructure",    # 執行・板・時間帯・コスト・約定の実務
+        "risk_management",   # サイジング・stop・利確・ラダー
+        "attribution",       # 急落/急騰の原因帰属の判定法
+        "regime",            # レジーム区分そのものの性質
+        "meta",              # 自分の推論・バイアス・予測の質・方法論
+        "reference",         # データソース・API・ツールの事実
+    }
+
     def add_knowledge(
         self,
         knowledge_id: str,
@@ -511,6 +533,9 @@ class SenseiDB:
         tldr: str = None,
         related_knowledge_ids: list[str] = None,
     ) -> str:
+        if category not in self.KNOWLEDGE_CATEGORIES:
+            raise ValueError(
+                f"category must be one of {sorted(self.KNOWLEDGE_CATEGORIES)}")
         if discovered_date is None:
             discovered_date = today_jst()
 
@@ -543,6 +568,23 @@ class SenseiDB:
             WHERE list_contains(related_knowledge_ids, ?)
             ORDER BY id
         """, [knowledge_id]).fetchdf().to_dict("records")
+
+    def set_knowledge_category(self, knowledge_id: str, category: str):
+        """知見の分類ラベルを付け替える (ADR-037)。
+
+        category は「どの棚に置くか」の索引ラベルであって、市場判断そのものでは
+        ないため、事後の付け替えは ADR-018 が禁じる後知恵の書き換えに当たらない
+        (content/evidence は触らない)。drift した旧ラベルからの移行に使う。
+        """
+        if category not in self.KNOWLEDGE_CATEGORIES:
+            raise ValueError(
+                f"category must be one of {sorted(self.KNOWLEDGE_CATEGORIES)}")
+        found = self.conn.execute(
+            "SELECT id FROM knowledge WHERE id = ?", [knowledge_id]).fetchone()
+        if not found:
+            raise ValueError(f"knowledge not found: id={knowledge_id}")
+        self.conn.execute(
+            "UPDATE knowledge SET category = ? WHERE id = ?", [category, knowledge_id])
 
     def update_knowledge_status(self, knowledge_id: str, status: str, reason: str = None):
         valid = {"hypothesis", "tested", "validated", "invalidated"}

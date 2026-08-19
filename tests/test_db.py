@@ -98,6 +98,22 @@ class TestEvents:
         assert active[0]["category"] == "fed"
 
 
+    def test_add_event_rejects_unknown_category(self, db):
+        """category は列挙 (ADR-037)。scan-market の6分類 + 手動用 corporate_action。"""
+        with pytest.raises(ValueError, match="category must be one of"):
+            db.add_event(
+                event_timestamp=now_jst(), category="crypto", summary="s",
+                impact="neutral", impact_reasoning="r", relevance="direct")
+
+    def test_add_event_accepts_known_categories(self, db):
+        for n, cat in enumerate(sorted(SenseiDB.EVENT_CATEGORIES)):
+            eid = db.add_event(
+                event_timestamp=now_jst(), category=cat, summary=f"s{n}",
+                impact="neutral", impact_reasoning="r", relevance="direct")
+            got = db.conn.execute(
+                "SELECT category FROM events WHERE id = ?", [eid]).fetchone()[0]
+            assert got == cat
+
     def test_update_event_status_rejects_unknown_value(self, db):
         """想定外の status を弾く。
 
@@ -232,6 +248,36 @@ class TestKnowledge:
         db.add_knowledge("K-001", "market_pattern", "Old", "Evidence", discovered_date=date(2025, 1, 1))
         stale = db.get_stale_knowledge(days=180)
         assert len(stale) == 1
+
+
+    def test_add_knowledge_rejects_unknown_category(self, db):
+        """category は列挙。検証が無かった頃に15種へ drift した (ADR-037)。"""
+        with pytest.raises(ValueError, match="category must be one of"):
+            db.add_knowledge(
+                knowledge_id="K-999", category="market_structure",
+                content="c", evidence="e")
+
+    def test_add_knowledge_accepts_known_categories(self, db):
+        for n, cat in enumerate(sorted(SenseiDB.KNOWLEDGE_CATEGORIES)):
+            kid = db.add_knowledge(
+                knowledge_id=f"K-9{n:02d}", category=cat, content="c", evidence="e")
+            got = db.conn.execute(
+                "SELECT category FROM knowledge WHERE id = ?", [kid]).fetchone()[0]
+            assert got == cat
+
+    def test_set_knowledge_category_validates_and_updates(self, db):
+        kid = db.add_knowledge(
+            knowledge_id="K-998", category="meta", content="c", evidence="e")
+        db.set_knowledge_category(kid, "microstructure")
+        got = db.conn.execute(
+            "SELECT category FROM knowledge WHERE id = ?", [kid]).fetchone()[0]
+        assert got == "microstructure"
+        with pytest.raises(ValueError, match="category must be one of"):
+            db.set_knowledge_category(kid, "pattern")
+
+    def test_set_knowledge_category_unknown_id_raises(self, db):
+        with pytest.raises(ValueError, match="not found"):
+            db.set_knowledge_category("K-000", "meta")
 
 
 class TestKnowledgeLinking:
