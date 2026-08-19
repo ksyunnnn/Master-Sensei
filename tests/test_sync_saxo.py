@@ -107,6 +107,7 @@ def test_escalation_stops_when_resolved():
     client.get_trade_reports.return_value = []
     client.get_bookings.return_value = []
     client.get_accounts.return_value = [{"ClientKey": "C1"}]
+    client.get_closed_positions.return_value = []  # 決済なし=booking待ちではない
     breaks = sync_saxo._reconcile_live_with_escalation(
         db, client, {"SOXL": 8.0}, "2026-06-29", full=False)
     assert breaks == []
@@ -119,7 +120,32 @@ def test_escalation_skipped_when_full():
     db.reconcile_live_positions.return_value = [
         {"instrument": "SOXL", "live_net_qty": 8, "ledger_net_qty": 5}]
     client = MagicMock()
+    client.get_closed_positions.return_value = []
     breaks = sync_saxo._reconcile_live_with_escalation(
         db, client, {"SOXL": 8.0}, "2026-06-29", full=True)
     assert len(breaks) == 1
     assert db.reconcile_live_positions.call_count == 1
+
+
+def test_booking_pending_drops_break_before_escalating():
+    """決済当日の台帳余剰は closedpositions で benign 化し、窓拡大を一切走らせない。
+
+    2026-08-19 の SOXL 24株決済では tail→30d→90d→全年 の4段階が全て空振りした。
+    reports/trades に sell 行が無い以上、窓をどれだけ広げても埋まらないため。
+    """
+    db = MagicMock()
+    db.reconcile_live_positions.return_value = [
+        {"instrument": "SOXL", "live_net_qty": 0.0, "ledger_net_qty": 24.0}]
+    client = MagicMock()
+    closed = MagicMock()
+    closed.symbol = "SOXL"
+    closed.amount = 24.0
+    closed.signed_amount.return_value = -24.0
+    client.get_closed_positions.return_value = [closed]
+
+    breaks = sync_saxo._reconcile_live_with_escalation(
+        db, client, {}, "2026-08-20", full=False)
+
+    assert breaks == []
+    assert db.reconcile_live_positions.call_count == 1  # 窓拡大を走らせない
+    client.get_trade_reports.assert_not_called()        # 再mirror も無し

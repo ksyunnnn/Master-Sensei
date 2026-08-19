@@ -145,6 +145,80 @@ class OpenOrder:
 
 
 @dataclass
+class ClosedPosition:
+    """決済済ポジション (open→close ペア) の意味的 snapshot (ADR-026)。
+
+    公式 field 定義・実測値は docs/api/saxo/closed-position-fields.md。
+    `reports/trades` の booking は T+1 だが本層は**決済当日に返る**ため、
+    `/sync-saxo` の「台帳に余分」break を booking 待ちか真の乖離かに切り分ける。
+
+    **`OrderId` を持たない**ので `trades.broker_ref` と 1対1 結合できない
+    (`*_position_id` は PositionId であって OrderId ではない)。照合は
+    instrument 単位の数量合計に留める。
+
+    Attributes:
+        opening_side: **建玉を開いた方向** ("Buy"/"Sell")。決済の方向ではない。
+            台帳側の行種別は `ledger_side()` で反転して求める。
+        pnl_instrument / pnl_base: 価格変動のみの損益 (instrument 通貨 / 口座通貨)。
+        pnl_fx_conversion_base: FX 変換損益 (口座通貨)。円口座 × USD 建で発生する
+            独立コスト源で、価格変動損益とは別に効く。
+        closed_pnl_*: 実現損益 (**手数料を含まない**)。all-in は `all_in_pnl_base()`。
+        cost_*: Saxo は**負値**で返す (原文保持)。コスト額は `total_cost_*()`。
+    """
+    unique_id: str
+    account_id: str
+    uic: int
+    symbol: str
+    amount: float                    # 決済数量 (常に正)
+    opening_side: str                # "Buy"/"Sell" = 建玉を開いた方向
+    open_price: float
+    closing_price: float
+    execution_time_open_utc: str     # UTC ISO8601 原文
+    execution_time_close_utc: str    # UTC ISO8601 原文
+    opening_position_id: str         # PositionId (OrderId ではない)
+    closing_position_id: str         # PositionId (OrderId ではない)
+    pnl_instrument: float
+    pnl_base: float
+    pnl_fx_conversion_base: float
+    closed_pnl_instrument: float
+    closed_pnl_base: float
+    cost_opening_instrument: float   # 負値
+    cost_closing_instrument: float   # 負値
+    cost_opening_base: float         # 負値
+    cost_closing_base: float         # 負値
+    closing_method: str
+    asset_type: str
+    instrument_currency: str
+
+    def ledger_side(self) -> str:
+        """この決済が台帳 (account_transactions) に生む行の種別を返す。
+
+        買い建ての決済は sell 行、売り建ての決済は buy 行になる
+        (`opening_side` は建玉方向なので反転する)。
+        """
+        return "sell" if self.opening_side == "Buy" else "buy"
+
+    def signed_amount(self) -> float:
+        """台帳 net 数量への寄与 (buy=+ / sell=−)。"""
+        return -self.amount if self.ledger_side() == "sell" else self.amount
+
+    def total_cost_instrument(self) -> float:
+        """往復コストの絶対額 (instrument 通貨)。"""
+        return abs(self.cost_opening_instrument) + abs(self.cost_closing_instrument)
+
+    def total_cost_base(self) -> float:
+        """往復コストの絶対額 (口座通貨)。"""
+        return abs(self.cost_opening_base) + abs(self.cost_closing_base)
+
+    def all_in_pnl_base(self) -> float:
+        """手数料込みの実現損益 (口座通貨)。
+
+        `closed_pnl_base` は手数料を含まないので `cost_*_base` (負値) を加算する。
+        """
+        return self.closed_pnl_base + self.cost_opening_base + self.cost_closing_base
+
+
+@dataclass
 class TradeCost:
     """単一銘柄・サイズの往復取引コスト見積り (ADR-029)。
 
@@ -640,6 +714,71 @@ class SaxoClient:
                 order_type=o["OpenOrderType"],
                 price=float(o["Price"]) if o.get("Price") is not None else None,
                 status=o["Status"],
+            ))
+        return out
+
+    def get_closed_positions(self) -> list["ClosedPosition"]:
+        """決済済ポジションを意味的 snapshot のリストで返す (ADR-026)。
+
+        `reports/trades` の booking は T+1 だが本層は**決済当日に返る**。
+        `/sync-saxo` の「台帳に余分」break が booking 待ちか真の乖離かの切り分けに使う
+        (`SenseiDB.explain_ledger_surplus_by_closed_positions`)。
+        全履歴は返らない (直近の未決済分のみ) ので成績集計には使わない。
+
+        `?FieldGroups=ClosedPosition,DisplayAndFormat` は必須。ClosedPosition を
+        要求しないと数量・価格・損益が丸ごと欠落する (positions の PositionBase と同型)。
+        required field 欠落時は `SaxoAuthError` (静かな誤照合を防ぐ)。
+
+        See docs/api/saxo/closed-position-fields.md
+        """
+        resp = self._api_get(
+            "/port/v1/closedpositions/me"
+            "?FieldGroups=ClosedPosition,DisplayAndFormat"
+        )
+        out: list[ClosedPosition] = []
+        for item in resp.get("Data", []):
+            cp = item.get("ClosedPosition", {})
+            required = ("AccountId", "Uic", "Amount", "BuyOrSell", "OpenPrice",
+                        "ClosingPrice", "ExecutionTimeClose",
+                        "OpeningPositionId", "ClosingPositionId")
+            missing = [k for k in required if k not in cp]
+            if missing:
+                raise SaxoAuthError(
+                    f"ClosedPosition response missing fields {missing}. "
+                    "Saxo API may have changed; verify "
+                    "docs/api/saxo/closed-position-fields.md"
+                )
+            daf = item.get("DisplayAndFormat", {})
+            uic = int(cp["Uic"])
+            out.append(ClosedPosition(
+                unique_id=str(item.get("ClosedPositionUniqueId", "")),
+                account_id=cp["AccountId"],  # see closed-position-fields.md
+                uic=uic,
+                symbol=_normalize_symbol(daf.get("Symbol"), uic),
+                amount=abs(float(cp["Amount"])),
+                opening_side=cp["BuyOrSell"],  # 建玉方向。決済方向ではない
+                open_price=float(cp["OpenPrice"]),
+                closing_price=float(cp["ClosingPrice"]),
+                execution_time_open_utc=str(cp.get("ExecutionTimeOpen", "")),
+                execution_time_close_utc=str(cp["ExecutionTimeClose"]),
+                opening_position_id=str(cp["OpeningPositionId"]),
+                closing_position_id=str(cp["ClosingPositionId"]),
+                pnl_instrument=float(cp.get("ProfitLossOnTrade", 0.0) or 0.0),
+                pnl_base=float(cp.get("ProfitLossOnTradeInBaseCurrency", 0.0) or 0.0),
+                pnl_fx_conversion_base=float(
+                    cp.get("ProfitLossCurrencyConversion", 0.0) or 0.0),
+                closed_pnl_instrument=float(cp.get("ClosedProfitLoss", 0.0) or 0.0),
+                closed_pnl_base=float(
+                    cp.get("ClosedProfitLossInBaseCurrency", 0.0) or 0.0),
+                cost_opening_instrument=float(cp.get("CostOpening", 0.0) or 0.0),
+                cost_closing_instrument=float(cp.get("CostClosing", 0.0) or 0.0),
+                cost_opening_base=float(
+                    cp.get("CostOpeningInBaseCurrency", 0.0) or 0.0),
+                cost_closing_base=float(
+                    cp.get("CostClosingInBaseCurrency", 0.0) or 0.0),
+                closing_method=str(cp.get("ClosingMethod", "")),
+                asset_type=str(cp.get("AssetType", "")),
+                instrument_currency=str(daf.get("Currency", "")),
             ))
         return out
 

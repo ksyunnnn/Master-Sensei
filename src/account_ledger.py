@@ -197,3 +197,53 @@ def merge_transactions_parquet(rows: list[dict], path: Path) -> int:
     combined = combined.sort_values("trade_date").reset_index(drop=True)
     combined.to_parquet(path, engine="pyarrow", index=False)
     return len(combined)
+
+
+def explain_ledger_surplus_by_closed_positions(
+    live_breaks: list[dict],
+    closed_positions: list,
+) -> tuple[list[dict], list[dict]]:
+    """live建玉↔台帳 の break を、決済済ポジションで説明できるか判定する (ADR-030)。
+
+    **なぜ要るか**: 執行事実層 `account_transactions` の供給源 `reports/trades` は
+    booking が T+1 のため、決済当日は台帳に sell 行が入らない。その結果
+    「ライブ建玉=0 / 台帳net=24」を `reconcile_live_positions` が**真の乖離と誤報**する
+    (2026-08-19 の SOXL 24株決済で実際に誤報し、照合が前に進まなくなった)。
+    `closedpositions` は同じ Saxo 由来でありながら決済当日に読めるので、
+    その差分を「booking 待ち (benign)」と説明できる。
+
+    Args:
+        live_breaks: `SenseiDB.reconcile_live_positions()` の返り値。各要素は
+            `{"instrument", "live_net_qty", "ledger_net_qty"}`。
+        closed_positions: `SaxoClient.get_closed_positions()` の返り値
+            (`ClosedPosition` のリスト)。`signed_amount()` が台帳 net への寄与を
+            符号付きで返す (買い建ての決済 = sell 行 = 負)。
+
+    Returns:
+        `(unexplained, explained)` のタプル。
+        - `unexplained`: 説明できず人間の確認が要る break (入力と同じ dict 形式)。
+        - `explained`: booking 待ちと判定した break に
+          `{"closed_qty": <決済数量の絶対値>}` を添えた dict のリスト。
+
+    設計上の制約:
+        `closedpositions` は `OrderId` を返さないため個々の `trades` 行と 1対1 結合
+        できない。判定は **instrument 単位の数量合計**に留める
+        (docs/api/saxo/closed-position-fields.md の「罠2」)。
+    """
+    # instrument ごとに「booking が届いたら台帳 net はどこへ動くか」を先取りする。
+    closed_by_symbol: dict[str, list] = {}
+    for cp in closed_positions:
+        closed_by_symbol.setdefault(cp.symbol, []).append(cp)
+
+    unexplained: list[dict] = []
+    explained: list[dict] = []
+    for b in live_breaks:
+        cps = closed_by_symbol.get(b["instrument"], [])
+        projected = b["ledger_net_qty"] + sum(cp.signed_amount() for cp in cps)
+        # 反映後の台帳がライブ建玉と過不足なく一致した時だけ benign にする。
+        # 部分一致を許すと booking 待ちに紛れた真の乖離を握り潰すため。
+        if cps and abs(projected - b["live_net_qty"]) < 1e-9:
+            explained.append({**b, "closed_qty": sum(cp.amount for cp in cps)})
+        else:
+            unexplained.append(b)
+    return unexplained, explained

@@ -933,6 +933,53 @@ class SenseiDB:
                 })
         return breaks
 
+    def find_unbooked_closures(
+        self, closed_positions: list, transactions_parquet: str
+    ) -> list[dict]:
+        """closedpositions の決済のうち台帳に未計上のものを返す (ADR-036)。
+
+        **同日往復の死角を塞ぐ層** (issue#20)。建てて同日に決済すると
+        `positions/me` も `orders/me` も空、`reports/trades` は booking 遅延で未計上に
+        なるため、台帳 net も trades 申告も 0 で一致し 3層照合が
+        「✓ 差分なし」と誤報する。決済は closedpositions にだけ現れるので、
+        そこから台帳に無い決済脚を名指しする。
+
+        `closedpositions` は `OrderId` を返さないため、台帳行との突合は
+        (instrument, side, quantity, price) の指紋で行う
+        (docs/api/saxo/closed-position-fields.md の「罠2」)。
+        台帳ファイルが無い場合は全件を未計上として返す (黙って空を返さない)。
+        """
+        if not closed_positions:
+            return []
+        try:
+            rows = self.conn.execute(
+                "SELECT instrument, type, quantity, price_per_unit "
+                f"FROM read_parquet('{transactions_parquet}')"
+            ).fetchall()
+        except (duckdb.IOException, duckdb.CatalogException):
+            rows = []
+
+        unbooked: list[dict] = []
+        for cp in closed_positions:
+            side = cp.ledger_side()
+            found = any(
+                sym == cp.symbol
+                and typ == side
+                and abs(float(qty) - cp.amount) < 1e-9
+                and abs(float(price) - cp.closing_price) < 1e-6
+                for sym, typ, qty, price in rows
+            )
+            if not found:
+                unbooked.append({
+                    "instrument": cp.symbol,
+                    "side": side,
+                    "quantity": cp.amount,
+                    "closing_price": cp.closing_price,
+                    "execution_time_close_utc": cp.execution_time_close_utc,
+                    "closing_position_id": cp.closing_position_id,
+                })
+        return unbooked
+
     def reconcile_open_orders(self, live_order_ids: set[str]) -> list[dict]:
         """ライブ未約定注文 (OrderId 集合) vs trades の placed 申告を突合 (ADR-030)。
 

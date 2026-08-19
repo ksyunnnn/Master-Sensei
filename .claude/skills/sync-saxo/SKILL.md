@@ -9,6 +9,7 @@ Saxo 照合ワークフローを実行してください (ADR-030)。判断層 `
 差分がなければ数秒・1ステップで終わる。重い全 mirror は走らせず、
 `scripts/sync_saxo.py` が「無言 token → テール窓 mirror → **3層照合**」を機械的に実行する。
 3層 = ①ライブ建玉↔台帳 ②台帳↔trades ③ライブ注文↔trades placed（ADR-030 Phase 7）。
+加えて **closedpositions 説明層**が booking 遅延(T+1)を切り分ける（ADR-036）。
 **口座状況も注文も全部スクリプトが照合する**（人間が手でライブを引いて突き合わせる作業は無い）。
 
 ## タイムゾーン
@@ -36,8 +37,15 @@ python scripts/sync_saxo.py
   2. **台帳 net ↔ trades 申告** — クローズ済未反映/未記録エントリーの検出(従来)。
   3. **ライブ注文 ↔ trades placed** — placed の改定/不発/未記録の検出(台帳に出ない層)。
   全層一致なら `✓ 差分なし (ライブ建玉↔台帳↔trades 一致 / 注文も一致)` で終了。
+- **closedpositions 説明層 (ADR-036)**: 決済当日は reports/trades が booking 未着で
+  台帳に sell 行が入らない。`/port/v1/closedpositions/me` を1コール取得し、
+  ①「ライブ建玉=0 / 台帳net>0」が決済で過不足なく説明できれば `ℹ [booking待ち]` として
+  break から外す（**窓拡大の前**に判定する。決済当日の窓拡大は必ず空振りするため）。
+  ②台帳に対応する決済脚が無いものを `ℹ [未計上]` と名指しする（同日往復の死角、issue#20）。
+  未計上がある時は `✓ break なし (ただし未計上の決済 N件)` と表示し「差分なし」と断言しない。
 
-終了コード: `0`=差分なし / `1`=break あり / `2`=token 失効(`AUTH_REQUIRED`)。
+終了コード: `0`=break なし（未計上の決済が残っていても 0） / `1`=break あり /
+`2`=token 失効(`AUTH_REQUIRED`)。
 
 ### 2. `AUTH_REQUIRED`(exit 2)が出たら — Claude が認証を起動する
 
@@ -73,7 +81,11 @@ keepalive は refresh token を失効直前に1回だけ roll し以降の acces
 
 **修正は SenseiDB メソッド経由のみ**。物理削除はしない(ADR-018 後知恵バイアス排除)。
 修正対象は判断層 `trades` のみ(事実層 `account_transactions` は手書きしない)。
-修正後にもう一度 `python scripts/sync_saxo.py` を実行し、`✓ 差分なし` を確認する。
+修正後にもう一度 `python scripts/sync_saxo.py` を実行し、`✓` 行を確認する。
+
+**`ℹ [booking待ち]` / `ℹ [未計上]` は break ではない**（人間の修正対象でもない）。
+reports/trades への計上を待ち、台帳に sell 行が入ってから `close_trade()` する。
+台帳より先に `trades` を閉じると 台帳↔trades が新たに破れる（3層照合は台帳を真とするため）。
 
 ## 注意
 

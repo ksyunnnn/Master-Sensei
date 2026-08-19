@@ -9,8 +9,11 @@
      reports/trades + bookings を再取得し、broker_ref で upsert マージ (全年 mirror を回さない)。
      `--full` で全年に倒せる (窓より前の遡及訂正を拾う逃げ道)。
   3. **3層照合** — ライブ Saxo (建玉+注文) ↔ 執行事実層(parquet) ↔ 判断層 trades を突合:
-     a. **live建玉 ↔ 台帳 net** … mirror 漏れ検出。乖離時は窓を段階拡大して**自動再mirror**
-        (tail→30d→90d→全年)、各段階で再照合し解消した時点で止める (重い全年は最後の手段)。
+     a. **live建玉 ↔ 台帳 net** … mirror 漏れ検出。乖離時はまず `closedpositions` で
+        **booking 未着 (T+1) の決済を benign 除外**し、それでも残る分だけ窓を段階拡大して
+        **自動再mirror** (tail→30d→90d→全年)、各段階で再照合し解消した時点で止める
+        (重い全年は最後の手段)。決済当日は reports/trades に sell 行が無く窓拡大が
+        必ず空振りするため、closedpositions 判定を窓拡大より前に置く。
      b. **台帳 net ↔ trades 申告** … クローズ済未反映/未記録エントリーの検出 (従来層)。
      c. **liveライブ注文 ↔ trades placed** … placed の改定/不発/未記録の検出 (台帳に出ない層)。
      どの層も差分が無ければ `✓` で終了。差分は層ごとに分類して人間に報告する。
@@ -33,6 +36,7 @@ from src.account_ledger import (
     DEFAULT_FROM_DATE,
     DEFAULT_OVERLAP_DAYS,
     cash_bookings_to_rows,
+    explain_ledger_surplus_by_closed_positions,
     latest_trade_date,
     merge_transactions_parquet,
     trade_reports_to_rows,
@@ -109,14 +113,26 @@ def _mirror_window_days(client: SaxoClient, to_date: str, days: int) -> None:
 
 
 def _reconcile_live_with_escalation(
-    db: SenseiDB, client: SaxoClient, live_net: dict, to_date: str, *, full: bool
+    db: SenseiDB, client: SaxoClient, live_net: dict, to_date: str, *,
+    full: bool, closed: list | None = None
 ) -> list[dict]:
     """live建玉 ↔ 台帳 を突合。乖離時は窓を段階拡大して自動再mirror→再照合する。
 
     解消した時点で止め、全年まで広げても残った break を返す。`full=True` (既に全年
     mirror 済み) のときは escalation しない (これ以上広げる先が無いため)。
+
+    **窓を広げる前に closedpositions で booking 待ちを除外する**。決済当日は
+    reports/trades に sell 行が無く、窓をいくら広げても埋まらないため
+    (2026-08-19 の SOXL 決済で tail→30d→90d→全年 の4段階が全て空振りした)。
     """
     breaks = db.reconcile_live_positions(live_net, str(PARQUET_PATH))
+    if not breaks:
+        return breaks
+
+    # booking 未着 (T+1) の決済を先に除外する。窓拡大より安い (1コール)。
+    if closed is None:
+        closed = client.get_closed_positions()
+    breaks = _drop_booking_pending(closed, breaks)
     if not breaks or full:
         return breaks
     print(f"⚠ live≠台帳 {len(breaks)}件 検出 → mirror 漏れの可能性。窓を拡大して自動再mirror:")
@@ -129,6 +145,23 @@ def _reconcile_live_with_escalation(
     print("  なお残存 → 全年 mirror に escalate")
     _mirror_full(client, to_date)
     return db.reconcile_live_positions(live_net, str(PARQUET_PATH))
+
+
+def _drop_booking_pending(closed: list, breaks: list[dict]) -> list[dict]:
+    """台帳の余剰が決済済ポジションで説明できる break を benign として落とす。
+
+    `closedpositions` は決済当日に読めるので、booking (T+1) を待たずに
+    「ライブ建玉=0 / 台帳net>0」が単なる反映待ちだと判定できる。
+    説明できたものは人間向けに1行だけ報告し、break からは外す。
+
+    See docs/api/saxo/closed-position-fields.md
+    """
+    unexplained, explained = explain_ledger_surplus_by_closed_positions(breaks, closed)
+    for e in explained:
+        print(f"  ℹ [booking待ち] {e['instrument']}: 台帳net={e['ledger_net_qty']:g} だが "
+              f"決済{e['closed_qty']:g}株を closedpositions が確認 "
+              "→ reports/trades の反映待ち (真の乖離ではない)")
+    return unexplained
 
 
 def run_sync(*, full: bool, overlap_days: int) -> int:
@@ -159,17 +192,30 @@ def run_sync(*, full: bool, overlap_days: int) -> int:
         # 3. ライブ snapshot 取得 (安い: 建玉+注文の各1コール)。
         live_net = _net_by_symbol(client.get_live_positions())
         live_order_ids = {o.order_id for o in client.get_open_orders()}
+        closed = client.get_closed_positions()
 
         # 3a. live建玉 ↔ 台帳 (mirror 漏れ。乖離時は自動再mirror で埋める)。
         live_breaks = _reconcile_live_with_escalation(
-            db, client, live_net, to_date, full=full)
+            db, client, live_net, to_date, full=full, closed=closed)
         # 3b. 台帳 ↔ trades 申告 (従来層)。
         ledger_breaks = db.reconcile_positions(str(PARQUET_PATH))
         # 3c. liveライブ注文 ↔ trades placed (台帳に出ない層)。
         order_breaks = db.reconcile_open_orders(live_order_ids)
 
+        # 3d. 台帳に未計上の決済 (同日往復の死角, issue#20/ADR-036)。
+        #     3層すべてが 0 で一致してしまうケースを closedpositions から名指しする。
+        unbooked = db.find_unbooked_closures(closed, str(PARQUET_PATH))
+        for u in unbooked:
+            print(f"  ℹ [未計上] {u['instrument']} {u['side']} {u['quantity']:g}株 "
+                  f"@${u['closing_price']:g} ({u['execution_time_close_utc']}) "
+                  "→ reports/trades 未反映。台帳計上後に trades へ反映する")
+
         if not (live_breaks or ledger_breaks or order_breaks):
-            print("✓ 差分なし (ライブ建玉↔台帳↔trades 一致 / 注文も一致)")
+            if unbooked:
+                print(f"✓ break なし (ただし未計上の決済 {len(unbooked)}件 — "
+                      "台帳反映後にもう一度 /sync-saxo)")
+            else:
+                print("✓ 差分なし (ライブ建玉↔台帳↔trades 一致 / 注文も一致)")
             return EXIT_OK
 
         total = len(live_breaks) + len(ledger_breaks) + len(order_breaks)

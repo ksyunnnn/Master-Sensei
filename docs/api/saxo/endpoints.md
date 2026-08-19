@@ -162,12 +162,24 @@ open positions のリスト。
 - code: `SaxoClient.get_bookings()` → `CashBooking`
 - query: `FromDate`/`ToDate`（trades と同形）
 
+## GET /port/v1/closedpositions/me — 決済済ポジション
+
+決済当日に読める唯一の約定事実層。`reports/trades` の booking は T+1 なので、
+決済当日は台帳に sell 行が入らず 3層照合が「ライブ建玉=0 / 台帳net>0」を
+真の乖離と誤報する。本 endpoint でその差分を **booking 待ち (benign)** と切り分ける。
+
+- フィールド定義: [closed-position-fields.md](closed-position-fields.md)
+- code: `SaxoClient.get_closed_positions()` → `ClosedPosition`
+- query: `?FieldGroups=ClosedPosition,DisplayAndFormat`（前者が無いと数量・価格が全欠落）
+- 照合: `explain_ledger_surplus_by_closed_positions()`（`src/account_ledger.py`）
+- **全履歴は返らない**（直近の未決済分のみ）。成績集計の SoT は `account_transactions`
+- **`OrderId` を返さない**ため `trades.broker_ref` と 1対1 結合できない（instrument 単位で照合）
+
 ## 未使用 / 未特定 endpoint (将来検討)
 
 - `/trade/v1/orders/me`: 発注 (本プロジェクトは read-only、未使用)
 - `/trade/v1/prices/`: リアルタイム価格 (米市場休場対策で将来検討)
 - `/port/v1/orders/me`: 未約定注文一覧。意味的アクセサ `SaxoClient.get_open_orders()`
   実装済（ADR-030 Phase 7、[order-fields.md](order-fields.md)）。`/sync-saxo` の注文ドリフト照合で使用
-- `/port/v1/closedpositions/me`: クローズ済 position 履歴（照合で使用）
 - `/cs/v1/audit/orderactivities/me`: 取引履歴 audit
 - `/cs/v1/reports/accountStatement/{ClientKey}`: 404（PDF/XLS 用レポートで JSON 不可）。入出金は **`/cs/v1/reports/bookings/` で解決済**（上記、ADR-030 Phase 5）

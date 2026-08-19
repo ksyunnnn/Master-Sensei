@@ -18,6 +18,7 @@ from src.saxo_client import (
     PROVIDER,
     AccountBalance,
     CashBooking,
+    ClosedPosition,
     LivePosition,
     OpenOrder,
     SaxoAuthError,
@@ -555,6 +556,133 @@ class TestOpenOrdersAccessor:
         mock_session.get.return_value = _mock_response(200, bad)
         with pytest.raises(SaxoAuthError, match="missing"):
             client.get_open_orders()
+
+
+class TestClosedPositionsAccessor:
+    """ADR-026: クローズ済ポジションの意味的アクセサ (booking 待ち判定用)
+
+    field 定義・実測値は docs/api/saxo/closed-position-fields.md を参照。
+    """
+
+    def _setup_valid_access(self, db):
+        db.save_token(
+            provider=PROVIDER, environment="live", token_type="access",
+            token_value="AT_valid", expires_at=now_jst() + timedelta(seconds=1200),
+        )
+
+    @staticmethod
+    def _closed(closing_position_id="7715222483", symbol="SOXL:arcx"):
+        """2026-08-19 SOXL 決済の実測レスポンス (12株, $134.13 -> $120.03)。"""
+        return {
+            "ClosedPositionUniqueId": f"7713499853-{closing_position_id}",
+            "NetPositionId": "46780__Share",
+            "ClosedPosition": {
+                "AccountId": "77800/T126816",
+                "Amount": 12.0,
+                "AssetType": "Etf",
+                "BuyOrSell": "Buy",
+                "ClosedProfitLoss": -169.2,
+                "ClosedProfitLossInBaseCurrency": -30026.26019115,
+                "ClosingMethod": "Fifo",
+                "ClosingPositionId": closing_position_id,
+                "ClosingPrice": 120.03,
+                "CostClosing": -1.3,
+                "CostClosingInBaseCurrency": -206.0,
+                "CostOpening": -1.42,
+                "CostOpeningInBaseCurrency": -227.0,
+                "ExecutionTimeClose": "2026-08-19T14:07:32.578000Z",
+                "ExecutionTimeOpen": "2026-08-18T13:30:00.246000Z",
+                "OpeningPositionId": "7713499853",
+                "OpenPrice": 134.13,
+                "ProfitLossCurrencyConversion": -2943.65833065,
+                "ProfitLossOnTrade": -169.2,
+                "ProfitLossOnTradeInBaseCurrency": -27082.6018605,
+                "Uic": 46780,
+            },
+            "DisplayAndFormat": {"Symbol": symbol, "Currency": "USD"},
+        }
+
+    def test_returns_semantic_dataclass(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"Data": [self._closed()]})
+        closed = client.get_closed_positions()
+        assert len(closed) == 1
+        c = closed[0]
+        assert isinstance(c, ClosedPosition)
+        assert c.symbol == "SOXL"
+        assert c.amount == 12.0
+        assert c.open_price == 134.13
+        assert c.closing_price == 120.03
+        assert c.closing_position_id == "7715222483"
+        assert c.opening_position_id == "7713499853"
+        assert c.instrument_currency == "USD"
+
+    def test_opening_side_is_not_the_closing_side(self, client, db, mock_session):
+        """罠1: BuyOrSell は建玉を開いた方向。買い建てを売り決済しても 'Buy'。"""
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"Data": [self._closed()]})
+        c = client.get_closed_positions()[0]
+        assert c.opening_side == "Buy"
+        assert c.ledger_side() == "sell"
+        assert c.signed_amount() == -12.0
+
+    def test_short_close_maps_to_buy_ledger_side(self, client, db, mock_session):
+        """売り建ての決済は台帳 buy 行に対応する (符号反転)。"""
+        self._setup_valid_access(db)
+        raw = self._closed()
+        raw["ClosedPosition"]["BuyOrSell"] = "Sell"
+        mock_session.get.return_value = _mock_response(200, {"Data": [raw]})
+        c = client.get_closed_positions()[0]
+        assert c.ledger_side() == "buy"
+        assert c.signed_amount() == 12.0
+
+    def test_all_in_pnl_includes_costs(self, client, db, mock_session):
+        """ClosedProfitLoss は手数料を含まない。all_in は Cost* を加算して求める。"""
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"Data": [self._closed()]})
+        c = client.get_closed_positions()[0]
+        # 恒等式: ClosedProfitLossInBase == pnl_base + fx_conversion
+        assert c.closed_pnl_base == pytest.approx(
+            c.pnl_base + c.pnl_fx_conversion_base, abs=1e-6)
+        # all-in は手数料 (負値) を加算
+        assert c.all_in_pnl_base() == pytest.approx(-30026.26019115 - 227.0 - 206.0)
+
+    def test_cost_base_is_positive_magnitude(self, client, db, mock_session):
+        """Saxo は Cost* を負値で返す。コスト額として使う絶対値も提供する。"""
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"Data": [self._closed()]})
+        c = client.get_closed_positions()[0]
+        assert c.total_cost_base() == pytest.approx(433.0)
+        assert c.total_cost_instrument() == pytest.approx(2.72)
+
+    def test_symbol_falls_back_to_uic_map(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        raw = self._closed(symbol=None)
+        mock_session.get.return_value = _mock_response(200, {"Data": [raw]})
+        assert client.get_closed_positions()[0].symbol == "SOXL"
+
+    def test_empty_when_no_closed_positions(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"Data": []})
+        assert client.get_closed_positions() == []
+
+    def test_missing_field_raises(self, client, db, mock_session):
+        """required 欠落は黙って 0 埋めせず SaxoAuthError (静かな誤照合を防ぐ)。"""
+        self._setup_valid_access(db)
+        bad = {"Data": [{"ClosedPosition": {"Uic": 46780, "Amount": 12.0}}]}
+        mock_session.get.return_value = _mock_response(200, bad)
+        with pytest.raises(SaxoAuthError, match="missing"):
+            client.get_closed_positions()
+
+    def test_requests_closedposition_fieldgroup(self, client, db, mock_session):
+        """ClosedPosition FieldGroup を要求しないと数量・価格が丸ごと欠落する。"""
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, {"Data": []})
+        client.get_closed_positions()
+        url = mock_session.get.call_args[0][0]
+        assert "/port/v1/closedpositions/me" in url
+        assert "ClosedPosition" in url
+        assert "DisplayAndFormat" in url
 
 
 class TestTradeCost:
