@@ -558,6 +558,92 @@ class TestOpenOrdersAccessor:
             client.get_open_orders()
 
 
+class TestOpenOrdersRelatedLegs:
+    """IFD-OCO の保護脚は親の RelatedOpenOrders[] にネストされる (issue#16)。
+
+    トップレベルだけ走査すると stop/TP が返り値に現れず、**保護の付いていない
+    建玉と誤読する**。2026-07-28 に実際に誤読しかけた。
+    実測 shape は docs/api/saxo/order-fields.md を参照。
+    """
+
+    def _setup_valid_access(self, db):
+        db.save_token(
+            provider=PROVIDER, environment="live", token_type="access",
+            token_value="AT_valid", expires_at=now_jst() + timedelta(seconds=1200),
+        )
+
+    @staticmethod
+    def _master_with_legs():
+        return {
+            "OrderId": "5428389110", "AccountId": "77800/T126816", "Uic": 46780,
+            "Amount": 8.0, "BuySell": "Buy", "OpenOrderType": "Limit",
+            "Price": 95.0, "Status": "Working", "OrderRelation": "IfDoneMaster",
+            "DisplayAndFormat": {"Symbol": "SOXL:arcx"},
+            "RelatedOpenOrders": [
+                {"OrderId": "5428389111", "OpenOrderType": "Limit",
+                 "OrderPrice": 136.0, "Status": "NotWorking"},
+                {"OrderId": "5428389112", "OpenOrderType": "StopIfTraded",
+                 "OrderPrice": 89.0, "Status": "NotWorking"},
+            ],
+        }
+
+    def test_legs_are_returned(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(
+            200, {"Data": [self._master_with_legs()]})
+        orders = client.get_open_orders()
+        ids = [o.order_id for o in orders]
+        assert ids == ["5428389110", "5428389111", "5428389112"]
+
+    def test_leg_price_read_from_order_price(self, client, db, mock_session):
+        """保護脚の価格 field は Price でなく OrderPrice。"""
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(
+            200, {"Data": [self._master_with_legs()]})
+        legs = {o.order_id: o for o in client.get_open_orders()}
+        assert legs["5428389111"].price == 136.0
+        assert legs["5428389112"].price == 89.0
+        assert legs["5428389112"].order_type == "StopIfTraded"
+        assert legs["5428389112"].status == "NotWorking"
+
+    def test_leg_inherits_instrument_context_from_parent(self, client, db, mock_session):
+        """脚は同一 instrument/口座の決済注文なので親から引き継ぐ (推測ではない)。"""
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(
+            200, {"Data": [self._master_with_legs()]})
+        legs = {o.order_id: o for o in client.get_open_orders()}
+        leg = legs["5428389111"]
+        assert leg.symbol == "SOXL"
+        assert leg.account_id == "77800/T126816"
+        assert leg.uic == 46780
+        assert leg.amount == 8.0
+        assert leg.parent_order_id == "5428389110"
+
+    def test_leg_buy_sell_is_none_when_absent(self, client, db, mock_session):
+        """レスポンスに BuySell が無い脚は None にする (向きを推測しない、ADR-026)。"""
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(
+            200, {"Data": [self._master_with_legs()]})
+        legs = {o.order_id: o for o in client.get_open_orders()}
+        assert legs["5428389111"].buy_sell is None
+
+    def test_parent_has_no_parent_order_id(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(
+            200, {"Data": [self._master_with_legs()]})
+        parent = client.get_open_orders()[0]
+        assert parent.parent_order_id is None
+        assert parent.order_relation == "IfDoneMaster"
+
+    def test_leg_without_order_id_raises(self, client, db, mock_session):
+        self._setup_valid_access(db)
+        bad = self._master_with_legs()
+        bad["RelatedOpenOrders"] = [{"OpenOrderType": "Limit", "OrderPrice": 1.0}]
+        mock_session.get.return_value = _mock_response(200, {"Data": [bad]})
+        with pytest.raises(SaxoAuthError, match="missing"):
+            client.get_open_orders()
+
+
 class TestClosedPositionsAccessor:
     """ADR-026: クローズ済ポジションの意味的アクセサ (booking 待ち判定用)
 

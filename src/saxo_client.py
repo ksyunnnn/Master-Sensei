@@ -138,10 +138,15 @@ class OpenOrder:
     uic: int
     symbol: str
     amount: float
-    buy_sell: str            # "Buy"/"Sell"
+    buy_sell: str | None     # "Buy"/"Sell"。脚で欠落時は None (向きを推測しない)
     order_type: str          # OpenOrderType (Limit/Stop/...)
     price: float | None      # 指値/逆指値価格 (Market は None)
     status: str
+    # IFD-OCO の保護脚は親の RelatedOpenOrders[] にネストされる (issue#16)。
+    # 脚は parent_order_id を持ち、instrument/口座/数量は親から引き継ぐ
+    # (同一銘柄の決済注文なので構造的に同じ。推測ではない)。
+    order_relation: str | None = None   # IfDoneMaster / Oco / StandAlone 等
+    parent_order_id: str | None = None  # 脚の場合のみ親 OrderId
 
 
 @dataclass
@@ -704,7 +709,7 @@ class SaxoClient:
                 )
             daf = o.get("DisplayAndFormat", {})
             uic = int(o["Uic"])
-            out.append(OpenOrder(
+            parent = OpenOrder(
                 order_id=str(o["OrderId"]),  # see order-fields.md
                 account_id=o["AccountId"],
                 uic=uic,
@@ -714,8 +719,47 @@ class SaxoClient:
                 order_type=o["OpenOrderType"],
                 price=float(o["Price"]) if o.get("Price") is not None else None,
                 status=o["Status"],
-            ))
+                order_relation=o.get("OrderRelation"),
+            )
+            out.append(parent)
+            out.extend(self._related_legs(o, parent))
         return out
+
+    @staticmethod
+    def _related_legs(raw_parent: dict, parent: "OpenOrder") -> list["OpenOrder"]:
+        """親注文にネストされた保護脚 (RelatedOpenOrders[]) を展開する (issue#16)。
+
+        IFD-OCO では親が未約定の間、決済指値/決済逆指値は `Data[]` のトップレベルに
+        現れず親の配下に入る。走査しないと**保護の無い建玉と誤読する**。
+
+        脚の価格 field は `Price` でなく **`OrderPrice`**。
+        instrument/口座/数量は親から引き継ぐ (同一銘柄の決済注文なので構造的に同じ)。
+        `BuySell` が無い脚は向きを推測せず None にする (ADR-026)。
+
+        See docs/api/saxo/order-fields.md
+        """
+        legs: list[OpenOrder] = []
+        for leg in raw_parent.get("RelatedOpenOrders") or []:
+            if "OrderId" not in leg:
+                raise SaxoAuthError(
+                    "RelatedOpenOrders entry missing required field ['OrderId']. "
+                    "Saxo API may have changed; verify docs/api/saxo/order-fields.md"
+                )
+            price = leg.get("OrderPrice", leg.get("Price"))
+            legs.append(OpenOrder(
+                order_id=str(leg["OrderId"]),
+                account_id=leg.get("AccountId", parent.account_id),
+                uic=int(leg["Uic"]) if "Uic" in leg else parent.uic,
+                symbol=parent.symbol,
+                amount=float(leg["Amount"]) if "Amount" in leg else parent.amount,
+                buy_sell=leg.get("BuySell"),
+                order_type=leg.get("OpenOrderType", ""),
+                price=float(price) if price is not None else None,
+                status=leg.get("Status", ""),
+                order_relation=leg.get("OrderRelation"),
+                parent_order_id=parent.order_id,
+            ))
+        return legs
 
     def get_closed_positions(self) -> list["ClosedPosition"]:
         """決済済ポジションを意味的 snapshot のリストで返す (ADR-026)。

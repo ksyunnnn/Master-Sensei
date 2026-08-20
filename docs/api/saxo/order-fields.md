@@ -9,6 +9,8 @@
 - 結合キー: **`OrderId`** ↔ `trades.broker_ref` (placed 行)。
   `TradeId`/`PositionId` と混同しない (trade-report-fields.md と同じ規約)
 - placed 注文は fill が無いため**台帳照合では出ない**。本 endpoint が唯一の検出源。
+- **保護脚は親の `RelatedOpenOrders[]` にネストされる**。`SaxoClient.get_open_orders()` は
+  親と脚を平坦化して返す（issue#16、下記「アクセサの扱い」）
 
 ## Query parameter
 
@@ -34,6 +36,25 @@ symbol 正規化は position-fields.md と共通 (`_normalize_symbol`)。
 
 🔬 2026-07-28 実測。IFD-OCO を発注すると、**親注文だけが `Data[]` のトップレベルに現れ、
 保護脚 (決済指値 / 決済逆指値) は親の `RelatedOpenOrders[]` 配下に入る**。
+
+
+### アクセサの扱い（issue#16 で修正）
+
+`get_open_orders()` は `Data[]` のトップレベルと `RelatedOpenOrders[]` の両方を走査し、
+**親と脚を平坦化した1本のリスト**で返す。トップレベルだけ見ると stop/TP が返り値に現れず、
+**保護の付いていない建玉と誤読する**（2026-07-28 に実際に誤読しかけた）。
+
+脚の `OpenOrder` は次のように埋まる。
+
+| field | 由来 |
+|---|---|
+| `order_id` | 脚の `OrderId`（必須。欠落は `SaxoAuthError`） |
+| `price` | 脚の **`OrderPrice`**（`Price` ではない） |
+| `order_type` / `status` | 脚の `OpenOrderType` / `Status` |
+| `parent_order_id` | 親の `OrderId`（脚であることの識別子） |
+| `order_relation` | `IfDoneMaster` / `Oco` 等 |
+| `symbol` / `account_id` / `uic` / `amount` | **親から引き継ぐ**（同一銘柄・同一口座の決済注文なので構造的に同じ） |
+| `buy_sell` | 脚に `BuySell` が無ければ **`None`**。向きを推測しない（ADR-026） |
 
 ```
 Data[0]  OrderId=5428389110  BuySell=Buy  OpenOrderType=Limit  Price=95.0
