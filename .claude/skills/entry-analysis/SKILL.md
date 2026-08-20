@@ -447,3 +447,4 @@ PYEOF
 - {対象銘柄} のプレースホルダーは実行時にユーザー指定の銘柄に置き換える
 - ユーザーがtrade記録を希望しない場合（分析だけ見たい場合）はadd_trade()をスキップ可
 - ADR-027: resting指値/IFD-OCOを発注時点で記録する場合は `status="placed"` を渡す。約定確認後に `update_trade_status(tid, "filled")`、不発キャンセル時は `update_trade_status(tid, "cancelled", notes=...)`。物理削除はしない（発注=意思決定の事実を残す）
+- **ADR-038: IFD-OCO の保護脚（決済 TP / 決済 SL）を `trades` に起票する時は必ず `parent_trade_id=<親trade id>` を渡す**。保護脚は注文の宣言であって建玉ではない。付け忘れると脚が約定して `filled` になった時に `reconcile_positions()` が**存在しない建玉を申告**し、`/sync-saxo` が解消不能な break を出し続ける（2026-08-19 の SOXL 決済で実際に詰んだ）。`parent_trade_id` を持つ行は建玉集計から除外される。損益は親 trade が持つので脚では `close_trade()` を呼ばない。既存行への後付けは `set_trade_parent(leg_id, parent_id)`。

@@ -140,6 +140,16 @@ class SenseiDB:
         if "related_knowledge_ids" not in existing_cols:
             self.conn.execute("ALTER TABLE knowledge ADD COLUMN related_knowledge_ids VARCHAR[]")
 
+        # ADR-038 migration: 保護脚を建玉と区別する列 (既存 DB にも足す)
+        trade_cols = {
+            row[0] for row in self.conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'trades' AND table_schema = 'main'"
+            ).fetchall()
+        }
+        if trade_cols and "parent_trade_id" not in trade_cols:
+            self.conn.execute("ALTER TABLE trades ADD COLUMN parent_trade_id INTEGER")
+
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS regime_assessments (
                 date DATE PRIMARY KEY,
@@ -215,6 +225,7 @@ class SenseiDB:
                 prediction_id INTEGER,
                 status VARCHAR NOT NULL DEFAULT 'filled',
                 broker_ref VARCHAR,
+                parent_trade_id INTEGER,
                 created_at TIMESTAMP DEFAULT current_timestamp
             )
         """)
@@ -730,6 +741,7 @@ class SenseiDB:
         status: str = "filled",
         breakeven_pct: float = None,
         broker_ref: str = None,
+        parent_trade_id: int = None,
     ) -> int:
         if confidence_at_entry is not None and not (0.0 <= confidence_at_entry <= 1.0):
             raise ValueError("confidence_at_entry must be 0.0-1.0")
@@ -742,11 +754,13 @@ class SenseiDB:
             "INSERT INTO trades "
             "(id, instrument, direction, entry_date, entry_price, quantity, "
             "regime_at_entry, vix_at_entry, brent_at_entry, confidence_at_entry, "
-            "setup_type, entry_reasoning, prediction_id, status, breakeven_pct, broker_ref) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "setup_type, entry_reasoning, prediction_id, status, breakeven_pct, broker_ref, "
+            "parent_trade_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [tid, instrument, direction, entry_date, entry_price, quantity,
              regime_at_entry, vix_at_entry, brent_at_entry, confidence_at_entry,
-             setup_type, entry_reasoning, prediction_id, status, breakeven_pct, broker_ref],
+             setup_type, entry_reasoning, prediction_id, status, breakeven_pct, broker_ref,
+             parent_trade_id],
         )
         return tid
 
@@ -831,6 +845,24 @@ class SenseiDB:
                 "UPDATE trades SET status = ? WHERE id = ?", [status, trade_id]
             )
 
+    def set_trade_parent(self, trade_id: int, parent_trade_id: int):
+        """trade 行を「別 trade の保護脚 (決済注文)」として紐付ける (ADR-038)。
+
+        紐付いた行は建玉ではないため `reconcile_positions()` の保有申告から外れる。
+        OCO の TP/SL 脚が約定した事実を `status='filled'` で残しても、
+        存在しない建玉を二重計上しなくなる。損益は親 trade が持つ。
+        """
+        if trade_id == parent_trade_id:
+            raise ValueError("trade cannot be its own parent (itself)")
+        for tid in (trade_id, parent_trade_id):
+            found = self.conn.execute(
+                "SELECT id FROM trades WHERE id = ?", [tid]).fetchone()
+            if not found:
+                raise ValueError(f"Trade {tid} not found")
+        self.conn.execute(
+            "UPDATE trades SET parent_trade_id = ? WHERE id = ?",
+            [parent_trade_id, trade_id])
+
     def set_trade_broker_ref(self, trade_id: int, broker_ref: str):
         """trades 行に Saxo OrderId/TradeId を結合キーとして紐付ける (ADR-030)。
 
@@ -906,9 +938,12 @@ class SenseiDB:
         """
         ledger_net = self._ledger_net_by_instrument(transactions_parquet)
 
+        # parent_trade_id を持つ行は保護脚 (決済注文) であって建玉ではない (ADR-038)。
+        # 約定した脚を filled と記録しても、存在しない建玉として申告しない。
         open_rows = self.conn.execute(
             "SELECT instrument, SUM(quantity) FROM trades "
-            "WHERE status = 'filled' AND exit_date IS NULL GROUP BY instrument"
+            "WHERE status = 'filled' AND exit_date IS NULL "
+            "AND parent_trade_id IS NULL GROUP BY instrument"
         ).fetchall()
         trades_open = {sym: float(q) for sym, q in open_rows}
 

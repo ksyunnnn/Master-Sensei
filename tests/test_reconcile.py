@@ -335,3 +335,62 @@ class TestFindUnbookedClosures:
         cp = _closed_position(amount=12.0)
         unbooked = db.find_unbooked_closures([cp], str(tmp_path / "absent.parquet"))
         assert len(unbooked) == 1
+
+
+class TestProtectiveLegNotCountedAsPosition:
+    """保護脚は建玉ではない (ADR-038)。
+
+    OCO の決済逆指値が約定した事実を status='filled' で記録すると、
+    exit_date が NULL のため reconcile_positions が存在しない建玉を申告してしまう
+    (2026-08-19 の SOXL 決済で実際に詰んだ)。parent_trade_id を持つ行は除外する。
+    """
+
+    def test_filled_leg_is_excluded_from_open_claim(self, db, tmp_path):
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([
+            _ledger_row("SOXL", "buy", 12.0, "O1", "T1"),
+            _ledger_row("SOXL", "sell", 12.0, "O2", "T2"),
+        ], p)
+        parent = db.add_trade(
+            instrument="SOXL", direction="long", entry_date=date(2026, 8, 17),
+            entry_price=134.13, quantity=12, broker_ref="O1")
+        db.close_trade(parent, exit_date=date(2026, 8, 19), exit_price=120.03)
+        leg = db.add_trade(
+            instrument="SOXL", direction="long", entry_date=date(2026, 8, 18),
+            entry_price=120.0, quantity=12, broker_ref="O2",
+            status="placed", parent_trade_id=parent)
+        db.update_trade_status(leg, "filled")
+
+        # 脚が filled + exit_date なし でも建玉として数えない
+        assert db.reconcile_positions(str(p)) == []
+
+    def test_leg_without_parent_still_counts(self, db, tmp_path):
+        """parent_trade_id が無ければ従来どおり建玉として数える (退行防止)。"""
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([_ledger_row("SOXL", "buy", 12.0, "O1", "T1")], p)
+        tid = db.add_trade(
+            instrument="SOXL", direction="long", entry_date=date(2026, 8, 18),
+            entry_price=120.0, quantity=12, broker_ref="OX")
+        db.update_trade_status(tid, "filled")
+        assert db.reconcile_positions(str(p)) == []  # trades 12 == ledger 12
+
+    def test_set_trade_parent_validates(self, db):
+        tid = db.add_trade(
+            instrument="SOXL", direction="long", entry_date=date(2026, 8, 18),
+            entry_price=120.0, quantity=12)
+        with pytest.raises(ValueError, match="not found"):
+            db.set_trade_parent(tid, 99999)
+        with pytest.raises(ValueError, match="itself"):
+            db.set_trade_parent(tid, tid)
+
+    def test_set_trade_parent_links(self, db):
+        parent = db.add_trade(
+            instrument="SOXL", direction="long", entry_date=date(2026, 8, 17),
+            entry_price=134.13, quantity=12)
+        leg = db.add_trade(
+            instrument="SOXL", direction="long", entry_date=date(2026, 8, 18),
+            entry_price=120.0, quantity=12, status="placed")
+        db.set_trade_parent(leg, parent)
+        got = db.conn.execute(
+            "SELECT parent_trade_id FROM trades WHERE id = ?", [leg]).fetchone()[0]
+        assert got == parent
