@@ -18,6 +18,36 @@
 🔬 2026-08-19 の SOXL 24株決済で実証。ライブ建玉=0 / 台帳net=24 の break に対し、
 本 endpoint は決済2件 (12株×2, ClosingPrice $120.03) を即時返した。
 
+## Envelope の揺れ — 空の時は裸の `[]`
+
+本 endpoint は **決済が無い時に `{"Data": []}` ではなく裸の JSON 配列 `[]` を返す**。
+
+🔬 2026-08-21 実測。同一 token・同一セッションで並べて叩いた結果:
+
+| endpoint | 空の時の envelope |
+|----------|------------------|
+| `/port/v1/closedpositions/me` | **`[]`** (裸の配列) |
+| `/port/v1/positions/me` | `{"Data": [...], "__count": n}` |
+| `/port/v1/orders/me` | `{"Data": [], "__count": 0}` |
+| `/port/v1/accounts/me` | `{"Data": [...]}` |
+
+つまり「空なら裸配列」という一般則ではなく、**closedpositions 固有の差異**である。
+`SaxoClient._unwrap_data()` が dict/list の両形を吸収する。dict でも list でもない型は
+握り潰さず `TypeError` にする (静かに空扱いすると3層照合が「差分なし」と誤報し、
+建玉の取り違えに直結するため)。
+
+⚠️ **中身がある時に裸配列で返るかは未観測**。本文書は空応答でのみ裸配列を確認した。
+`_unwrap_data` は対称性のため両方を扱うが、非空の裸配列を「実測済み」と扱ってはならない。
+
+### この差異が実際に壊した箇所
+
+`get_closed_positions()` は `resp.get("Data", [])` を直に呼んでいたため、
+決済が無い状態で `/sync-saxo` が `AttributeError: 'list' object has no attribute 'get'`
+でクラッシュした (2026-08-21)。ユニットテストは `{"Data": []}` をモックしており
+**実 API ではなく docs の想定を写していた**ため検出できなかった。
+加えてテストヘルパー `_mock_response` が `json_body or {}` と書かれていて、
+空リスト `[]` を falsy として `{}` にすり替えていた (裸配列を再現不能だった)。
+
 ## Query parameter
 
 `?FieldGroups=ClosedPosition,DisplayAndFormat` を付ける。

@@ -109,6 +109,30 @@ def _normalize_symbol(raw_symbol, uic: int) -> str:
     return f"UIC:{uic}"
 
 
+def _unwrap_data(resp) -> list:
+    """Saxo の collection response から要素の並びを取り出す。
+
+    通常は {"Data": [...], "__count": n} だが、closedpositions/me は
+    **決済が無い時に裸の [] を返す** (2026-08-21 実測)。同日の
+    positions/me / orders/me は空でも {"Data": [], "__count": 0} を返したので、
+    envelope の揺れは endpoint 単位で存在する。どちらの形も意味は同じ
+    (=要素の並び) なので、ここで吸収する。
+
+    dict でも list でもない型は握り潰さず TypeError にする。静かに空扱いすると
+    3層照合が「差分なし」と誤報し、建玉の取り違えに直結するため。
+
+    See docs/api/saxo/closed-position-fields.md - Envelope の揺れ
+    """
+    if isinstance(resp, list):
+        return resp
+    if isinstance(resp, dict):
+        return resp.get("Data", [])
+    raise TypeError(
+        f"Unexpected Saxo collection envelope: {type(resp).__name__}. "
+        "Expected dict with 'Data' or a bare list."
+    )
+
+
 @dataclass
 class LivePosition:
     """ライブ open position の意味的 snapshot (ADR-026)。
@@ -645,7 +669,7 @@ class SaxoClient:
 
         See docs/api/saxo/endpoints.md#4-get-portv1positionsme
         """
-        return self._api_get("/port/v1/positions/me").get("Data", [])
+        return _unwrap_data(self._api_get("/port/v1/positions/me"))
 
     def get_live_positions(self) -> list["LivePosition"]:
         """ライブ open positions を意味的 snapshot のリストで返す (ADR-026)。
@@ -664,7 +688,7 @@ class SaxoClient:
             "?FieldGroups=PositionBase,DisplayAndFormat,PositionView"
         )
         out: list[LivePosition] = []
-        for p in resp.get("Data", []):
+        for p in _unwrap_data(resp):
             base = p.get("PositionBase", {})
             required = ("AccountId", "Uic", "Amount", "OpenPrice")
             missing = [k for k in required if k not in base]
@@ -698,7 +722,7 @@ class SaxoClient:
         """
         resp = self._api_get("/port/v1/orders/me?FieldGroups=DisplayAndFormat")
         out: list[OpenOrder] = []
-        for o in resp.get("Data", []):
+        for o in _unwrap_data(resp):
             required = ("OrderId", "AccountId", "Uic", "Amount", "BuySell",
                         "OpenOrderType", "Status")
             missing = [k for k in required if k not in o]
@@ -780,7 +804,7 @@ class SaxoClient:
             "?FieldGroups=ClosedPosition,DisplayAndFormat"
         )
         out: list[ClosedPosition] = []
-        for item in resp.get("Data", []):
+        for item in _unwrap_data(resp):
             cp = item.get("ClosedPosition", {})
             required = ("AccountId", "Uic", "Amount", "BuyOrSell", "OpenPrice",
                         "ClosingPrice", "ExecutionTimeClose",
@@ -831,7 +855,7 @@ class SaxoClient:
 
         See docs/api/saxo/endpoints.md#1-get-portv1accountsme
         """
-        return self._api_get("/port/v1/accounts/me").get("Data", [])
+        return _unwrap_data(self._api_get("/port/v1/accounts/me"))
 
     def get_trade_cost(self, *, account_key: str, uic: int, asset_type: str,
                        amount: float, price: float,
@@ -992,7 +1016,7 @@ class SaxoClient:
                 f"?FromDate={from_date}&ToDate={to_date}")
         if account_key:
             path += f"&AccountKey={account_key}"
-        rows = self._api_get(path).get("Data", [])
+        rows = _unwrap_data(self._api_get(path))
 
         required = (
             "TradeId", "OrderId", "AccountId", "Uic", "InstrumentSymbol",
@@ -1054,7 +1078,7 @@ class SaxoClient:
                 f"?FromDate={from_date}&ToDate={to_date}")
         if account_key:
             path += f"&AccountKey={account_key}"
-        rows = self._api_get(path).get("Data", [])
+        rows = _unwrap_data(self._api_get(path))
 
         required = (
             "BkAmountId", "AccountId", "Date", "ValueDate", "AmountUSD",

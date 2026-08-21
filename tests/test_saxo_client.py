@@ -57,12 +57,14 @@ def client(db, config, mock_session):
     return SaxoClient(db, config=config, session=mock_session)
 
 
-def _mock_response(status: int, json_body: dict = None, text: str = "") -> MagicMock:
+def _mock_response(status: int, json_body=None, text: str = "") -> MagicMock:
     resp = MagicMock()
     resp.status_code = status
     resp.ok = 200 <= status < 300
     resp.text = text
-    resp.json.return_value = json_body or {}
+    # `or {}` にしない: 空の裸リスト [] は falsy なので {} にすり替わり、
+    # closedpositions の実 envelope (空時は裸 []) を再現できなくなる。
+    resp.json.return_value = {} if json_body is None else json_body
     if not resp.ok:
         resp.raise_for_status.side_effect = requests.HTTPError(f"{status}")
     return resp
@@ -751,6 +753,28 @@ class TestClosedPositionsAccessor:
         self._setup_valid_access(db)
         mock_session.get.return_value = _mock_response(200, {"Data": []})
         assert client.get_closed_positions() == []
+
+    def test_bare_list_envelope_when_empty(self, client, db, mock_session):
+        """決済が無い時 Saxo は {"Data": []} ではなく裸の [] を返す (実測)。
+
+        2026-08-21 実測。同日の positions/me・orders/me は空でも
+        {"Data": [], "__count": 0} を返すので、この裸リストは
+        closedpositions 固有の envelope 差異である。
+        docs/api/saxo/closed-position-fields.md の「Envelope の揺れ」参照。
+        """
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, [])
+        assert client.get_closed_positions() == []
+
+    def test_bare_list_envelope_with_items(self, client, db, mock_session):
+        """裸リストで中身が返る場合も Data 包み時と同じ dataclass に展開する。"""
+        self._setup_valid_access(db)
+        mock_session.get.return_value = _mock_response(200, [self._closed()])
+        closed = client.get_closed_positions()
+        assert len(closed) == 1
+        assert closed[0].symbol == "SOXL"
+        assert closed[0].amount == 12.0
+        assert closed[0].closing_price == 120.03
 
     def test_missing_field_raises(self, client, db, mock_session):
         """required 欠落は黙って 0 埋めせず SaxoAuthError (静かな誤照合を防ぐ)。"""
