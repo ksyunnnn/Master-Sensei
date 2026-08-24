@@ -221,30 +221,42 @@ def show_summary(cache: CacheManager):
     print(f"\n=== Data Summary (取得: {now.strftime('%Y-%m-%d %H:%M')} JST) ===\n")
 
     # ── マクロ ──
-    # 意味的ペアで並べる（関連指標を横に配置）
-    macro_pairs = [
+    # 意味的ペアで並べる（関連指標を横に配置）。
+    #
+    # 2ブロックに分ける理由（2026-08-24, issue#26）: 金利分解系列は「下げた原因を
+    # 事後に切り分ける」ための帰属用で、レジーム判定の入力ではない。実測で、水準でも
+    # 5日変化でも、トレンド除去後に翌日リターンが無条件平均から 2SE 離れる帯が一つも
+    # 無かった（K-074）。レジーム指標と同じ表に並べると判定に使える指標と読み違える
+    # ため、見出しで用途を分けて表示する。
+    def _print_macro_block(title: str, pairs: list) -> None:
+        print(title)
+        for left, right in pairs:
+            parts = []
+            for name in [left, right]:
+                if name is None:
+                    continue
+                row = _read_last_row(cache.macro_dir / f"{name}.parquet")
+                if row is not None:
+                    val = row["value"].iloc[0]
+                    idx = row.index[0]
+                    d = idx.date() if hasattr(idx, "date") else idx
+                    parts.append(f"  {name:<14s}{val:>8.2f}  ({d.month}/{d.day:02d})")
+                else:
+                    parts.append(f"  {name:<14s}{'---':>8s}  (---)")
+            print("    ".join(parts))
+        print()
+
+    _print_macro_block("[マクロ: レジーム判定の入力]", [
         ("VIX", "VIX3M"),
-        ("US10Y", "US30Y"),
         ("YIELD_CURVE", "HY_SPREAD"),
         ("BRENT", "USD_INDEX"),
         ("VXN", "FEDFUNDS"),
-    ]
-    print("[マクロ]")
-    for left, right in macro_pairs:
-        parts = []
-        for name in [left, right]:
-            if name is None:
-                continue
-            row = _read_last_row(cache.macro_dir / f"{name}.parquet")
-            if row is not None:
-                val = row["value"].iloc[0]
-                idx = row.index[0]
-                d = idx.date() if hasattr(idx, "date") else idx
-                parts.append(f"  {name:<12s}{val:>8.2f}  ({d.month}/{d.day:02d})")
-            else:
-                parts.append(f"  {name:<12s}{'---':>8s}  (---)")
-        print("    ".join(parts))
-    print()
+    ])
+    _print_macro_block("[金利分解: 帰属専用・レジーム判定には使わない (K-074)]", [
+        ("US10Y", "US30Y"),
+        ("REAL10Y", "REAL30Y"),
+        ("BREAKEVEN10Y", "MOVE"),
+    ])
 
     # ── 日足 ──
     daily_latest_date = None

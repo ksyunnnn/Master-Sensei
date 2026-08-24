@@ -177,3 +177,65 @@ class TestUS30Y:
         fred_like = FakeProvider("fred", {"US30Y": []})
         chain = ProviderChain([yf_like, fred_like])
         assert "US30Y" in chain.available_series()
+
+
+class TestRateDecompositionSeries:
+    """金利テーマの分解系列(実質金利・期待インフレ・債券ボラ)の収集経路テスト。
+
+    2026-08-24 の実測(SOXX 日次リターン vs 各変数の日次変化、5年 n=1289):
+
+        30年 名目金利    r=-0.035  t=-1.24  ← 有意でない
+        30年 実質金利    r=-0.093  t=-3.36
+        30年 期待インフレ r=+0.090  t=+3.24  ← 符号が逆
+        MOVE(債券ボラ)   r=-0.184  t=-6.72  ← 最強。半導体固有ぶんにも有意(t=-3.31)
+
+    名目金利が効かないのは、実質金利と期待インフレが逆符号で打ち消し合うため
+    (重回帰: 実質 -0.573%/10bp t=-3.30、期待インフレ +0.928%/10bp t=+3.18、
+    両者の日次変化の相関 -0.022)。したがって名目単独では帰属に使えない。
+
+    重要: これらはいずれも「同じ日の連動」であって翌日を予測しない。水準でも
+    5日変化でも、トレンド除去後に無条件平均から2SE離れる帯が一つも無かった。
+    レジーム判定(regime.py)の水準閾値には使わないこと([[K-074]])。
+    """
+
+    def test_real10y_maps_to_dfii10(self):
+        assert FRED_SERIES["REAL10Y"] == "DFII10"
+
+    def test_real30y_maps_to_dfii30(self):
+        assert FRED_SERIES["REAL30Y"] == "DFII30"
+
+    def test_breakeven_in_fred_series(self):
+        assert FRED_SERIES["BREAKEVEN10Y"] == "T10YIE"
+
+    def test_move_in_yfinance_series(self):
+        """MOVE は債券版 VIX。FRED に無いため yfinance から取る。"""
+        assert YFINANCE_SERIES["MOVE"] == "^MOVE"
+
+    def test_move_not_in_fred_series(self):
+        assert "MOVE" not in FRED_SERIES
+
+    def test_fred_adapter_fetches_real30y_via_dfii30(self):
+        client = FakeFredClient({"DFII30": [{"date": "2026-08-20", "value": 2.95}]})
+        adapter = FredAdapter(client)
+        result = adapter.fetch_series("REAL30Y", date(2026, 8, 20), date(2026, 8, 20))
+        assert len(result) == 1
+        assert result[0]["value"] == 2.95
+
+    def test_all_rate_series_available_in_chain(self):
+        """update_macro は chain.available_series() 駆動。ここに出ないと収集されない。"""
+        yf_like = FakeProvider("yfinance", {"MOVE": []})
+        fred_like = FakeProvider("fred", {"REAL10Y": [], "REAL30Y": [], "BREAKEVEN10Y": []})
+        chain = ProviderChain([yf_like, fred_like])
+        avail = chain.available_series()
+        for name in ["MOVE", "REAL10Y", "REAL30Y", "BREAKEVEN10Y"]:
+            assert name in avail
+
+    def test_breakeven30y_is_derived_not_collected(self):
+        """30年期待インフレは DGS30 - DFII30 で導出する。
+
+        FRED の 30年ブレークイーブン(T30YIEM)は月次しか無く、日次の帰属に使えない
+        ため、日次の名目と実質の差として計算する。収集系列には入れない。
+        """
+        assert "BREAKEVEN30Y" not in FRED_SERIES
+        assert "BREAKEVEN30Y" not in YFINANCE_SERIES
+        assert "US30Y" in FRED_SERIES and "REAL30Y" in FRED_SERIES
