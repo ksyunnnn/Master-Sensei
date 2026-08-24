@@ -20,6 +20,7 @@ from src.db import today_jst
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
@@ -204,6 +205,46 @@ def show_status(cache: CacheManager):
         print()
 
 
+def unusual_move_z(
+    series: pd.Series, lookback: int = 252, sigma: float = 2.0
+) -> Optional[float]:
+    """最新の日次変化が普段と比べて異常に大きければ、その z 値を返す。
+
+    金利分解系列(REAL30Y / BREAKEVEN10Y / MOVE 等)は翌日を予測しないため
+    レジーム判定には使えないが、大きく動いた日は「見に行くべき日」の合図になる
+    (K-075 の段4: 異常検知)。収集しても誰も見ていなければ意味が無いので、
+    サマリー表示でフラグを立てる。
+
+    **方向のシグナルではない**。z が負でも「下がるから買い」ではなく、
+    「債券市場で何かが起きたので原因を確認せよ」という意味しか持たない。
+
+    Args:
+        series: 日付昇順の値の系列
+        lookback: 標準偏差を測る営業日数
+        sigma: これを超えたらフラグを立てる閾値
+
+    Returns:
+        |z| > sigma なら符号付きの z 値。そうでなければ、または履歴不足・
+        変動ゼロなら None。
+    """
+    changes = series.diff().dropna()
+    if len(changes) < 30:
+        return None
+    window = changes.iloc[-lookback:]
+    latest = window.iloc[-1]
+    # 最新の1点は基準統計から除く(自分自身で自分を正規化しない)
+    base = window.iloc[:-1]
+    if len(base) < 30:
+        return None
+    sd = base.std()
+    if not np.isfinite(sd) or sd <= 0:
+        return None
+    z = (latest - base.mean()) / sd
+    if not np.isfinite(z) or abs(z) <= sigma:
+        return None
+    return float(z)
+
+
 def _read_last_row(path: Path) -> Optional[pd.DataFrame]:
     """Parquetファイルの最終行を読み取る"""
     if not path.exists():
@@ -228,6 +269,8 @@ def show_summary(cache: CacheManager):
     # 5日変化でも、トレンド除去後に翌日リターンが無条件平均から 2SE 離れる帯が一つも
     # 無かった（K-074）。レジーム指標と同じ表に並べると判定に使える指標と読み違える
     # ため、見出しで用途を分けて表示する。
+    flagged: list = []
+
     def _print_macro_block(title: str, pairs: list) -> None:
         print(title)
         for left, right in pairs:
@@ -235,14 +278,25 @@ def show_summary(cache: CacheManager):
             for name in [left, right]:
                 if name is None:
                     continue
-                row = _read_last_row(cache.macro_dir / f"{name}.parquet")
-                if row is not None:
-                    val = row["value"].iloc[0]
-                    idx = row.index[0]
-                    d = idx.date() if hasattr(idx, "date") else idx
-                    parts.append(f"  {name:<14s}{val:>8.2f}  ({d.month}/{d.day:02d})")
-                else:
-                    parts.append(f"  {name:<14s}{'---':>8s}  (---)")
+                path = cache.macro_dir / f"{name}.parquet"
+                row = _read_last_row(path)
+                if row is None:
+                    parts.append(f"  {name:<14s}{'---':>8s}  (---)  ")
+                    continue
+                val = row["value"].iloc[0]
+                idx = row.index[0]
+                d = idx.date() if hasattr(idx, "date") else idx
+                # いつもと違う動きをした系列に印を付ける (K-075 の段4)。
+                # 方向のシグナルではない。原因を見に行く合図。
+                mark = "  "
+                try:
+                    z = unusual_move_z(pd.read_parquet(path)["value"])
+                except Exception:  # noqa: BLE001 — 表示のための付加情報なので落とさない
+                    z = None
+                if z is not None:
+                    mark = " !"
+                    flagged.append((name, z, d))
+                parts.append(f"  {name:<14s}{val:>8.2f}  ({d.month}/{d.day:02d}){mark}")
             print("    ".join(parts))
         print()
 
@@ -257,6 +311,13 @@ def show_summary(cache: CacheManager):
         ("REAL10Y", "REAL30Y"),
         ("BREAKEVEN10Y", "MOVE"),
     ])
+
+    if flagged:
+        print("[! いつもと違う動き — 直近1年の日次変化に対して2σ超]")
+        for name, z, d in sorted(flagged, key=lambda x: -abs(x[1])):
+            print(f"  {name:<14s} z={z:+.1f}  ({d.month}/{d.day:02d})")
+        print("  ※ 方向のシグナルではない。原因を確認しに行く合図 (K-075 の段4)")
+        print()
 
     # ── 日足 ──
     daily_latest_date = None
