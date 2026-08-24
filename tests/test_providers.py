@@ -126,3 +126,54 @@ class TestProviderChain:
         p2 = FakeProvider("p2", {"VIX": [], "VIX3M": []})
         chain = ProviderChain([p1, p2])
         assert chain.available_series() == {"VIX", "BRENT", "VIX3M"}
+
+
+class TestUS30Y:
+    """米30年債利回り(US30Y)の収集経路テスト。
+
+    宿題 issue#26: 2026-08-17〜19 の SOXL 下落を駆動したのは30年債利回りだったが、
+    この系列自体を収集しておらず regime 判定が構造的に検知できなかった。
+
+    取得先は FRED(DGS30) 単独とする。2026-08-24 に米財務省の日次利回り曲線(30 Yr)を
+    基準として 2026年の159営業日を突合した結果、FRED は 159/159 日で完全一致した一方、
+    yfinance(^TYX) は完全一致ゼロ・小数第2位に丸めても 89/159 日(56%)・最大差 0.0570 で、
+    週次の金利変動と同オーダーのズレがあったため。
+    """
+
+    def test_us30y_in_fred_series(self):
+        assert FRED_SERIES["US30Y"] == "DGS30"
+
+    def test_us30y_not_in_yfinance_series(self):
+        """^TYX は財務省値と一致しないため取得先に含めない(回帰防止)。"""
+        assert "US30Y" not in YFINANCE_SERIES
+
+    def test_fred_adapter_exposes_us30y(self):
+        adapter = FredAdapter(FakeFredClient())
+        assert "US30Y" in adapter.available_series()
+
+    def test_yfinance_adapter_does_not_expose_us30y(self):
+        adapter = YFinanceAdapter()
+        assert "US30Y" not in adapter.available_series()
+
+    def test_fred_adapter_fetches_us30y_via_dgs30(self):
+        client = FakeFredClient({"DGS30": [{"date": "2026-08-21", "value": 5.276}]})
+        adapter = FredAdapter(client)
+        result = adapter.fetch_series("US30Y", date(2026, 8, 21), date(2026, 8, 21))
+        assert len(result) == 1
+        assert result[0]["value"] == 5.276
+
+    def test_chain_resolves_us30y_from_fred_only(self):
+        """yfinance が US30Y を提供しない構成でも、chain は FRED から解決する。"""
+        yf_like = FakeProvider("yfinance", {"VIX": [{"date": "2026-08-21", "value": 15.9}]})
+        fred_like = FakeProvider("fred", {"US30Y": [{"date": "2026-08-20", "value": 5.23}]})
+        chain = ProviderChain([yf_like, fred_like])
+        records, source = chain.fetch("US30Y", date(2026, 8, 20), date(2026, 8, 21))
+        assert source == "fred"
+        assert records[0]["value"] == 5.23
+
+    def test_us30y_available_in_chain(self):
+        """update_macro は chain.available_series() 駆動なので、ここに出ないと収集されない。"""
+        yf_like = FakeProvider("yfinance", {"VIX": []})
+        fred_like = FakeProvider("fred", {"US30Y": []})
+        chain = ProviderChain([yf_like, fred_like])
+        assert "US30Y" in chain.available_series()

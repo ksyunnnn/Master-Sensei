@@ -52,10 +52,21 @@ class TestFredClient:
         client.fetch_series("VIXCLS", start_date=date(2026, 3, 1), end_date=date(2026, 3, 26))
         assert "observation_start=2026-03-01" in responses.calls[0].request.url
 
-    def test_series_config_has_9_series(self):
-        assert len(SERIES_CONFIG) == 9
-        assert "VIX" in SERIES_CONFIG
-        assert "VIX3M" in SERIES_CONFIG
-        assert "VXN" in SERIES_CONFIG
-        assert "HY_SPREAD" in SERIES_CONFIG
-        assert "USD_INDEX" in SERIES_CONFIG
+    def test_series_config_covers_expected_series(self):
+        """収集対象の系列名と FRED シリーズ ID を明示的に固定する。
+
+        件数だけを assert すると系列を1本足すたびに落ちるうえ、
+        「何が入っているべきか」がテストから読み取れない。
+        """
+        assert SERIES_CONFIG == {
+            "VIX": "VIXCLS",
+            "VIX3M": "VXVCLS",
+            "VXN": "VXNCLS",
+            "BRENT": "DCOILBRENTEU",
+            "US10Y": "DGS10",
+            "US30Y": "DGS30",
+            "FEDFUNDS": "FEDFUNDS",
+            "YIELD_CURVE": "T10Y2Y",
+            "HY_SPREAD": "BAMLH0A0HYM2",
+            "USD_INDEX": "DTWEXBGS",
+        }

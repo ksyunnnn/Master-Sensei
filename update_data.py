@@ -84,7 +84,7 @@ def _build_provider_chain() -> ProviderChain:
 
 
 def update_macro(cache: CacheManager):
-    """マクロ9シリーズの差分取得（ADR-009: ProviderChain経由、source列付き）
+    """マクロ10シリーズの差分取得（ADR-009: ProviderChain経由、source列付き）
 
     ProviderChainがyfinance→FREDの順に試行し、最初に成功したソースを使う。
     取得した値はsource列付きでParquetに保存する。
@@ -224,10 +224,10 @@ def show_summary(cache: CacheManager):
     # 意味的ペアで並べる（関連指標を横に配置）
     macro_pairs = [
         ("VIX", "VIX3M"),
-        ("HY_SPREAD", "US10Y"),
+        ("US10Y", "US30Y"),
+        ("YIELD_CURVE", "HY_SPREAD"),
         ("BRENT", "USD_INDEX"),
-        ("YIELD_CURVE", "VXN"),
-        ("FEDFUNDS", None),
+        ("VXN", "FEDFUNDS"),
     ]
     print("[マクロ]")
     for left, right in macro_pairs:
