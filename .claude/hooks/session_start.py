@@ -68,14 +68,39 @@ def check_regime(db) -> list[str]:
     return messages
 
 
+def _is_missing(val) -> bool:
+    """SQL の NULL 相当かを判定する。
+
+    `SenseiDB` は `fetchdf().to_dict("records")` で行を返すため、SQL の NULL は
+    `None` ではなく pandas の `NaT` / `NaN` になる。`is None` だけで判定すると
+    未検証の行を検証済みとして数えてしまう。
+    """
+    if val is None:
+        return True
+    return val != val  # NaT / NaN は自分自身と等しくない
+
+
 def check_knowledge(db) -> list[str]:
-    """stale知見を検出"""
+    """stale知見を検出
+
+    `get_stale_knowledge()` は「検証日が180日以上前」と「一度も検証していない
+    (last_verified_date が NULL)」を同じリストで返す。両者を混ぜて
+    「N件が180日以上未検証」と表示すると、作成直後の知見まで180日超として
+    数えてしまい件数が事実と食い違う。ここで分けて数える。
+    """
     active = db.get_active_knowledge()
     stale = db.get_stale_knowledge()
 
     messages = [f"  知見: {len(active)}件 (active)"]
-    if stale:
-        messages.append(f"  [警告] {len(stale)}件が180日以上未検証")
+
+    never = [k for k in stale if _is_missing(k.get("last_verified_date"))]
+    overdue = [k for k in stale if not _is_missing(k.get("last_verified_date"))]
+
+    if overdue:
+        messages.append(f"  [警告] {len(overdue)}件が180日以上未検証")
+    if never:
+        # 作成直後の知見が未検証なのは正常な状態なので警告にしない。
+        messages.append(f"  未検証(検証日なし): {len(never)}件")
     return messages
 
 
