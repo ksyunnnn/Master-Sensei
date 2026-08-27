@@ -139,6 +139,49 @@ def is_quiet_jst(now: datetime) -> bool:
     return QUIET_START <= t < QUIET_END
 
 
+def check_level_alerts(
+    *,
+    prev_price: Optional[float],
+    price: float,
+    above: list,
+    below: list,
+    fired: set,
+) -> list:
+    """指定した価格水準を跨いだかを判定する。跨いだ水準を [(向き, 水準), ...] で返す。
+
+    `fired` は呼び出し側が持ち回る「もう鳴らした水準」の集合で、この関数が破壊的に
+    更新する。同じ水準は監視1回につき一度しか鳴らない（issue #27 バグ #4 と同じ規律。
+    境界を往復するたびに鳴ると通知が意味を失うため、再武装はしない）。
+
+    `prev_price is None` は監視開始時の初回観測。**この時点で既に跨いでいる水準は
+    黙って fired に入れ、鳴らさない**（issue #27 バグ #3。起動しただけで過去の水準が
+    一斉に鳴るのを防ぐ）。
+
+    同値は上抜け扱い（`price >= level`）。指値の約定判定と揃えてある。
+    """
+    if prev_price is None:
+        for lv in above:
+            if price >= lv:
+                fired.add(("above", lv))
+        for lv in below:
+            if price <= lv:
+                fired.add(("below", lv))
+        return []
+
+    hits = []
+    for lv in sorted(above):
+        key = ("above", lv)
+        if key not in fired and prev_price < lv <= price:
+            fired.add(key)
+            hits.append(key)
+    for lv in sorted(below, reverse=True):
+        key = ("below", lv)
+        if key not in fired and prev_price > lv >= price:
+            fired.add(key)
+            hits.append(key)
+    return hits
+
+
 def should_notify_move(
     last_notified_pct: Optional[float], current_pct: float, step: float
 ) -> bool:
@@ -238,7 +281,9 @@ def _resolve_end(until: str) -> datetime:
 
 
 def run(*, symbol: str, poll_sec: int, step: float, heartbeat_min: int,
-        end_at: datetime, once: bool) -> int:
+        end_at: datetime, once: bool,
+        alert_above: Optional[list] = None,
+        alert_below: Optional[list] = None) -> int:
     from src.realtime import fetch_realtime_quote
 
     last_notified_pct: Optional[float] = None   # None = 未観測（issue #27 バグ #2）
@@ -246,6 +291,10 @@ def run(*, symbol: str, poll_sec: int, step: float, heartbeat_min: int,
     last_heartbeat: Optional[datetime] = None
     fx: Optional[float] = None
     fx_at: Optional[datetime] = None
+    prev_price: Optional[float] = None   # None = 未観測（水準アラートを遡らせない）
+    fired_levels: set = set()
+    above = list(alert_above or [])
+    below = list(alert_below or [])
 
     while True:
         now = datetime.now(JST)
@@ -293,6 +342,17 @@ def run(*, symbol: str, poll_sec: int, step: float, heartbeat_min: int,
         print(f"[{now:%H:%M:%S}] {detail}", flush=True)
 
         quiet = is_quiet_jst(now)
+
+        # 水準アラートは静音区間でも鳴らす。指定した価格で行動するために
+        # 設定するものなので、止めると設定した意味が無くなる。薄商いかどうかは
+        # format_notification が文面に出す（K-070 の誤報は文面で警告する方針）。
+        for direction, level in check_level_alerts(
+            prev_price=prev_price, price=quote.price,
+            above=above, below=below, fired=fired_levels,
+        ):
+            mark = "到達" if direction == "above" else "割れ"
+            notify("Master Sensei", f"水準{mark} ${level:g}", line)
+        prev_price = quote.price
 
         # 約定・建玉変化は静音区間でも常に通知する（issue #27 の仕様）
         if last_qty is not None and abs(pos.quantity - last_qty) > 1e-9:
@@ -343,6 +403,10 @@ def main() -> int:
                     help="動きが無くても通知する間隔（分）。0 で無効")
     ap.add_argument("--until", default="05:10", help="終了時刻 HH:MM JST（過ぎていれば翌日）")
     ap.add_argument("--once", action="store_true", help="現況を1回出して終了")
+    ap.add_argument("--alert-above", type=float, action="append", metavar="PRICE",
+                    help="この価格に到達したら通知（複数指定可）。監視1回につき一度だけ鳴る")
+    ap.add_argument("--alert-below", type=float, action="append", metavar="PRICE",
+                    help="この価格を割れたら通知（複数指定可）。監視1回につき一度だけ鳴る")
     args = ap.parse_args()
 
     return run(
@@ -352,6 +416,8 @@ def main() -> int:
         heartbeat_min=args.heartbeat_min,
         end_at=_resolve_end(args.until),
         once=args.once,
+        alert_above=args.alert_above,
+        alert_below=args.alert_below,
     )
 
 

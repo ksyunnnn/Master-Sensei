@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scripts.watch_position import (  # noqa: E402
+    check_level_alerts,
     Position,
     Txn,
     fifo_open_position,
@@ -237,3 +238,75 @@ def test_fifo_買いが足りなければ黙って返さず落ちる():
     ]
     # net 4 株に対し買いは 5 株あるので通る
     assert fifo_open_position(txns).quantity == 4
+
+
+# ── 水準アラート（--alert-above / --alert-below） ────────────
+
+def test_水準アラート_初回観測では鳴らさない():
+    """prev_price が None = 監視開始時。既に跨いでいる水準を遡って鳴らさない
+    （issue #27 バグ #3 と同じ規律）。"""
+    fired = set()
+    hits = check_level_alerts(
+        prev_price=None, price=125.0, above=[119.879], below=[113.13], fired=fired
+    )
+    assert hits == []
+    # 125.0 は above を既に超えている（=遡って鳴らさないので fired に入れる）が、
+    # below 113.13 は下抜けていないので武装したまま残す
+    assert fired == {("above", 119.879)}
+
+
+def test_水準アラート_上抜けを検出する():
+    fired = set()
+    hits = check_level_alerts(
+        prev_price=118.0, price=120.5, above=[119.879], below=[], fired=fired
+    )
+    assert hits == [("above", 119.879)]
+
+
+def test_水準アラート_下抜けを検出する():
+    fired = set()
+    hits = check_level_alerts(
+        prev_price=114.0, price=112.9, above=[], below=[113.13], fired=fired
+    )
+    assert hits == [("below", 113.13)]
+
+
+def test_水準アラート_未達なら鳴らさない():
+    fired = set()
+    hits = check_level_alerts(
+        prev_price=118.0, price=119.0, above=[119.879], below=[], fired=fired
+    )
+    assert hits == []
+    assert fired == set()
+
+
+def test_水準アラート_同じ水準は一度しか鳴らない():
+    """境界を往復しても連発しない（issue #27 バグ #4 と同じ規律）。"""
+    fired = set()
+    first = check_level_alerts(
+        prev_price=118.0, price=120.5, above=[119.879], below=[], fired=fired
+    )
+    assert first == [("above", 119.879)]
+    # 下に戻ってまた上抜けても鳴らない
+    check_level_alerts(prev_price=120.5, price=118.0, above=[119.879], below=[], fired=fired)
+    again = check_level_alerts(
+        prev_price=118.0, price=121.0, above=[119.879], below=[], fired=fired
+    )
+    assert again == []
+
+
+def test_水準アラート_複数水準を一度に跨いだら全部返す():
+    fired = set()
+    hits = check_level_alerts(
+        prev_price=118.0, price=131.0, above=[119.879, 125.0, 130.0], below=[], fired=fired
+    )
+    assert hits == [("above", 119.879), ("above", 125.0), ("above", 130.0)]
+
+
+def test_水準アラート_ちょうど同値は上抜け扱い():
+    """指値の約定判定と揃える。price >= level を上抜けとする。"""
+    fired = set()
+    hits = check_level_alerts(
+        prev_price=119.0, price=119.879, above=[119.879], below=[], fired=fired
+    )
+    assert hits == [("above", 119.879)]
