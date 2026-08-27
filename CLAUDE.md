@@ -34,7 +34,7 @@
 - **8/27 の寄り前時点で SOXX 換算の損益分岐は +0.94%（手数料込みなら +1.03%）**。時間外 SOXX は +2.50%（SOXL $125.15、+7.33%）だが 20:00 ET の薄商い最終値。**K-064（寄り前情報は open-to-close と無相関、n=1284）と K-060 により、時間外水準を寄り後の方向の根拠にしない**。
 - **8/26 に執行機会を丸ごと落とした**。keepalive が 6回正常 roll した後 7回目の待機だけ 79分に伸び、04:11 に refresh token 失効 → 04:30 検知 → 再認証はコールバック5分 timeout で失敗 → **判断期限 04:45 を執行不能のまま通過**。無保護フルサイズで跨いで結果的に得をしたが**これは学習材料にしない（K-041）**。失敗は損益でなく「選択肢が消えたこと」。issue #22 に3回目の観測として実測ログ付きで追記済み。
 - **要件の立て方を変えた**: token 可用性は「セッション中ずっと」でなく**「既知のカタリスト時刻をまたいで」**保証すればよい。カタリスト時刻は events テーブルにある。issue #22 の既存3案（BG_SHELL_PRESSURE_REAP / 生存監視 / Desktop scheduled tasks）と独立で併用可。
-- **セッションをまたぐ監視は Claude Code に存在しない**（Monitor も CronCreate もセッション寿命、CronCreate は明示的に "gone when Claude exits"）。唯一またぐのは SessionStart hook。**そこで `.claude/hooks/session_start.py` に `check_position()` を追加し、建玉があれば `[ACTION]` で監視起動＋token確認を強制する**ようにした（2026-08-27）。**監視は毎セッション立て直す前提**。
+- **セッションをまたぐ監視は Claude Code に存在しない**（Monitor も CronCreate もセッション寿命、CronCreate は明示的に "gone when Claude exits"）。**監視は毎セッション、必要な時に手で立てる**。2026-08-27 に SessionStart hook へ `[ACTION]` 付きの建玉チェックを入れたが、`[ACTION]` は確認なしに実行される規約のため建玉がある限り毎セッション監視が自動起動して通知が飛ぶ設計になっており、同日に撤回した。**hook に常時発火する行動指示を足さない**。
 - **`scripts/watch_position.py` を使う。scratchpad で書き直さない**（issue #27。2026-08-26 に再発させた）。`--alert-above` / `--alert-below` で水準通知（監視1回につき一度、初回観測では遡って鳴らさない）。
 - **Saxo 再認証は「戻ってきた時」にやる**。refresh token は約1時間で切れるので、事前に済ませても意味がない。
 - **8/18 以降の半導体安は 8/25-26 で beta 軸ごと巻き戻した**。8/24 は SPY -0.29 > IWM -0.66 > QQQ -1.00 > SOXX -2.67、8/25 は SOXX +1.56 > QQQ +0.62 > IWM +0.42 > SPY +0.32 と完全な鏡像（K-055）。driver はホルムズ de-escalation（Brent 8/24 92.17 → 8/26 86.54）。**金利は 8/18 以降5回連続で反証**（K-074/ADR-039）。
