@@ -116,3 +116,43 @@ class TestCallbackHandlerIdempotency:
         assert secret not in result.error, (
             f"expected_state ({secret}) leaked into error message: {result.error}"
         )
+
+
+class TestCallbackWaitTimeout:
+    """コールバック待機時間が設定可能であること。
+
+    待機は 300 秒固定だった。ユーザーが席を外している間に token が失効すると、
+    再認証を起動しても5分で窓が閉じる。callback は localhost へ返るため
+    ログインはその PC のブラウザでしか完了できず、戻るまで窓を開けておく必要がある。
+    2026-08-26 と 2026-08-27 に、この5分で3回続けて失敗した。
+    """
+
+    def test_run_oauth_init_が待機秒数を受け取る(self, saxo_oauth_init):
+        import inspect
+
+        sig = inspect.signature(saxo_oauth_init.run_oauth_init)
+        assert "wait_sec" in sig.parameters, (
+            "run_oauth_init は待機秒数を引数で受け取れなければならない"
+        )
+
+    def test_既定の待機は従来どおり300秒(self, saxo_oauth_init):
+        import inspect
+
+        sig = inspect.signature(saxo_oauth_init.run_oauth_init)
+        assert sig.parameters["wait_sec"].default == 300
+
+    def test_CLIに待機分数のオプションがある(self, saxo_oauth_init):
+        import argparse
+        from unittest.mock import patch
+
+        captured = {}
+
+        def fake_run(**kwargs):
+            captured.update(kwargs)
+
+        argv = ["saxo_oauth_init.py", "--wait-min", "90"]
+        with patch.object(saxo_oauth_init, "run_oauth_init", fake_run), \
+                patch.object(sys, "argv", argv):
+            saxo_oauth_init.main()
+
+        assert captured["wait_sec"] == 90 * 60

@@ -133,7 +133,7 @@ def _ensure_db_file_mode(path: Path) -> None:
 
 
 def run_oauth_init(environment: str | None = None, port: int = 8080,
-                   open_browser: bool = True) -> None:
+                   open_browser: bool = True, wait_sec: int = 300) -> None:
     config = SaxoConfig.from_env(environment=environment)
     parsed_redirect = urlparse(config.redirect_uri)
     expected_host = parsed_redirect.hostname
@@ -168,9 +168,15 @@ def run_oauth_init(environment: str | None = None, port: int = 8080,
             if open_browser:
                 webbrowser.open(auth_url)
 
-            # 5分待機。手動ログインが終わるまで block。
-            if not result.event.wait(timeout=300):
-                raise SystemExit("[saxo-oauth-init] timeout waiting for callback (5 min)")
+            # 手動ログインが終わるまで block。callback は localhost に返るため、
+            # ログインはこの PC のブラウザでしか完了できない。ユーザーが席を外して
+            # いる間に token が失効した場合は、戻るまで窓を開けておく必要がある
+            # (--wait-min で延ばす)。
+            if not result.event.wait(timeout=wait_sec):
+                raise SystemExit(
+                    f"[saxo-oauth-init] timeout waiting for callback "
+                    f"({wait_sec // 60} min {wait_sec % 60} sec)"
+                )
 
             if result.error:
                 raise SystemExit(f"[saxo-oauth-init] callback error: {result.error}")
@@ -195,10 +201,16 @@ def main():
                         help="callback リスナーのポート (default: 8080)")
     parser.add_argument("--no-browser", action="store_true",
                         help="ブラウザを自動で開かない")
+    parser.add_argument("--wait-min", type=float, default=5.0,
+                        help="callback を待つ分数 (default: 5)。席を外している間に "
+                             "token が失効した時は長く取る。callback は localhost に "
+                             "返るのでログインはこの PC のブラウザでしか完了できない")
     args = parser.parse_args()
 
     try:
-        run_oauth_init(environment=args.env, port=args.port, open_browser=not args.no_browser)
+        run_oauth_init(environment=args.env, port=args.port,
+                       open_browser=not args.no_browser,
+                       wait_sec=int(args.wait_min * 60))
     except (SaxoAuthError, ValueError) as e:
         print(f"[saxo-oauth-init] ERROR: {e}", file=sys.stderr)
         sys.exit(1)
