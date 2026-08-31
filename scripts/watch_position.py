@@ -334,10 +334,19 @@ def run(*, symbol: str, poll_sec: int, step: float, heartbeat_min: int,
             symbol=symbol, snap=snap, price=quote.price, session=quote.session,
             is_thin=quote.is_thin, now=now, usdjpy=fx,
         )
+        # 基準終値が stale だと delta_pct は None (ADR-031)。その時は「終値比」を
+        # 出さず、基準がいつのもので何営業日古いかを名指しする。
+        if quote.delta_pct is None:
+            cmp_part = (
+                f"終値比なし: 基準{quote.regular_close_date:%m-%d}が"
+                f"{quote.baseline_stale_days}営業日古い"
+            )
+        else:
+            cmp_part = f"{quote.regular_close_date:%m-%d}終値比{quote.delta_pct:+.2f}%"
         detail = (
             f"{line} | {pos.quantity:g}株 建値${pos.avg_price:.3f} "
             f"原価${pos.cost_usd:,.2f} 評価${snap['market_value_usd']:,.2f} "
-            f"(終値比{quote.delta_pct:+.2f}%)"
+            f"({cmp_part})"
         )
         print(f"[{now:%H:%M:%S}] {detail}", flush=True)
 

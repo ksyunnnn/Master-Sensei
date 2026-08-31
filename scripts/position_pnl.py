@@ -96,6 +96,9 @@ def build_snapshot(symbol: str | None = None) -> dict | None:
         "session": quote.session,
         "is_thin": quote.is_thin,
         "regular_close": quote.regular_close,
+        # 基準終値の日付と stale 日数。基準が古い時 delta_pct_vs_close は None (ADR-031)
+        "regular_close_date": quote.regular_close_date.isoformat(),
+        "baseline_stale_days": quote.baseline_stale_days,
         "delta_pct_vs_close": quote.delta_pct,
         "bar_time_et": quote.bar_time_et.isoformat(),
         "fetched_at": quote.fetched_at.isoformat(),

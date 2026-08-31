@@ -6,7 +6,7 @@ DB/HTTP は fake で差し替える（実 live 検証は Phase 3）。
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import duckdb
 import pytest
@@ -97,7 +97,8 @@ def test_trade_cost_to_dict_includes_break_even_price():
 def test_quote_to_dict_serializes_datetimes_and_summary():
     q = RealtimeQuote(symbol="SOXL", price=165.28, fetched_at=NOW,
                       bar_time_et=datetime(2026, 7, 7, 16, 0, tzinfo=JST),
-                      regular_close=194.65, delta_pct=-15.06, session="post",
+                      regular_close=194.65, regular_close_date=date(2026, 7, 7),
+                      baseline_stale_days=0, delta_pct=-15.06, session="post",
                       source="yfinance", confirm_source="tiingo_iex",
                       confirm_price=165.3, is_thin=True)
     d = quote_to_dict(q)
@@ -106,6 +107,25 @@ def test_quote_to_dict_serializes_datetimes_and_summary():
     assert d["fetched_at"] == NOW.isoformat()
     assert isinstance(d["bar_time_et"], str)
     assert "SOXL" in d["summary"]
+    # 乖離%の基準がいつのものかを読み手が検算できる (ADR-031)
+    assert d["regular_close_date"] == "2026-07-07"
+    assert d["baseline_stale_days"] == 0
+
+
+def test_quote_to_dict_carries_stale_baseline_marker():
+    # 基準が stale の時は delta_pct が None のまま JSON に出る (null)。
+    # 古い終値との乖離%を現値の動きと誤読させないため (ADR-031)。
+    q = RealtimeQuote(symbol="SOXL", price=112.36, fetched_at=NOW,
+                      bar_time_et=datetime(2026, 8, 31, 18, 50, tzinfo=JST),
+                      regular_close=116.60, regular_close_date=date(2026, 8, 26),
+                      baseline_stale_days=2, delta_pct=None, session="pre",
+                      source="yfinance", confirm_source=None,
+                      confirm_price=None, is_thin=True)
+    d = quote_to_dict(q)
+    assert d["delta_pct"] is None
+    assert d["regular_close_date"] == "2026-08-26"
+    assert d["baseline_stale_days"] == 2
+    assert "update_data.py" in d["summary"]
 
 
 # ── decide_mode: read_only / read_write / auth_required の分岐（純関数） ──
@@ -216,7 +236,9 @@ def test_realtime_quote_no_baseline(monkeypatch):
 
 def test_realtime_quote_happy(monkeypatch):
     q = RealtimeQuote(symbol="SOXL", price=165.28, fetched_at=NOW,
-                      bar_time_et=NOW, regular_close=194.65, delta_pct=-15.06,
+                      bar_time_et=NOW, regular_close=194.65,
+                      regular_close_date=date(2026, 7, 7), baseline_stale_days=0,
+                      delta_pct=-15.06,
                       session="post", source="yfinance", confirm_source=None,
                       confirm_price=None, is_thin=True)
     monkeypatch.setattr(live_reads, "fetch_realtime_quote", lambda s: q)
