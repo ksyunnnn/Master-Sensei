@@ -129,13 +129,20 @@ def trade_cost_to_dict(tc: TradeCost) -> dict:
 
 
 def quote_to_dict(q) -> dict:
-    """延長時間の現値。datetime は JSON 化のため isoformat。`is_thin` は sizing 注記(ADR-031)。"""
+    """延長時間の現値。datetime は JSON 化のため isoformat。`is_thin` は sizing 注記(ADR-031)。
+
+    `regular_close_date` / `baseline_stale_days` を必ず含める。乖離%は現値と基準終値の
+    関係なので、基準がいつのものか分からないまま `delta_pct` だけ読むと古い終値との差を
+    現値の動きと誤読する。基準が stale の時 `delta_pct` は None になる (ADR-031)。
+    """
     return {
         "symbol": q.symbol,
         "price": q.price,
         "fetched_at": q.fetched_at.isoformat(),
         "bar_time_et": q.bar_time_et.isoformat(),
         "regular_close": q.regular_close,
+        "regular_close_date": q.regular_close_date.isoformat(),
+        "baseline_stale_days": q.baseline_stale_days,
         "delta_pct": q.delta_pct,
         "session": q.session,
         "source": q.source,
