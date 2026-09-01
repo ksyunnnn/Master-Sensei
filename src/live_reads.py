@@ -64,7 +64,7 @@ def balance_to_dict(b: AccountBalance) -> dict:
         "cash_available_for_trading": b.cash_available_for_trading,
         "settled_cash_balance": b.settled_cash_balance,
         "total_value": b.total_value,
-        "unrealized_pnl": b.unrealized_pnl,
+        "unrealized_positions_value": b.unrealized_positions_value,
         "transactions_not_booked": b.transactions_not_booked,
         "open_positions_count": b.open_positions_count,
         "net_positions_count": b.net_positions_count,

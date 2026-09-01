@@ -53,10 +53,20 @@
 - yfinance: VIX/VIX3M/Brent即時取得（ProviderChainでFREDにフォールバック）
 - Saxo OpenAPI: 口座残高・ポジション (Live, OAuth, ADR-025)
 
-## 外部 API 統合 (ADR-026)
+## 外部 API 統合 (ADR-026, ADR-041)
 
 - 全 provider の公式仕様は `docs/api/<provider>/` に集約 (Saxo は完全文書化済、他は段階的)
 - **API field の意味を変数名から推測しない**。`docs/api/<provider>/` を必ず参照
+- **公式定義の引用だけでは意味は確定しない。恒等式として実 payload に固定する (ADR-041)**。
+  「A は B を意味する」ではなく「`A == f(C,D)` が実測 payload 上で成立する」を
+  `tests/test_<provider>_field_semantics.py` に assert し、**棄却した解釈も assert する**。
+  fixture は live から採取した生 payload (`tests/fixtures/`、秘匿 field は REDACTED)。
+  前例: `UnrealizedPositionsValue` を「含み損益」と誤記載し 5 か月間検出されなかった (K-081)
+- **含み損益に `UnrealizedPositionsValue` を使わない**。これは「時価 − 決済コスト」で、
+  実測で含み損益と 47.8 万円ずれた。含み損益は position 側 `ProfitLossOnTradeInBaseCurrency`
+  (ただし建玉時レート換算で為替変動を含まない) か現値から自前計算する (K-048/K-066/K-081)
+- **market closed かつ購読なしのとき `CurrentPrice`/`MarketValue`/`Exposure` は 0.0 で返る**。
+  現値として使わない。`CalculationReliability != "Ok"` が合図 (K-081)
 - `src/*_client.py` 外部での raw dict キー access 禁止。意味的アクセサ経由のみ
 - 新規 provider 追加時は `docs/api/TEMPLATE.md` に従う
 - **live 情報（残高/建玉/注文/取引コスト/延長時間の現値）は ad-hoc python を書かず `master-sensei-live` MCP ツール経由で取る（ADR-035）**。`get_account_balances`（sizing は `spending_power`）/ `get_positions` / `get_open_orders` / `get_trade_cost` / `get_realtime_quote`。パス・カラム・アクセサ名を推測せず型付き JSON で受け取る。蓄積層の SQL 照会は `duckdb` MCP（read-only）、執行事実層 parquet は `account_transactions` ビュー（ADR-035, `SenseiDB.ensure_ledger_views`）で名前照会する

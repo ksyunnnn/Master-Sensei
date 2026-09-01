@@ -59,7 +59,14 @@ class AccountBalance:
         settled_cash_balance: settled cash のみ。**sizing には使わない** (未決済を
             含まないため過小評価)。会計表示用途のみ。
         total_value: NAV (cash + 未実現ポジション評価額)。
-        unrealized_pnl: 含み損益。
+        unrealized_positions_value: 建玉の時価から決済コストを引いた額
+            (= non_margin_positions_value + CostToClosePositions)。
+            **含み損益ではない**。2026-09-01 実測で +449,931 円を返したが、
+            同時刻の実際の含み損益は -28,200 円だった (符号も桁も違う)。
+            含み損益が要るなら `get_positions()` の `unrealized_pnl_base`
+            (ただし為替変動を含まない、下記 SaxoPosition 参照) か、
+            現値から自前計算する (K-048)。
+            恒等式は tests/test_saxo_field_semantics.py が固定している。
         transactions_not_booked: T+2 未決済額 (debug 用)。
         open_positions_count: open position 数。
         net_positions_count: open + settling closed の合計。
@@ -73,7 +80,7 @@ class AccountBalance:
     cash_available_for_trading: float
     settled_cash_balance: float
     total_value: float
-    unrealized_pnl: float
+    unrealized_positions_value: float
     transactions_not_booked: float
     open_positions_count: int
     net_positions_count: int
@@ -145,8 +152,12 @@ class LivePosition:
     uic: int
     symbol: str
     amount: float            # 正=long, 負=short
-    open_price: float
-    unrealized_pnl_base: float   # ProfitLossOnTradeInBaseCurrency (base=JPY)
+    open_price: float        # OpenPrice = 約定価格。コスト込みは OpenPriceIncludingCosts
+    # ProfitLossOnTradeInBaseCurrency (base=JPY)。**建玉時の為替レートで換算されており、
+    # 為替変動ぶんを含まない** (2026-09-01 実測: -28,200 円に対し円建ての実際の含み損益は
+    # -27,218 円。差 +1,022 円 = ProfitLossCurrencyConversion)。K-066 が実現損益で
+    # 記録した穴と同じものが含み損益側にもある。円で正確に見るには自前計算する (K-048)。
+    unrealized_pnl_base: float
 
 
 @dataclass
@@ -968,7 +979,7 @@ class SaxoClient:
             cash_available_for_trading=float(bal["CashAvailableForTrading"]),  # see #cashavailablefortrading
             settled_cash_balance=float(bal["CashBalance"]),  # see #cashbalance
             total_value=float(bal["TotalValue"]),  # see #totalvalue
-            unrealized_pnl=float(bal["UnrealizedPositionsValue"]),  # see #unrealizedpositionsvalue
+            unrealized_positions_value=float(bal["UnrealizedPositionsValue"]),  # see #unrealizedpositionsvalue
             transactions_not_booked=float(bal["TransactionsNotBooked"]),  # see #transactionsnotbooked
             open_positions_count=int(bal["OpenPositionsCount"]),  # see #openpositionscount
             net_positions_count=int(bal["NetPositionsCount"]),  # see #netpositionscount

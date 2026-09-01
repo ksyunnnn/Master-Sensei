@@ -32,7 +32,8 @@
 |------|----------|--------------------|------|
 | **新規取引の sizing (今夜 SOXL 何株買えるか)** | `CashAvailableForTrading` または `SpendingPower` | `CashBalance` | CashBalance は settled cash のみ。未決済分 (TransactionsNotBooked) を含まないため過小評価する |
 | 口座評価額 (NAV) | `TotalValue` | `CashBalance` | TotalValue = cash + 未実現ポジション評価額 |
-| 含み損益確認 | `UnrealizedPositionsValue` | - | |
+| 含み損益確認 | position 側の `ProfitLossOnTradeInBaseCurrency` (為替変動を含まない) か現値から自前計算 (K-048) | `UnrealizedPositionsValue` | UnrealizedPositionsValue は「時価 − 決済コスト」で含み損益ではない。2026-09-01 実測で +449,931 円 vs 実際の含み損益 -28,200 円 |
+| 建玉の時価 | `NonMarginPositionsValue` | `UnrealizedPositionsValue` | 決済コストが引かれているぶんずれる |
 | margin 必要量算出 | `NetEquityForMargin` | `TotalValue` | NetEquityForMargin が margin 計算の正式 base |
 | margin 余力確認 | `MarginAvailableForTrading` | `CashAvailableForTrading` | margin instrument (CFD/FX) では別の field |
 
@@ -55,7 +56,7 @@
 | `cash_available_for_trading` | `CashAvailableForTrading` | sizing 判断 (SpendingPower と同値、互換) |
 | `settled_cash_balance` | `CashBalance` | 会計表示用 (**sizing には使わない**、未決済除外で過小評価) |
 | `total_value` | `TotalValue` | NAV |
-| `unrealized_pnl` | `UnrealizedPositionsValue` | 含み損益 |
+| `unrealized_positions_value` | `UnrealizedPositionsValue` | 建玉の時価 − 決済コスト (**含み損益ではない**) |
 | `transactions_not_booked` | `TransactionsNotBooked` | T+2 未決済額 (debug 用) |
 | `open_positions_count` / `net_positions_count` | 同名 | open / (open+settling) 建玉数 |
 | `non_margin_positions_value` | `NonMarginPositionsValue` | cash instrument 評価額合計 |

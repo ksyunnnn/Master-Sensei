@@ -1,0 +1,146 @@
+{
+  "_note": "2026-09-01 19:31 JST に live 口座 77800/T126816 から採取した生 payload。SOXL 25株の建玉1本・米国市場 closed(MarketState=Closed, 購読なし)。tests/test_saxo_field_semantics.py がこの実測値に対して field の意味(恒等式)を固定する。account_key / client_id は秘匿のため REDACTED に置換済み。",
+  "captured_at_jst": "2026-09-01T19:31:42+09:00",
+  "balance": {
+    "CalculationReliability": "Ok",
+    "CashAvailableForTrading": 255850.0,
+    "CashBalance": 255850.0,
+    "CashBlocked": 0.0,
+    "CashBlockedFromWithdrawal": 0.0,
+    "ChangesScheduled": false,
+    "ClosedPositionsCount": 0,
+    "CollateralAvailable": 255850.0,
+    "CollateralCreditValue": {
+      "Line": 255850.0,
+      "UtilizationPct": 0.0
+    },
+    "CorporateActionUnrealizedAmounts": 0.0,
+    "CostToClosePositions": -407.26,
+    "Currency": "JPY",
+    "CurrencyDecimals": 0,
+    "ExtendedTradingHoursData": {
+      "CostToClosePositions": -407.26,
+      "InitialMarginUncertainty": 0.0,
+      "MaintenanceMarginUncertainty": 0.0,
+      "MarginAvailableForTrading": 255850.0,
+      "MarginUsedByCurrentPositions": 0.0,
+      "NonMarginPositionsValue": 450737.96,
+      "TotalValue": 706587.96,
+      "UncertaintyValue": 0.0,
+      "UnrealizedMarginClosedProfitLoss": 0.0,
+      "UnrealizedMarginOpenProfitLoss": 0.0,
+      "UnrealizedMarginProfitLoss": 0.0,
+      "UnrealizedPositionsValue": 450331.0,
+      "UnrealizedPositionsValueExcludingCostToClosePositions": 450738.0
+    },
+    "ExtendedTradingHoursUncertaintyValue": 0.0,
+    "FinancingAccruals": 0.0,
+    "IsPortfolioMarginModelSimple": true,
+    "MarginCollateralNotAvailableDetail": {
+      "InitialFxHaircut": 0.0,
+      "InstrumentCollateralDetails": [
+        {
+          "AssetType": "Etf",
+          "ContributingAssetTypes": [
+            "Etf"
+          ],
+          "Description": "Direxion Daily Semiconductor Bull 3X ETF",
+          "InitialCollateral": 407.26,
+          "InitialCollateralNotAvailable": 449931.424368125,
+          "InitialConcentrationDeduction": 0.0,
+          "MaintenanceCollateral": 407.26,
+          "MaintenanceCollateralNotAvailable": 449931.424368125,
+          "MaintenanceConcentrationDeduction": 0.0,
+          "MarketValue": 450338.684368125,
+          "Symbol": "SOXL:arcx",
+          "Uic": 46780
+        }
+      ],
+      "MaintenanceFxHaircut": 0.0
+    },
+    "NetEquityForMargin": 255850.0,
+    "NetPositionsCount": 1,
+    "NonMarginPositionsValue": 450338.68,
+    "OpenIpoOrdersCount": 0,
+    "OpenPositionsCount": 1,
+    "OptionPremiumsMarketValue": 0.0,
+    "OrdersCount": 0,
+    "OtherCollateral": 0.0,
+    "SettlementValue": 0.0,
+    "SpendingPower": 255850.0,
+    "SpendingPowerDetail": {
+      "Current": 255850.0
+    },
+    "SrdSpendingPower": 255850.0,
+    "TotalValue": 706188.68,
+    "TransactionsNotBooked": 0.0,
+    "TransactionsNotBookedDetail": {
+      "CashDeposit": 0.0
+    },
+    "TriggerOrdersCount": 0,
+    "UnrealizedMarginClosedProfitLoss": 0.0,
+    "UnrealizedMarginOpenProfitLoss": 0.0,
+    "UnrealizedMarginProfitLoss": 0.0,
+    "UnrealizedPositionsValue": 449931.0,
+    "UnrealizedPositionsValueExcludingCostToClosePositions": 450339.0
+  },
+  "position": {
+    "DisplayAndFormat": {
+      "Currency": "USD",
+      "Decimals": 4,
+      "Description": "Direxion Daily Semiconductor Bull 3X ETF",
+      "Format": "Normal",
+      "Symbol": "SOXL:arcx"
+    },
+    "NetPositionId": "46780__Share",
+    "PositionBase": {
+      "AccountId": "77800/T126816",
+      "AccountKey": "REDACTED_ACCOUNT_KEY",
+      "Amount": 25.0,
+      "AssetType": "Etf",
+      "CanBeClosed": true,
+      "ClientId": "REDACTED",
+      "CloseConversionRateSettled": false,
+      "CorrelationKey": "REDACTED",
+      "ExecutionTimeOpen": "2026-08-20T15:43:33.985000Z",
+      "IsForceOpen": false,
+      "IsMarketOpen": false,
+      "LockedByBackOffice": false,
+      "OpenBondPoolFactor": 1.0,
+      "OpenPrice": 119.879,
+      "OpenPriceIncludingCosts": 119.9846,
+      "RelatedOpenOrders": [],
+      "SourceOrderId": "5435911635",
+      "Status": "Open",
+      "Uic": 46780,
+      "ValueDate": "2026-08-21T00:00:00.000000Z"
+    },
+    "PositionId": "7717104071",
+    "PositionView": {
+      "CalculationReliability": "ApproximatedPrice",
+      "ConversionRateCurrent": 159.7087275,
+      "ConversionRateOpen": 159.3463725,
+      "CurrentBondPoolFactor": 1.0,
+      "CurrentPrice": 0.0,
+      "CurrentPriceDelayMinutes": 15,
+      "CurrentPriceType": "None",
+      "Exposure": 0.0,
+      "ExposureCurrency": "USD",
+      "ExposureInBaseCurrency": 0.0,
+      "InstrumentPriceDayPercentChange": 0.0,
+      "MarketState": "Closed",
+      "MarketValue": 0.0,
+      "MarketValueInBaseCurrency": 0.0,
+      "MarketValueOpen": -2996.98,
+      "MarketValueOpenInBaseCurrency": -477557.0,
+      "ProfitLossCurrencyConversion": 1022.0,
+      "ProfitLossOnTrade": -176.98,
+      "ProfitLossOnTradeInBaseCurrency": -28200.0,
+      "ProfitLossOnTradeIntraday": 0.25,
+      "ProfitLossOnTradeIntradayInBaseCurrency": 1081.0,
+      "TradeCostsTotal": -5.19,
+      "TradeCostsTotalInBaseCurrency": -828.0,
+      "UnderlyingCurrentPrice": 0.0
+    }
+  }
+}

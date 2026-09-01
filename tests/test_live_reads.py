@@ -35,7 +35,9 @@ def _balance() -> AccountBalance:
     return AccountBalance(
         account_id="77800/T126816", account_key="9-MfNo4cbZ0O7i0wcv207g==",
         currency="JPY", spending_power=79957.0, cash_available_for_trading=79957.0,
-        settled_cash_balance=160663.0, total_value=427980.0, unrealized_pnl=-49968.0,
+        settled_cash_balance=160663.0, total_value=427980.0,
+        # 時価 348,022 − 決済コスト 320。含み損益ではない (K-081)
+        unrealized_positions_value=347702.0,
         transactions_not_booked=-80706.0, open_positions_count=2, net_positions_count=1,
         non_margin_positions_value=348022.0, calculation_reliability="Ok",
     )
@@ -46,7 +48,7 @@ def test_balance_to_dict_maps_every_field():
     assert set(d) == {
         "account_id", "account_key", "currency", "spending_power",
         "cash_available_for_trading", "settled_cash_balance", "total_value",
-        "unrealized_pnl", "transactions_not_booked", "open_positions_count",
+        "unrealized_positions_value", "transactions_not_booked", "open_positions_count",
         "net_positions_count", "non_margin_positions_value", "calculation_reliability",
     }
     # sizing に使う値と使わない値の両方が正しい名前で出る

@@ -78,13 +78,24 @@
 
 - **型**: Number
 - **公式定義**: "The current unrealized profit/loss and face value..."
-- **本プロジェクトでの推奨**: 含み損益確認。`get_unrealized_pnl()` 経由
+- **意味**: **建玉の時価 − 決済コスト**。定義文の "and face value" が本体で、
+  含み損益ではない。`NonMarginPositionsValue + CostToClosePositions` に一致する
+- **実測 (2026-09-01 19:31 JST, T126816)**: 449,931 = 450,338.68 + (-407.26)。
+  同時刻の実際の含み損益は **-28,200 円**で、符号も桁も違う (差 478,131 円)
+- **本プロジェクトでの推奨**: ⚠️ **含み損益として読まない**。アクセサ名は
+  `unrealized_positions_value`。含み損益が要るなら position 側の
+  `ProfitLossOnTradeInBaseCurrency`(為替変動を含まない点に注意) か現値から自前計算 (K-048)
+- **訂正履歴**: 2026-04 の初回記載時「含み損益確認」と書いていた。
+  公式定義は正しく引用されていたが解釈が誤っていた。2026-09-01 の実測で訂正。
+  恒等式は `tests/test_saxo_field_semantics.py` が固定している
 
 ### UnrealizedPositionsValueExcludingCostToClosePositions
 
 - **型**: Number
 - **公式定義**: ページに記載なし
-- **本プロジェクトでの推奨**: 通常用途なし。UnrealizedPositionsValue を使う
+- **意味**: 建玉の時価 (決済コストを引く前)。`NonMarginPositionsValue` に一致する
+- **実測 (2026-09-01, T126816)**: 450,339 vs NonMarginPositionsValue 450,338.68
+- **本プロジェクトでの推奨**: 通常用途なし。時価は `NonMarginPositionsValue` を使う
 
 ### NonMarginPositionsValue
 

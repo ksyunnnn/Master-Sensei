@@ -379,3 +379,20 @@ K-080,meta,"2026-08-31 のセッションで、監査エージェント2体に�
 訂正の記録先: K-079(内容を大幅縮小し confidence を medium→low)、events id=435 の event_reviews(Warsh を negative→neutral)、issue #37 のコメント(8/28 の帰属訂正)。
 事後に補強された点: 2026-09-01 に FRED が REAL10Y の 8/28 分(2.42, +8bp, z=+2.43)を公表し、K-074 の3本の脚が揃った。含意は REAL10Y -0.37% / BREAKEVEN10Y -0.19% / YIELD_CURVE +0.42% の**合計 -0.14%** で、当日の SOXX 実績 -3.20% の約4%しか説明しない。金利は 8/28 の driver ではなく、neutral への訂正は追加データでも支持された。
 **限界**: n=1セッション。4件を「同じ家族」と括ったのは事後の解釈であり、別のセッションで同じ類型が再発するかは未確認。再発したら confidence を上げ、しなければこの括り方自体を疑う。",medium,hypothesis,2026-09-01,,,2026-09-01 10:13:38.637152,,公表した判断4件が監査で誤りと判明。すべて「比較の前提を揃えず比較した」家族: ①ボラを揃えず倍率を出す ②複数窓のうち最も極端な窓だけ報告する ③断面テストを日次だけに適用し日中区間に適用しない ④ルール列挙外の変数は符号を検算せず直感で置く。規律の非対称適用(片方だけ実現価格を排除)と「明記すれば違反が解消する」という錯覚も同時に発生。教義を渡す監査と渡さない監査では出る誤りの種類が違うので両方要る。監査側の指摘も検算する。,"[K-079, K-074, K-073, K-055, K-056, K-077]"
+K-081,meta,"外部 API の field は、公式定義を引用しただけでは意味が確定しない。実データに対して恒等式を検定するまで解釈は仮説にすぎない。
+
+【実例】docs/api/saxo/balance-fields.md は Saxo の UnrealizedPositionsValue について 公式定義 'The current unrealized profit/loss and face value...' を正しく引用したうえで、その直下に「本プロジェクトでの推奨: 含み損益確認」と書いていた。誤り。定義文の 'and face value' 側が本体で、実体は「建玉の時価 − 決済コスト」である。2026-04 の初回記載から 2026-09-01 まで、無修正のまま検出されなかった。
+
+【測定】2026-09-01 19:31 JST、口座 77800/T126816 (SOXL 25株、建値 $119.879):
+  UnrealizedPositionsValue = 449,931 円
+  NonMarginPositionsValue + CostToClosePositions = 450,338.68 + (-407.26) = 449,931.42 → 一致
+  実際の含み損益 (ProfitLossOnTradeInBaseCurrency) = -28,200 円 → 478,131 円ずれる
+含み損益として読めば符号も桁も誤る。
+
+【同時に測定で判明した2件】
+(a) PositionView.CurrentPrice / MarketValue / Exposure は market closed かつ購読なしで 0.0 を返す。CalculationReliability が 'ApproximatedPrice' になる。現値として使えば 除算は例外、比較は黙って誤判定。一方 ProfitLossOnTrade は近似価格で計算され非ゼロで返る (逆算 $112.7998 = 8/31 終値)。「現値は取れないが損益は出る」という非対称がある。
+(b) ProfitLossOnTradeInBaseCurrency は建玉時の為替レート (ConversionRateOpen) で換算され、為替変動を含まない。実測 -28,200 円に対し円建ての実際の含み損益は -27,218 円 (差 +1,022 円 = ProfitLossCurrencyConversion)。K-066 が実現損益で記録した穴と同型で、含み損益側は未記録だった。
+
+【なぜ検出が遅れたか】ADR-026 は「公式仕様を citation する」ことを要求し、「実データと突き合わせる」ことは要求していなかった。citation した時点で完了扱いになる。実際、balance-fields.md の 38 field のうち実例・観測値を持つのは約半分で、UnrealizedPositionsValue は持たない側だった。Saxo field の既往不具合7件 (ed2b793 FieldGroups 不足 / 68a2f0a IFD-OCO 保護脚の取りこぼし / 72501f4 空レスポンス形状 / K-066 / K-069 / K-031 / 0bb1055) も全て、実データが食い違って初めて発覚している。
+
+【対策】field の意味は散文でなく恒等式として tests/test_saxo_field_semantics.py に固定し、live 生 payload の fixture (tests/fixtures/) に対して検定する。恒等式が壊れたら Saxo の仕様変更かこちらの解釈違いのどちらかで、両方とも検出したい。新しい field を読む前に、まずその field を含む実 payload を採取して恒等式を書く。","2026-09-01 19:31 JST の live payload 実測 (tests/fixtures/saxo_live_snapshot_20260901.json)。恒等式 UnrealizedPositionsValue == NonMarginPositionsValue + CostToClosePositions が 449,931.00 vs 449,931.42 (丸め 0.42 円、CurrencyDecimals=0) で成立。含み損益仮説は 449,931 vs -28,200 で棄却 (符号が逆)。ProfitLossOnTradeInBaseCurrency は ConversionRateOpen 換算で誤差 1.12 円、ConversionRateCurrent 換算では 65.25 円ずれる。観測は 1 口座 1 建玉 1 スナップショットのみ。複数建玉・margin 建玉・market open 時は未観測。",high,hypothesis,2026-09-01,,,2026-09-01 20:00:30.848951,,外部 API field は公式定義の引用では意味が確定しない。実 payload に対する恒等式で固定する,"[K-066, K-048, K-078, K-080]"
