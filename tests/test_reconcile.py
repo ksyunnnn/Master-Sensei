@@ -394,3 +394,117 @@ class TestProtectiveLegNotCountedAsPosition:
         got = db.conn.execute(
             "SELECT parent_trade_id FROM trades WHERE id = ?", [leg]).fetchone()[0]
         assert got == parent
+
+
+def _balance(account_id, currency, settled_cash):
+    """AccountBalance の最小構築 (現金照合に使うのは3フィールドのみ)。"""
+    from src.saxo_client import AccountBalance
+    return AccountBalance(
+        account_id=account_id, account_key="K", currency=currency,
+        spending_power=settled_cash, cash_available_for_trading=settled_cash,
+        settled_cash_balance=settled_cash, total_value=settled_cash,
+        unrealized_positions_value=0.0, transactions_not_booked=0.0,
+        open_positions_count=0, net_positions_count=0,
+        non_margin_positions_value=0.0, calculation_reliability="Ok",
+    )
+
+
+def _cash_row(account_id, amount_account_ccy, booking_id):
+    """入金の台帳行。amount_jpy は BookedAmountAccountCurrency (=口座通貨額)。"""
+    return {
+        "trade_date": date(2026, 8, 31), "settlement_date": date(2026, 8, 31),
+        "type": "deposit", "instrument": "CASHINTRTP", "quantity": None,
+        "price_per_unit": None, "amount": 1252.06, "currency": "USD",
+        "fx_rate": 159.74, "amount_jpy": amount_account_ccy,
+        "realized_pnl": None, "broker_ref": booking_id, "order_id": None,
+        "account_id": account_id, "source": "test", "updated_at": datetime(2026, 9, 1),
+    }
+
+
+class TestReconcileCash:
+    """ライブ settled cash ↔ 台帳キャッシュフロー累計 の第4層 (issue #35)。
+
+    3層照合は buy/sell の数量しか見ないため、現金行が丸ごと欠けても全層一致する。
+    2026-08-31 に入金 ¥200,000 の取り込み漏れを「✓ 差分なし」と報告した欠陥を塞ぐ層。
+    """
+
+    def test_no_break_when_cash_matches(self, db, tmp_path):
+        """台帳の累計キャッシュフローがライブ settled cash と一致 → break なし。"""
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([_cash_row("77800/T126816", 200000.0, "B1")], p)
+        breaks = db.reconcile_cash(
+            [_balance("77800/T126816", "JPY", 200000.0)], str(p))
+        assert breaks == []
+
+    def test_break_when_deposit_not_mirrored(self, db, tmp_path):
+        """issue #35 の再現: ライブに ¥255,850 / 台帳は ¥55,850 → 差 ¥200,000 を名指しする。
+
+        これが「✓ 差分なし」と報告されていた断面。
+        """
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([_cash_row("77800/T126816", 55850.0, "B1")], p)
+        breaks = db.reconcile_cash(
+            [_balance("77800/T126816", "JPY", 255850.0)], str(p))
+        assert len(breaks) == 1
+        b = breaks[0]
+        assert b["account_id"] == "77800/T126816"
+        assert b["currency"] == "JPY"
+        assert b["live_cash"] == 255850.0
+        assert b["ledger_cash"] == 55850.0
+        assert b["diff"] == 200000.0  # live - ledger > 0 = 台帳に未計上
+
+    def test_buy_and_sell_rows_count_toward_cash(self, db, tmp_path):
+        """現金残高は入出金だけでなく約定の記帳額も含む (buy=負 / sell=正)。"""
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([
+            _cash_row("77800/T126816", 200000.0, "B1"),
+            _ledger_row("SOXL", "buy", 3.0, "OA", "TA"),   # amount_jpy = 1.0
+        ], p)
+        breaks = db.reconcile_cash(
+            [_balance("77800/T126816", "JPY", 200001.0)], str(p))
+        assert breaks == []
+
+    def test_zero_zero_accounts_are_skipped(self, db, tmp_path):
+        """残高も台帳行も無い空口座 (6件ある) は照合対象にしない。"""
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([_cash_row("77800/T126816", 100.0, "B1")], p)
+        breaks = db.reconcile_cash([
+            _balance("77800/T126816", "JPY", 100.0),
+            _balance("77800/N122798", "USD", 0.0),
+        ], str(p))
+        assert breaks == []
+
+    def test_ledger_account_missing_from_live_is_a_break(self, db, tmp_path):
+        """台帳に現金の動きがあるのにライブ balance に現れない口座 → 見逃さず break。"""
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([_cash_row("77800/UNKNOWN", 50000.0, "B1")], p)
+        breaks = db.reconcile_cash(
+            [_balance("77800/T126816", "JPY", 0.0)], str(p))
+        assert len(breaks) == 1
+        assert breaks[0]["account_id"] == "77800/UNKNOWN"
+        assert breaks[0]["live_cash"] == 0.0
+
+    def test_sub_yen_noise_is_not_a_break(self, db, tmp_path):
+        """JPY は整数円。1円未満の丸め差で break を出さない。"""
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([_cash_row("77800/T126816", 255850.4, "B1")], p)
+        breaks = db.reconcile_cash(
+            [_balance("77800/T126816", "JPY", 255850.0)], str(p))
+        assert breaks == []
+
+    def test_usd_account_uses_cent_tolerance(self, db, tmp_path):
+        """USD 口座は 0.01 単位。¥1 相当の緩さを USD に持ち込まない。"""
+        p = tmp_path / "tx.parquet"
+        write_transactions_parquet([_cash_row("77800/N122798", 100.00, "B1")], p)
+        breaks = db.reconcile_cash(
+            [_balance("77800/N122798", "USD", 100.50)], str(p))
+        assert len(breaks) == 1
+        assert breaks[0]["diff"] == 0.5
+
+    def test_missing_parquet_treated_as_empty_ledger(self, db, tmp_path):
+        """台帳ファイルが無い時に黙って一致扱いしない。"""
+        breaks = db.reconcile_cash(
+            [_balance("77800/T126816", "JPY", 255850.0)],
+            str(tmp_path / "none.parquet"))
+        assert len(breaks) == 1
+        assert breaks[0]["ledger_cash"] == 0.0

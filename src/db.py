@@ -1021,6 +1021,70 @@ class SenseiDB:
                 })
         return breaks
 
+    def reconcile_cash(
+        self, balances: list, transactions_parquet: str
+    ) -> list[dict]:
+        """ライブ settled cash vs 執行事実層(Parquet)のキャッシュフロー累計を突合 (issue #35)。
+
+        **第4層**。3層照合 (live建玉/台帳/trades) は buy/sell の *数量* しか見ないため、
+        現金行が台帳から丸ごと欠けても全層が一致する。2026-08-31 の `/sync-saxo` が
+        入金 ¥200,000 の取り込み漏れを「✓ 差分なし」と報告したのがこの死角。
+
+        口座ごとに `settled_cash_balance` と台帳の記帳額合計を比較する。台帳の
+        `amount_jpy` は Saxo の `BookedAmountAccountCurrency` (= **口座通貨**での額。
+        列名に反して JPY 固定ではない) なので、口座通貨のまま突き合わせられる。
+        買い(負)・売り(正)・入出金がすべて記帳額として入るため、単純合計が
+        「入金以来のキャッシュフロー累計」になる。
+
+        残高も台帳行も無い口座 (未使用のサブ口座) は対象外。台帳にだけ現れる口座は
+        `live_cash=0` の break として返す (黙って一致扱いしない)。
+
+        Returns:
+            break の list。各要素は account_id / currency / live_cash / ledger_cash /
+            diff (= live - ledger。正 = 台帳に未計上)。
+        """
+        ledger_cash = self._ledger_cash_by_account(transactions_parquet)
+        live = {b.account_id: b for b in balances}
+
+        breaks: list[dict] = []
+        for acct in sorted(set(live) | set(ledger_cash)):
+            bal = live.get(acct)
+            lc = float(bal.settled_cash_balance) if bal else 0.0
+            gc = ledger_cash.get(acct, 0.0)
+            if lc == 0.0 and gc == 0.0:
+                continue  # 未使用のサブ口座
+            currency = bal.currency if bal else ""
+            if abs(lc - gc) <= self._cash_tolerance(currency):
+                continue
+            breaks.append({
+                "account_id": acct,
+                "currency": currency,
+                "live_cash": lc,
+                "ledger_cash": gc,
+                "diff": lc - gc,
+            })
+        return breaks
+
+    @staticmethod
+    def _cash_tolerance(currency: str) -> float:
+        """通貨の最小単位を許容誤差にする。JPY は整数円、他は cent 単位。"""
+        return 1.0 if currency == "JPY" else 0.01
+
+    def _ledger_cash_by_account(self, transactions_parquet: str) -> dict[str, float]:
+        """執行事実層の記帳額 (口座通貨) を account_id ごとに合計する。
+
+        ファイルが無い/空でも例外にせず空 dict を返す (reconcile_* と同方針)。
+        """
+        try:
+            rows = self.conn.execute(
+                "SELECT account_id, SUM(amount_jpy) "
+                f"FROM read_parquet('{transactions_parquet}') "
+                "WHERE account_id IS NOT NULL GROUP BY account_id"
+            ).fetchall()
+        except (duckdb.IOException, duckdb.CatalogException):
+            return {}
+        return {a: float(v or 0.0) for a, v in rows}
+
     def find_unbooked_closures(
         self, closed_positions: list, transactions_parquet: str
     ) -> list[dict]:

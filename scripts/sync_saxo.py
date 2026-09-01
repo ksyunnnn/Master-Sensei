@@ -8,7 +8,7 @@
   2. **テール窓 mirror** — 既存 parquet の最新 trade_date から overlap 日だけ遡って
      reports/trades + bookings を再取得し、broker_ref で upsert マージ (全年 mirror を回さない)。
      `--full` で全年に倒せる (窓より前の遡及訂正を拾う逃げ道)。
-  3. **3層照合** — ライブ Saxo (建玉+注文) ↔ 執行事実層(parquet) ↔ 判断層 trades を突合:
+  3. **4層照合** — ライブ Saxo (建玉+注文+現金) ↔ 執行事実層(parquet) ↔ 判断層 trades:
      a. **live建玉 ↔ 台帳 net** … mirror 漏れ検出。乖離時はまず `closedpositions` で
         **booking 未着 (T+1) の決済を benign 除外**し、それでも残る分だけ窓を段階拡大して
         **自動再mirror** (tail→30d→90d→全年)、各段階で再照合し解消した時点で止める
@@ -16,6 +16,8 @@
         必ず空振りするため、closedpositions 判定を窓拡大より前に置く。
      b. **台帳 net ↔ trades 申告** … クローズ済未反映/未記録エントリーの検出 (従来層)。
      c. **liveライブ注文 ↔ trades placed** … placed の改定/不発/未記録の検出 (台帳に出ない層)。
+     d. **ライブ現金 ↔ 台帳キャッシュフロー累計** … 入出金の mirror 漏れ検出 (issue#35)。
+        a-c は buy/sell の *数量* しか見ないため、現金行が丸ごと欠けても全層一致する。
      どの層も差分が無ければ `✓` で終了。差分は層ごとに分類して人間に報告する。
 
 実行: python scripts/sync_saxo.py [--full] [--overlap-days N]
@@ -202,7 +204,15 @@ def run_sync(*, full: bool, overlap_days: int) -> int:
         # 3c. liveライブ注文 ↔ trades placed (台帳に出ない層)。
         order_breaks = db.reconcile_open_orders(live_order_ids)
 
-        # 3d. 台帳に未計上の決済 (同日往復の死角, issue#20/ADR-036)。
+        # 3d. ライブ現金 ↔ 台帳キャッシュフロー累計 (第4層, issue#35)。
+        #     3層は buy/sell の数量しか見ないため、現金行が丸ごと欠けても一致してしまう。
+        cash_breaks = db.reconcile_cash(client.get_all_account_balances(), str(PARQUET_PATH))
+        for c in cash_breaks:
+            print(f"  ℹ [現金未計上] {c['account_id']}: ライブ={c['live_cash']:,.0f} "
+                  f"{c['currency']} / 台帳累計={c['ledger_cash']:,.0f} "
+                  f"→ 差 {c['diff']:+,.0f}{_cash_hint(c)}")
+
+        # 3e. 台帳に未計上の決済 (同日往復の死角, issue#20/ADR-036)。
         #     3層すべてが 0 で一致してしまうケースを closedpositions から名指しする。
         unbooked = db.find_unbooked_closures(closed, str(PARQUET_PATH))
         for u in unbooked:
@@ -211,11 +221,17 @@ def run_sync(*, full: bool, overlap_days: int) -> int:
                   "→ reports/trades 未反映。台帳計上後に trades へ反映する")
 
         if not (live_breaks or ledger_breaks or order_breaks):
+            # 現金がズレている間は「差分なし」と言わない (issue#35 の誤報の再発防止)。
+            pending = []
             if unbooked:
-                print(f"✓ break なし (ただし未計上の決済 {len(unbooked)}件 — "
+                pending.append(f"未計上の決済 {len(unbooked)}件")
+            if cash_breaks:
+                pending.append(f"現金未計上 {len(cash_breaks)}口座")
+            if pending:
+                print(f"✓ 建玉・注文に break なし (ただし {' / '.join(pending)} — "
                       "台帳反映後にもう一度 /sync-saxo)")
             else:
-                print("✓ 差分なし (ライブ建玉↔台帳↔trades 一致 / 注文も一致)")
+                print("✓ 差分なし (ライブ建玉↔台帳↔trades↔現金 一致 / 注文も一致)")
             return EXIT_OK
 
         total = len(live_breaks) + len(ledger_breaks) + len(order_breaks)
@@ -230,6 +246,13 @@ def run_sync(*, full: bool, overlap_days: int) -> int:
         return EXIT_BREAKS
     finally:
         conn.close()
+
+
+def _cash_hint(c: dict) -> str:
+    """現金差の向きから、次に何を見るべきかを1行で添える。"""
+    if c["diff"] > 0:
+        return " (入金/売却が reports/bookings 未着。実測で T+1・約27時間の遅延あり)"
+    return " (台帳に余分。二重計上 or ライブ未反映を要調査)"
 
 
 def _classify_break(b: dict) -> str:
