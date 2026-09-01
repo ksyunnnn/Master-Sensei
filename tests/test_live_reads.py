@@ -33,7 +33,8 @@ NOW = datetime(2026, 7, 8, 12, 0, tzinfo=JST)
 
 def _balance() -> AccountBalance:
     return AccountBalance(
-        account_id="77800/T126816", account_key="9-MfNo4cbZ0O7i0wcv207g==",
+        # 実口座の account_key を書かない (公開リポジトリ)。形式だけ模した固定値を使う
+        account_id="77800/T126816", account_key="TESTKEY0000000000000000==",
         currency="JPY", spending_power=79957.0, cash_available_for_trading=79957.0,
         settled_cash_balance=160663.0, total_value=427980.0,
         # 時価 348,022 − 決済コスト 320。含み損益ではない (K-081)
