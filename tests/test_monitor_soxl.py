@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.monitor_soxl import MonitorConfig, classify, pct_from
+from scripts.monitor_soxl import MonitorConfig, classify, pct_from, should_notify
 
 
 def _cfg(**overrides) -> MonitorConfig:
@@ -131,3 +131,69 @@ def test_normal_observation_no_trigger():
     # SOXL +3% / SOXX +1% (期待 +3%、spread 0)、ref +1% < rebound 1.5%
     _, code = _classify(220.0, pct=3.0, ref_pct=1.0)
     assert code is None
+
+
+def test_reversal_up_lead_min_is_configurable():
+    """lead driver がマイナスのまま反発する局面でも REVERSAL UP を拾えること。
+
+    セクター全体が売られている日は lead driver (NVDA) がプラスに戻る前に
+    レバ ETF が底打ちする。既定の `reversal_lead_min=0.0` だと反転を一度も
+    通知できず、監視が「下げだけ報告して底を報告しない」非対称になる
+    (2026-09-01 の SOXL 下落で実際に発生)。
+    """
+    # 既定 (0.0) では lead driver -2.2% なので発火しない = 従来挙動の固定
+    _, code_default = _classify(
+        204.0, session_low=200.0, session_high=204.0, lead_pct=-2.2
+    )
+    assert (code_default is None) or (not code_default.startswith("REVERSAL_UP"))
+
+    # 閾値を -3.0% まで緩めれば同じ入力で発火する
+    cfg = _cfg(reversal_lead_min=-3.0)
+    state, code = _classify(
+        204.0, session_low=200.0, session_high=204.0, lead_pct=-2.2, cfg=cfg
+    )
+    assert code is not None and code.startswith("REVERSAL_UP")
+    assert "REVERSAL UP" in state
+
+    # 緩めても閾値より下 (leadership が完全崩壊) なら発火しない
+    _, code_deep = _classify(
+        204.0, session_low=200.0, session_high=204.0, lead_pct=-4.5, cfg=cfg
+    )
+    assert (code_deep is None) or (not code_deep.startswith("REVERSAL_UP"))
+
+
+# ── notify dedup ─────────────────────────────────────────
+
+def test_should_notify_suppresses_repeat_of_same_code():
+    """一度通知した trigger code は、間に通常観測を挟んでも再通知しない。
+
+    zone 判定は `abs(price - zone) <= fill_tolerance` の帯なので、価格が帯の
+    境界に留まると「帯の中→外→中」を繰り返す。旧実装の dedup は直前の
+    action と比較するだけだったため、帯を一度出るたびに last_action が None に
+    戻り、同じ SHORT_RALLY_106 が何度も通知された
+    (2026-09-03 の SOXL 監視で $104.50 境界にて実際に発生)。
+
+    再発火してよい trigger は code 自体に水準を埋め込んでいる
+    (REVERSAL_UP_FROM_100 と REVERSAL_UP_FROM_98 は別 code) ため、
+    code 単位で一度きりに固定してよい。
+    """
+    fired: set[str] = set()
+
+    assert should_notify("SHORT_RALLY_106", fired) is True
+    fired.add("SHORT_RALLY_106")
+
+    # 通常観測 (action=None) を挟んでも None は通知しない
+    assert should_notify(None, fired) is False
+
+    # 帯に戻ってきても再通知しない
+    assert should_notify("SHORT_RALLY_106", fired) is False
+
+    # 別の水準の code は独立して通知される
+    assert should_notify("LONG_DIP_98", fired) is True
+
+
+def test_should_notify_distinguishes_reversal_levels():
+    """安値を切り下げた reversal は別 code なので通知される。"""
+    fired = {"REVERSAL_UP_FROM_100"}
+    assert should_notify("REVERSAL_UP_FROM_100", fired) is False
+    assert should_notify("REVERSAL_UP_FROM_98", fired) is True

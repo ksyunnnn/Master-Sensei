@@ -55,6 +55,10 @@ class MonitorConfig:
     driver_retrace_pct: float
     lead_flip_pct: float
     ref_rebound_pct: float
+    # REVERSAL UP を認める lead driver の下限 %。既定 0.0 は「lead が
+    # プラス転換するまで底打ちを認めない」。セクター全面安の日は lead が
+    # プラスに戻る前にレバ ETF が底打ちするため、その日は負値まで緩める。
+    reversal_lead_min: float = 0.0
     lead_driver: str = "NVDA"
     retrace_driver: str = "MU"
     drivers: list[str] = field(default_factory=lambda: ["MU", "NVDA", "AMD"])
@@ -89,10 +93,12 @@ def classify(
     # 1. reversal up: session 安値からの bounce + lead driver の leadership 維持
     if session_low > 0:
         bounce_pct = (price - session_low) / session_low * 100
-        if bounce_pct >= cfg.reversal_pct and lead_pct is not None and lead_pct >= 0.0:
+        if (bounce_pct >= cfg.reversal_pct and lead_pct is not None
+                and lead_pct >= cfg.reversal_lead_min):
             return (
                 f"REVERSAL UP: session low ${session_low:.2f} → ${price:.2f} "
-                f"(+{bounce_pct:.1f}%)、{cfg.lead_driver} {lead_pct:+.2f}% leadership 維持",
+                f"(+{bounce_pct:.1f}%)、{cfg.lead_driver} {lead_pct:+.2f}% "
+                f"(下限 {cfg.reversal_lead_min:+.1f}%)",
                 f"REVERSAL_UP_FROM_{int(session_low)}",
             )
 
@@ -168,6 +174,21 @@ def classify(
         return (f"{cfg.symbol} gap-fill rally >${max(cfg.short_rally):.0f} (最高 zone 超え)", "GAP_FILL")
 
     return (f"normal observation (range {session_low:.1f}-{session_high:.1f})", None)
+
+
+def should_notify(action: str | None, fired: set[str]) -> bool:
+    """この trigger code を通知すべきか。既に通知済みの code は抑止する。
+
+    zone 判定は `abs(price - zone) <= fill_tolerance` の帯なので、価格が帯の
+    境界に留まると「帯の中→外→中」を往復する。直前の action と比較するだけの
+    dedup では帯を出るたびに状態がリセットされ、同じ code が繰り返し通知される。
+    セッション内で発火済みの code を集合で保持し、一度きりに固定する。
+
+    水準が変われば code 自体が変わる設計（REVERSAL_UP_FROM_100 と
+    REVERSAL_UP_FROM_98 は別 code、VOL_FLAG_N は range を埋め込む）なので、
+    code 単位の抑止で新しい水準の到達は取りこぼさない。
+    """
+    return action is not None and action not in fired
 
 
 # ── I/O（テスト対象外） ──────────────────────────────────
@@ -264,7 +285,7 @@ def run(cfg: MonitorConfig, prior_close: dict[str, float], symbols: tuple[str, .
     print(f"[START {now:%H:%M:%S}] {'snapshot once' if once else f'until {end_at:%m/%d %H:%M} JST'}, "
           f"poll {poll_sec}s | long dip {cfg.long_dip} short rally {cfg.short_rally}", flush=True)
 
-    last_action: str | None = None
+    fired: set[str] = set()
     retrace_high_pct: float | None = None
     session_high = -1.0
     session_low = 1e9
@@ -309,12 +330,11 @@ def run(cfg: MonitorConfig, prior_close: dict[str, float], symbols: tuple[str, .
                 parts.append(f"{sym}({p:+.2f}%)")
         line = f"[{now:%H:%M:%S}] " + " ".join(parts) + f" | {state}"
 
-        if action and action != last_action:
+        if should_notify(action, fired):
             print(f"!!! TRIGGER [{action}] {line}", flush=True)
             notify("Master Sensei", f"{action}: {cfg.symbol} ${price:.2f} | {state}")
-            last_action = action
+            fired.add(action)
         else:
-            last_action = action
             print(line, flush=True)
 
         if once:
@@ -341,6 +361,8 @@ def main() -> None:
     ap.add_argument("--driver-retrace-pct", type=float, default=3.0, help="driver 高値 retrace 警報閾値 ％")
     ap.add_argument("--lead-flip-pct", type=float, default=-1.5, help="lead driver flip 閾値 ％")
     ap.add_argument("--ref-rebound-pct", type=float, default=1.5, help="reference rebound 閾値 ％")
+    ap.add_argument("--reversal-lead-min", type=float, default=0.0,
+                    help="REVERSAL UP を認める lead driver の下限 ％（既定 0.0＝プラス転換必須）")
     ap.add_argument("--poll-sec", type=int, default=60, help="polling 間隔（秒）")
     ap.add_argument("--until", default="05:00", help="終了時刻 HH:MM JST（過ぎていれば翌日）")
     ap.add_argument("--once", action="store_true", help="1 回スナップショットを出して終了")
@@ -360,6 +382,7 @@ def main() -> None:
         driver_retrace_pct=args.driver_retrace_pct,
         lead_flip_pct=args.lead_flip_pct,
         ref_rebound_pct=args.ref_rebound_pct,
+        reversal_lead_min=args.reversal_lead_min,
         lead_driver=args.lead_driver.upper(),
         retrace_driver=args.retrace_driver.upper(),
         drivers=drivers,
