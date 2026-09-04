@@ -29,6 +29,7 @@ import argparse
 import errno
 import logging
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -76,6 +77,61 @@ def plan_next(
     if remaining <= margin_sec:
         return ("refresh", 0.0)
     return ("sleep", min(remaining - margin_sec, float(max_sleep_sec)))
+
+
+def spawn_wake_blocker(
+    pid: int | None = None,
+    platform: str | None = None,
+    popen=subprocess.Popen,
+):
+    """macOS の idle system sleep を keepalive の生存中だけ抑止する(issue #22)。
+
+    背景(2026-09-04 に実測): ディスプレイが切れると powerd が
+    `PreventUserIdleSystemSleep "Prevent sleep while display is on"` を Released し、
+    `Entering Sleep state due to 'Idle Sleep'` でマシンが寝る。keepalive は
+    `time.sleep` で次の roll を待つだけなので一緒に寝てしまい、失効直前に予定した
+    roll が発火しない。実測では 23:45:41 に sleep → 00:17 予定の roll が 00:51 まで
+    遅延し、その間の 00:22 に refresh token が失効して needs_reauth で落ちた。
+
+    `caffeinate -i` で idle system sleep のみを抑止する(ディスプレイは消えてよい)。
+    `-w <pid>` を付けるので、keepalive が SIGKILL されても caffeinate は道連れに終了し
+    孤児として残らない。これはプロセス生存中だけのアサーションで、launchd 等による
+    永続化ではないため ADR-025(永続化しない)と矛盾しない。
+
+    caffeinate が使えない環境では None を返し、keepalive は抑止なしで劣化動作する
+    (抑止の失敗で token 更新そのものを止めない)。
+    """
+    platform = sys.platform if platform is None else platform
+    if not platform.startswith("darwin"):
+        return None
+    pid = os.getpid() if pid is None else pid
+    try:
+        return popen(["caffeinate", "-i", "-w", str(pid)])
+    except (FileNotFoundError, OSError) as exc:
+        logger.warning(
+            "caffeinate を起動できず sleep 抑止なしで継続(%s)。"
+            "ディスプレイが切れると roll が遅延し token 失効の恐れ", exc
+        )
+        return None
+
+
+@contextmanager
+def wake_assertion(
+    pid: int | None = None,
+    platform: str | None = None,
+    popen=subprocess.Popen,
+):
+    """`spawn_wake_blocker` を with で包み、抜ける時に確実に停止する。"""
+    proc = spawn_wake_blocker(pid=pid, platform=platform, popen=popen)
+    try:
+        yield proc
+    finally:
+        if proc is not None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=5)
+            except Exception as exc:  # noqa: BLE001 - 停止失敗で終了処理を止めない
+                logger.warning("caffeinate の停止に失敗(%s)", exc)
 
 
 def make_session_factory(db_path: Path | str, config: SaxoConfig):
@@ -275,12 +331,18 @@ def main() -> int:
             return 2
         # 接続は tick ごとに開閉する(sleep 中は DB ロックを保持しない、ADR-025)
         factory = make_session_factory(DB_PATH, config)
-        logger.info("keepalive 開始(env=%s, margin=%.0fs)", config.environment, args.margin)
-        status = run_keepalive(
-            factory, config.environment,
-            margin_sec=args.margin, max_sleep_sec=args.max_sleep,
-            stop_after=1 if args.once else None,
-        )
+        # macOS の idle sleep を抑止する(issue #22)。抑止できなくても継続する。
+        with wake_assertion() as blocker:
+            logger.info(
+                "keepalive 開始(env=%s, margin=%.0fs, sleep抑止=%s)",
+                config.environment, args.margin,
+                "caffeinate" if blocker is not None else "なし",
+            )
+            status = run_keepalive(
+                factory, config.environment,
+                margin_sec=args.margin, max_sleep_sec=args.max_sleep,
+                stop_after=1 if args.once else None,
+            )
     finally:
         lock.release()
 

@@ -307,3 +307,96 @@ def test_lock_steals_stale_lock(tmp_path):
     lock = ka.SingleInstanceLock(p)
     assert lock.acquire() is True  # stale を奪取
     lock.release()
+
+
+# ── spawn_wake_blocker / wake_assertion (issue #22: macOS Deep Idle スリープ対策) ──
+#
+# 2026-09-04 23:45:41 に `Entering Sleep state due to 'Idle Sleep'` が発生し、
+# 00:17 に予定していた roll が発火せず 00:51 まで遅延、その間に refresh token が
+# 00:22 で失効して keepalive が needs_reauth で落ちた(pmset -g log で実測)。
+# 直前の 23:45:36 に powerd が PreventUserIdleSystemSleep を Released している
+# (ディスプレイが切れて sleep 抑止が外れた)。
+# 対策は caffeinate -i で idle system sleep を自前で抑止すること。
+
+class _FakePopen:
+    def __init__(self, argv, **kwargs):
+        self.argv = argv
+        self.kwargs = kwargs
+        self.terminated = False
+        self.waited = False
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        self.waited = True
+        return 0
+
+    def poll(self):
+        return None
+
+
+def test_wake_blocker_uses_caffeinate_idle_flag_on_macos():
+    calls = []
+
+    def fake_popen(argv, **kwargs):
+        calls.append(argv)
+        return _FakePopen(argv, **kwargs)
+
+    proc = ka.spawn_wake_blocker(pid=4242, platform="darwin", popen=fake_popen)
+
+    assert proc is not None
+    # -i = idle system sleep の抑止。Released されたのは PreventUserIdleSystemSleep なので
+    # -s(AC 時のみ)ではなく -i でなければ塞げない。
+    # -w <pid> = 親が死んだら caffeinate も終了(孤児プロセスを残さない)。
+    assert calls == [["caffeinate", "-i", "-w", "4242"]]
+
+
+def test_wake_blocker_skips_on_non_macos():
+    calls = []
+
+    def fake_popen(argv, **kwargs):
+        calls.append(argv)
+        return _FakePopen(argv, **kwargs)
+
+    proc = ka.spawn_wake_blocker(pid=1, platform="linux", popen=fake_popen)
+
+    assert proc is None
+    assert calls == []
+
+
+def test_wake_blocker_returns_none_when_caffeinate_missing():
+    def fake_popen(argv, **kwargs):
+        raise FileNotFoundError("caffeinate")
+
+    # caffeinate が無くても keepalive 本体は動き続けるべき(抑止なしで劣化動作)
+    assert ka.spawn_wake_blocker(pid=1, platform="darwin", popen=fake_popen) is None
+
+
+def test_wake_blocker_returns_none_on_os_error():
+    def fake_popen(argv, **kwargs):
+        raise OSError("boom")
+
+    assert ka.spawn_wake_blocker(pid=1, platform="darwin", popen=fake_popen) is None
+
+
+def test_wake_assertion_terminates_child_on_exit():
+    created = []
+
+    def fake_popen(argv, **kwargs):
+        p = _FakePopen(argv, **kwargs)
+        created.append(p)
+        return p
+
+    with ka.wake_assertion(pid=7, platform="darwin", popen=fake_popen) as proc:
+        assert proc is not None
+        assert not proc.terminated
+
+    assert created[0].terminated is True
+    assert created[0].waited is True
+
+
+def test_wake_assertion_is_noop_without_child():
+    # 非 macOS では child を作らず、context manager は素通りする
+    with ka.wake_assertion(pid=7, platform="linux", popen=None) as proc:
+        assert proc is None
