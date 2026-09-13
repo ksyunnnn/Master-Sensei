@@ -191,3 +191,53 @@ class TestRevokeToken:
         db.revoke_token(tid, reason="x")
         row = db.conn.execute("SELECT id FROM auth_tokens WHERE id = ?", [tid]).fetchone()
         assert row is not None
+
+
+class TestTokenStatus:
+    """get_token_status: 認証が今使えるかを1回の照会で判定する (update_data.py 表示用)。
+
+    失効しているかどうかだけでなく「いつ切れたか」を返すのが要件。セッション開始時に
+    再認証が必要かを人が判断するには、失効の事実と経過時間の両方が要る。
+    """
+
+    def test_valid_refresh_token_reports_valid_with_expiry(self, db):
+        exp = _future(3600)
+        db.save_token(provider="saxo", environment="live", token_type="refresh",
+                      token_value="r", expires_at=exp, refresh_count=7)
+        st = db.get_token_status("saxo", "live", "refresh")
+        assert st.status == "valid"
+        assert st.expires_at == exp
+        assert st.refresh_count == 7
+
+    def test_expired_token_reports_expired_with_last_expiry(self, db):
+        """失効していても「いつ切れたか」を返す。無言の None だと経過時間が分からない。"""
+        exp = _past(3600)
+        db.save_token(provider="saxo", environment="live", token_type="refresh",
+                      token_value="r", expires_at=exp)
+        st = db.get_token_status("saxo", "live", "refresh")
+        assert st.status == "expired"
+        assert st.expires_at == exp
+
+    def test_no_token_reports_missing(self, db):
+        st = db.get_token_status("saxo", "live", "refresh")
+        assert st.status == "missing"
+        assert st.expires_at is None
+
+    def test_revoked_token_is_not_reported_as_valid(self, db):
+        """revoke 済みは有効期限が未来でも使えない (rotate 後の旧トークン)。"""
+        tid = db.save_token(provider="saxo", environment="live", token_type="refresh",
+                            token_value="r", expires_at=_future(3600))
+        db.revoke_token(tid, reason="rotated_on_refresh")
+        st = db.get_token_status("saxo", "live", "refresh")
+        assert st.status != "valid"
+
+    def test_latest_token_wins_over_older_expired_one(self, db):
+        """rotate で新しいトークンが入っていれば、古い失効行に引きずられない。"""
+        db.save_token(provider="saxo", environment="live", token_type="refresh",
+                      token_value="old", expires_at=_past(7200))
+        exp = _future(3600)
+        db.save_token(provider="saxo", environment="live", token_type="refresh",
+                      token_value="new", expires_at=exp)
+        st = db.get_token_status("saxo", "live", "refresh")
+        assert st.status == "valid"
+        assert st.expires_at == exp

@@ -429,6 +429,7 @@ def main():
     parser.add_argument("--status", action="store_true")
     parser.add_argument("--symbol", type=str, help="Single symbol to update (e.g. SOXL)")
     parser.add_argument("--no-backup", action="store_true", help="DB の git バックアップを抑止 (ADR-033)")
+    parser.add_argument("--no-status", action="store_true", help="建玉・認証の現在地表示を抑止")
     args = parser.parse_args()
 
     cache = CacheManager(DATA_DIR)
@@ -479,6 +480,16 @@ def main():
             backup_db()
         except Exception as e:
             logger.warning(f"DB backup skipped: {e}")
+
+    # 建玉・認証の現在地。更新した価格でそのまま評価できるのでここで出す。
+    # best-effort: 表示に失敗してもデータ更新は成功扱い (backup と同方針)。
+    if not args.no_status:
+        try:
+            from scripts.status import print_status
+            print()
+            print_status()
+        except Exception as e:
+            logger.warning(f"status skipped: {e}")
 
 
 if __name__ == "__main__":

@@ -13,11 +13,15 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import duckdb
+
+if TYPE_CHECKING:  # 実行時 import は get_ledger_positions 内 (循環参照回避)
+    from src.position import LedgerPosition
 
 JST = timezone(offset=__import__("datetime").timedelta(hours=9))
 
@@ -59,6 +63,28 @@ def _require_aware(dt: datetime, param_name: str = "dt") -> datetime:
             f"{param_name} must be timezone-aware. Got naive datetime."
         )
     return dt
+
+
+@dataclass(frozen=True)
+class TokenStatus:
+    """認証トークンが今使えるか (ADR-025)。
+
+    Attributes:
+        status: 'valid'(期限内) / 'expired'(切れた) / 'missing'(一度も無い or 全て revoke)。
+        expires_at: 最新トークンの期限。status='expired' でも「いつ切れたか」を返す
+            (経過時間が分からないと再認証の要否を人が判断できない)。missing なら None。
+        refresh_count: 何回 refresh を重ねた系列か。missing なら None。
+    """
+    provider: str
+    environment: str
+    token_type: str
+    status: str
+    expires_at: Optional[datetime]
+    refresh_count: Optional[int]
+
+    @property
+    def is_usable(self) -> bool:
+        return self.status == "valid"
 
 
 class SenseiDB:
@@ -959,6 +985,47 @@ class SenseiDB:
                 })
         return breaks
 
+    def get_ledger_positions(self, transactions_parquet: str) -> dict[str, "LedgerPosition"]:
+        """執行事実層(Parquet)から残存建玉と取得原価を FIFO で導出する (ADR-030)。
+
+        `_ledger_net_by_instrument` と用途が違う。あちらは **照合用**で、在庫を超える
+        売りを負の純数量として表に出す必要がある (それが break の合図)。こちらは
+        **評価用**で、負の建玉は表示せず取得原価を持つ。同じ「何株持っているか」でも
+        問われていることが違うので統合しない。
+
+        ライブ API ではなくローカル台帳から計算するため、Saxo トークンが失効していても
+        建玉を出せる (`scripts/position_pnl.py` はライブ依存で失効中は動かない)。
+
+        並び順は SQL 側で固定する。同日の約定は買いを先に置く: trade_date だけで
+        並べると同日往復で売りが先に来て「在庫なしの売り」になり、残数量が実態と
+        ずれる。同日同方向は order_id で決定的に並べる (実行ごとに結果が変わらない)。
+
+        台帳ファイルが無い/空でも例外にせず空 dict を返す (fresh clone 対応)。
+        """
+        from src.position import LedgerFill, fifo_open_lots
+
+        sql = (
+            "SELECT instrument, type, quantity, amount, trade_date "
+            f"FROM read_parquet('{transactions_parquet}') "
+            "WHERE type IN ('buy', 'sell') "
+            "ORDER BY trade_date, CASE type WHEN 'buy' THEN 0 ELSE 1 END, order_id"
+        )
+        try:
+            rows = self.conn.execute(sql).fetchall()
+        except (duckdb.IOException, duckdb.CatalogException):
+            return {}
+
+        return fifo_open_lots(
+            LedgerFill(
+                instrument=sym,
+                side=side,
+                quantity=float(qty),
+                amount=float(amount),
+                trade_date=trade_date,
+            )
+            for sym, side, qty, amount, trade_date in rows
+        )
+
     def _ledger_net_by_instrument(self, transactions_parquet: str) -> dict[str, float]:
         """執行事実層(Parquet)の buy(+)/sell(−) 純数量を instrument ごとに返す。
 
@@ -1219,6 +1286,42 @@ class SenseiDB:
             "refresh_count": row[8],
             "metadata": row[9],
         }
+
+    def get_token_status(
+        self, provider: str, environment: str, token_type: str
+    ) -> "TokenStatus":
+        """認証が今使えるかを1回の照会で判定する (ADR-025)。
+
+        `get_active_token` との違いは、**使えない時にその理由が分かる**こと。あちらは
+        有効なトークンが無ければ None しか返さないので、「まだ一度も認証していない」
+        のか「持っていたが切れた」のかも、切れたのがいつなのかも区別できない。
+        呼び出し前に再認証が要るかを人が判断するには、その区別が要る。
+
+        トークン値は返さない。表示・判定に要るのは期限だけで、値を持ち回すと
+        ログや標準出力に漏れる経路が増える (public repo、ADR-033)。
+        """
+        row = self.conn.execute(
+            "SELECT expires_at, refresh_count FROM auth_tokens "
+            "WHERE provider = ? AND environment = ? AND token_type = ? "
+            "AND revoked_at IS NULL "
+            "ORDER BY acquired_at DESC LIMIT 1",
+            [provider, environment, token_type],
+        ).fetchone()
+
+        if row is None:
+            return TokenStatus(
+                provider=provider, environment=environment, token_type=token_type,
+                status="missing", expires_at=None, refresh_count=None,
+            )
+
+        expires_at, refresh_count = row
+        alive = expires_at > now_jst()
+        return TokenStatus(
+            provider=provider, environment=environment, token_type=token_type,
+            status="valid" if alive else "expired",
+            expires_at=expires_at,
+            refresh_count=refresh_count,
+        )
 
     def revoke_token(self, token_id: int, reason: str = None) -> None:
         existing = self.conn.execute(
