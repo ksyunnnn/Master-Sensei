@@ -153,7 +153,7 @@ SessionStartの状態注入に基づき、以下の順序で提案する:
 ## ワークスペース
 
 - `desk-NN` は git worktree の常設ワークスペース。`repository/desk-01` のように main と並べて置く
-- `desk-NN` ブランチにコミットを積まない。main を取り込むだけの受け皿とし、作業は `desk-NN` の中で `feature/*` を checkout して行う
+- `desk-NN` ブランチにコミットを積まない。main を取り込むだけの受け皿とし、作業は `desk-NN` の中で作業用ブランチを checkout して行う
 
 ## Rules
 
