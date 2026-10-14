@@ -1,6 +1,6 @@
 ---
 name: scan-market
-description: WebSearchで最新のニュース・市場動向を調査し、イベントをDBに登録する。地政学・FRB・半導体・原油・関税・市場動向の6カテゴリを網羅的に調査する。
+description: WebSearchで最新のニュース・市場動向を調査し、イベントをDBに登録する。地政学・FRB・半導体（供給側）・原油・関税・市場動向・AI 需要側（AI ラボ・ハイパースケーラー）の7対象を調査し、窓内で半導体が大きく動いた日ごとに driver を特定する。
 ---
 
 市場ニュースの調査・イベント登録を実行してください。
@@ -122,16 +122,32 @@ PYEOF
 
 ### 2. WebSearchでニュース調査
 
-以下の6カテゴリについて、手順1で決めた対象期間のニュースをWebSearchで調査する。
+以下の7対象について、手順1で決めた対象期間のニュースをWebSearchで調査する。
 
 1. **地政学リスク** — 戦争・制裁・紛争（Iran, Middle East等）
 2. **FRB・金融政策** — 利上げ/利下げ・インフレ・雇用
-3. **半導体セクター** — NVIDIA, AMD, SOX index, TSMC
+3. **半導体セクター（供給側）** — NVIDIA, AMD, SOX index, TSMC, メモリ（Micron, Samsung, SK Hynix, CXMT）
 4. **原油・エネルギー** — Brent, WTI, Strait of Hormuz
 5. **関税・通商政策** — Section 232, Section 301, tariffs
 6. **米国株式市場** — S&P 500, Nasdaq, VIX, sector rotation
+7. **AI 需要側（半導体の買い手）** — AI ラボ（OpenAI, Anthropic）とハイパースケーラー・neocloud（Microsoft, Alphabet, Amazon, Meta, Oracle, CoreWeave）の売上・設備投資・資金調達・IPO・自社チップ。保存 category は `semiconductor`
 
-各カテゴリで最低1回はWebSearchを実行する。
+各対象で最低1回はWebSearchを実行する。7 は 3 で代用しない（半導体企業名のクエリは買い手側のニュースを返さない）。
+
+### 2b. 値動き日の帰属チェック（必須・終了条件）
+
+カテゴリ別の検索だけでは、**半導体を動かした日の driver を拾えたか**が保証されない。
+2026-10-14 の実行では、6カテゴリを検索し終えた時点で、窓内で最大の下落日 10/8（SOXX -3.35%）の
+driver（FT の「OpenAI の年換算売上が報道より200億ドル低い」）を見つけておらず、
+「単一の重大ニュースはない」と誤って結論した。ユーザーの指摘で発覚した。
+
+1. 窓内の各営業日について SOXX と SPY の日次リターンを parquet から出す。
+2. **SOXX の |リターン| ≥ 1.5% か、SOXX − SPY の差が 1.0pt 以上の日**を「説明を要する日」とする。
+3. 各日について、日付を入れた中立クエリ（例: `"October 8" 2026 chip stocks what happened`、
+   `<日付> Nvidia Micron shares news`）と、7 の AI 需要側のクエリを最低1本ずつ投げ、Tier 1-2 で driver を特定する。
+4. driver が特定できない日が残る間は、報告に「全体として大きなニュースはない」「材料の積み重ね」等の
+   **総括を書かない**。その日を「未説明」と明記して報告する。
+5. 検索結果に未追跡の手掛かり（例: 「OpenAI の売上への疑問」の一言）が出たら、その場で追加検索して潰す。
 
 ### クエリ構築規約（K-056、必須）
 
@@ -234,7 +250,7 @@ db.record_skill_execution(
     result_summary='N events added',
     metadata=json.dumps({
         'latest_source_date': '検索結果の最新記事日時（ISO 8601）',
-        'categories_searched': ['geopolitical', 'fed', 'semiconductor', 'oil', 'tariff', 'market'],
+        'categories_searched': ['geopolitical', 'fed', 'semiconductor', 'oil', 'tariff', 'market', 'ai_demand'],
     }),
 )
 conn.close()
@@ -257,7 +273,7 @@ PYEOF
 | ... | ... | ... | ... | ... |
 
 ### 市場環境の要約
-{6カテゴリの調査結果を2-3文で要約}
+{7対象の調査結果を2-3文で要約。2b の「説明を要する日」ごとの driver（未説明なら未説明と明記）}
 
 Sources:
 - [Source Title](URL)
