@@ -35,3 +35,4 @@ logs/
 
 # Playwright MCP セッション成果物 (スナップショット/コンソールログ)
 .playwright-mcp/
+.playwright-cli/
